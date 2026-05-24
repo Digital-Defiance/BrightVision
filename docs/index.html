@@ -1,820 +1,1037 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Aider Vision — a lightweight, cross-platform desktop app for AI-assisted coding. Native Tauri + React, powered by Aider Vision Core.">
-  <link rel="canonical" href="https://aider-vision.digitaldefiance.org/">
-  <meta property="og:title" content="Aider Vision — Native AI coding, without the IDE baggage">
-  <meta property="og:description" content="Cursor-like AI coding in a lightweight Tauri desktop app. Powered by Aider Vision Core.">
-  <meta property="og:url" content="https://aider-vision.digitaldefiance.org/">
-  <meta property="og:type" content="website">
-  <meta property="og:image" content="https://github.com/user-attachments/assets/40053e79-dae2-4fda-ad29-79e9115b22af">
-  <meta name="twitter:card" content="summary_large_image">
-  <title>Aider Vision — Native AI coding, without the IDE baggage</title>
-  <link rel="icon" href="aider-vision-black.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #050505;
-      --surface: #0e0e0e;
-      --surface-raised: #161616;
-      --border: #222;
-      --border-bright: #2a2a2a;
-      --green: #14b014;
-      --green-dim: #0f8a0f;
-      --green-glow: rgba(20, 176, 20, 0.18);
-      --white: #f4f4f4;
-      --muted: #8a8a8a;
-      --muted-dim: #5c5c5c;
-      --font-sans: "IBM Plex Sans", system-ui, sans-serif;
-      --font-mono: "IBM Plex Mono", ui-monospace, monospace;
-      --max-width: 72rem;
-      --radius: 10px;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
-
-    html {
-      scroll-behavior: smooth;
-      color-scheme: dark;
-    }
-
-    body {
-      margin: 0;
-      font-family: var(--font-sans);
-      font-size: 1.0625rem;
-      line-height: 1.65;
-      color: var(--white);
-      background: var(--bg);
-      -webkit-font-smoothing: antialiased;
-    }
-
-    a {
-      color: var(--green);
-      text-decoration: none;
-      transition: color 0.15s ease;
-    }
-
-    a:hover { color: #2ed42e; }
-
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 9999;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0, 0, 0, 0.03) 2px,
-        rgba(0, 0, 0, 0.03) 4px
-      );
-    }
-
-    .wrap {
-      width: min(100% - 2rem, var(--max-width));
-      margin-inline: auto;
-    }
-
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      border-bottom: 1px solid var(--border);
-      background: rgba(5, 5, 5, 0.85);
-      backdrop-filter: blur(12px);
-    }
-
-    .header-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding: 0.85rem 0;
-    }
-
-    .logo-link {
-      display: flex;
-      align-items: center;
-      color: inherit;
-    }
-
-    .logo-link:hover { color: inherit; }
-
-    .logo-link img {
-      height: 2.25rem;
-      width: auto;
-      display: block;
-    }
-
-    nav {
-      display: flex;
-      align-items: center;
-      gap: 1.25rem;
-      flex-wrap: wrap;
-    }
-
-    nav a {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--muted);
-    }
-
-    nav a:hover { color: var(--white); }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0.55rem 1.1rem;
-      font-family: var(--font-mono);
-      font-size: 0.8125rem;
-      font-weight: 500;
-      letter-spacing: 0.02em;
-      border-radius: var(--radius);
-      border: 1px solid transparent;
-      transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-      white-space: nowrap;
-    }
-
-    .btn-primary {
-      background: var(--green);
-      color: #000;
-      border-color: var(--green);
-    }
-
-    .btn-primary:hover {
-      background: #1ad41a;
-      color: #000;
-      box-shadow: 0 0 24px var(--green-glow);
-    }
-
-    .btn-ghost {
-      background: transparent;
-      color: var(--white);
-      border-color: var(--border-bright);
-    }
-
-    .btn-ghost:hover {
-      border-color: var(--green);
-      color: var(--green);
-    }
-
-    .hero {
-      padding: 4.5rem 0 3.5rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero::after {
-      content: "";
-      position: absolute;
-      top: -40%;
-      right: -20%;
-      width: 55%;
-      height: 120%;
-      background: radial-gradient(ellipse, var(--green-glow) 0%, transparent 70%);
-      pointer-events: none;
-    }
-
-    .hero-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 3rem;
-      align-items: center;
-      position: relative;
-    }
-
-    @media (min-width: 900px) {
-      .hero-grid { grid-template-columns: 1.05fr 0.95fr; }
-    }
-
-    .eyebrow {
-      display: inline-block;
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      font-weight: 500;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--green);
-      margin-bottom: 1rem;
-      padding: 0.3rem 0.65rem;
-      border: 1px solid rgba(20, 176, 20, 0.35);
-      border-radius: 999px;
-      background: rgba(20, 176, 20, 0.06);
-    }
-
-    .hero h1 {
-      font-size: clamp(2rem, 5vw, 3.15rem);
-      font-weight: 700;
-      line-height: 1.12;
-      letter-spacing: -0.03em;
-      margin: 0 0 1.25rem;
-    }
-
-    .hero h1 em {
-      font-style: normal;
-      color: var(--green);
-    }
-
-    .hero-lead {
-      font-size: 1.125rem;
-      color: var(--muted);
-      max-width: 36rem;
-      margin: 0 0 2rem;
-    }
-
-    .hero-lead strong { color: var(--white); font-weight: 500; }
-
-    .hero-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      margin-bottom: 2rem;
-    }
-
-    .hero-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1.5rem;
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      color: var(--muted-dim);
-    }
-
-    .hero-meta span::before {
-      content: "// ";
-      color: var(--green-dim);
-    }
-
-    .hero-visual {
-      border: 1px solid var(--border);
-      border-radius: calc(var(--radius) + 4px);
-      overflow: hidden;
-      background: var(--surface);
-      box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.03),
-        0 24px 48px rgba(0, 0, 0, 0.5);
-    }
-
-    .hero-visual img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    .hero-visual-caption {
-      padding: 0.65rem 1rem;
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      color: var(--muted-dim);
-      border-top: 1px solid var(--border);
-      background: var(--surface-raised);
-    }
-
-    section {
-      padding: 4rem 0;
-      border-top: 1px solid var(--border);
-    }
-
-    .section-label {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      font-weight: 500;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--green);
-      margin: 0 0 0.5rem;
-    }
-
-    .section-title {
-      font-size: clamp(1.5rem, 3vw, 2rem);
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin: 0 0 0.75rem;
-    }
-
-    .section-desc {
-      color: var(--muted);
-      max-width: 40rem;
-      margin: 0 0 2.5rem;
-    }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-      gap: 1rem;
-    }
-
-    .feature {
-      padding: 1.35rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      transition: border-color 0.15s;
-    }
-
-    .feature:hover { border-color: rgba(20, 176, 20, 0.35); }
-
-    .feature-icon {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      color: var(--green);
-      margin-bottom: 0.75rem;
-    }
-
-    .feature h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin: 0 0 0.45rem;
-    }
-
-    .feature p {
-      font-size: 0.9rem;
-      color: var(--muted);
-      margin: 0;
-      line-height: 1.55;
-    }
-
-    .arch-flow {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: stretch;
-      gap: 0.5rem;
-      font-family: var(--font-mono);
-      font-size: 0.8125rem;
-      margin-bottom: 2rem;
-    }
-
-    .arch-node {
-      flex: 1 1 8rem;
-      padding: 1rem 1.15rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-
-    .arch-node strong {
-      display: block;
-      color: var(--green);
-      margin-bottom: 0.25rem;
-      font-size: 0.75rem;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
-
-    .arch-arrow {
-      display: flex;
-      align-items: center;
-      color: var(--muted-dim);
-      font-size: 1.1rem;
-      padding: 0 0.15rem;
-    }
-
-    @media (max-width: 640px) {
-      .arch-arrow { display: none; }
-    }
-
-    .stack {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-
-    .pill {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      padding: 0.35rem 0.75rem;
-      border-radius: 999px;
-      border: 1px solid var(--border-bright);
-      background: var(--surface-raised);
-      color: var(--muted);
-    }
-
-    .pill strong { color: var(--white); font-weight: 500; }
-
-    .steps {
-      counter-reset: step;
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: grid;
-      gap: 1rem;
-    }
-
-    .steps li {
-      counter-increment: step;
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 1rem;
-      padding: 1.25rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-    }
-
-    .steps li::before {
-      content: counter(step, decimal-leading-zero);
-      font-family: var(--font-mono);
-      font-size: 0.875rem;
-      font-weight: 600;
-      color: var(--green);
-      line-height: 1;
-      padding-top: 0.15rem;
-    }
-
-    .steps h3 {
-      font-size: 0.95rem;
-      font-weight: 600;
-      margin: 0 0 0.35rem;
-    }
-
-    .steps p {
-      font-size: 0.875rem;
-      color: var(--muted);
-      margin: 0 0 0.65rem;
-    }
-
-    pre {
-      margin: 0;
-      padding: 0.75rem 1rem;
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      line-height: 1.5;
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: calc(var(--radius) - 2px);
-      overflow-x: auto;
-      color: #c8ffc8;
-    }
-
-    code { font-family: var(--font-mono); font-size: 0.85em; }
-
-    .docs-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-      gap: 0.75rem;
-    }
-
-    .doc-link {
-      display: block;
-      padding: 1rem 1.15rem;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--surface);
-      color: inherit;
-      transition: border-color 0.15s, background 0.15s;
-    }
-
-    .doc-link:hover {
-      border-color: rgba(20, 176, 20, 0.4);
-      background: var(--surface-raised);
-      color: inherit;
-    }
-
-    .doc-link strong {
-      display: block;
-      font-size: 0.9rem;
-      margin-bottom: 0.25rem;
-    }
-
-    .doc-link span {
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    .callout {
-      margin-top: 2rem;
-      padding: 1.15rem 1.25rem;
-      border: 1px solid rgba(20, 176, 20, 0.3);
-      border-radius: var(--radius);
-      background: rgba(20, 176, 20, 0.05);
-      font-size: 0.9rem;
-      color: var(--muted);
-    }
-
-    .callout strong { color: var(--white); }
-
-    .install-mac {
-      padding: 1.35rem 1.25rem;
-      margin-bottom: 2.5rem;
-      border: 1px solid rgba(20, 176, 20, 0.45);
-      border-radius: var(--radius);
-      background: linear-gradient(135deg, rgba(20, 176, 20, 0.08) 0%, var(--surface) 100%);
-    }
-
-    .install-mac .install-path-label {
-      font-family: var(--font-mono);
-      font-size: 0.7rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--green);
-      margin: 0 0 0.5rem;
-    }
-
-    .install-mac h3 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin: 0 0 0.5rem;
-    }
-
-    .install-mac p {
-      font-size: 0.875rem;
-      color: var(--muted);
-      margin: 0 0 0.85rem;
-    }
-
-    .install-mac strong {
-      color: var(--white);
-      font-weight: 500;
-    }
-
-    .install-mac .install-note {
-      margin: 0.85rem 0 0;
-      font-size: 0.8125rem;
-    }
-
-    .start-divider-title {
-      font-size: 1.15rem;
-      font-weight: 600;
-      margin: 0 0 0.5rem;
-      padding-top: 0.5rem;
-      border-top: 1px solid var(--border);
-    }
-
-    footer {
-      padding: 2.5rem 0;
-      border-top: 1px solid var(--border);
-      font-size: 0.875rem;
-      color: var(--muted-dim);
-    }
-
-    .footer-inner {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1.25rem;
-    }
-
-    .footer-links a { color: var(--muted); font-size: 0.8125rem; }
-    .footer-links a:hover { color: var(--green); }
-
-    @media (max-width: 600px) {
-      nav .nav-docs { display: none; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="wrap header-inner">
-      <a class="logo-link" href="#" aria-label="Aider Vision home">
-        <img src="aider-vision-black.svg" alt="Aider Vision" width="231" height="87">
-      </a>
-      <nav aria-label="Primary">
-        <a class="nav-docs" href="#install-mac">Install</a>
-        <a class="nav-docs" href="#features">Features</a>
-        <a class="nav-docs" href="#architecture">Architecture</a>
-        <a class="nav-docs" href="#start">Get started</a>
-        <a class="nav-docs" href="#docs">Docs</a>
-        <a class="btn btn-ghost" href="https://github.com/digitaldefiance/aider-vision" target="_blank" rel="noopener noreferrer">GitHub</a>
-      </nav>
-    </div>
-  </header>
-
-  <main>
-    <section class="hero">
-      <div class="wrap hero-grid">
-        <div>
-          <span class="eyebrow">Native · Lean · Autonomous</span>
-          <h1>AI-assisted coding<br>without the <em>IDE baggage</em></h1>
-          <p class="hero-lead">
-            <strong>Aider Vision</strong> is a lightweight, cross-platform desktop app built with
-            <strong>Tauri</strong> and <strong>React</strong>. It gives you Cursor-like AI coding
-            capabilities through a clean, focused workspace — powered by
-            <a href="https://github.com/Digital-Defiance/aider-vision-core" target="_blank" rel="noopener noreferrer">Aider Vision Core</a>,
-            a headless evolution of <a href="https://github.com/paul-gauthier/aider" target="_blank" rel="noopener noreferrer">Aider</a>.
-          </p>
-          <div class="hero-actions">
-            <a class="btn btn-primary" href="#install-mac">Install for macOS</a>
-            <a class="btn btn-ghost" href="#start-source">Build from source</a>
-            <a class="btn btn-ghost" href="https://github.com/digitaldefiance/aider-vision" target="_blank" rel="noopener noreferrer">GitHub →</a>
-          </div>
-          <div class="hero-meta">
-            <span>Homebrew cask</span>
-            <span>Signed &amp; notarized DMG</span>
-            <span>Tauri v2 + Rust</span>
-            <span>React + TypeScript</span>
-            <span>macOS · Linux · Windows</span>
-            <span>MIT License</span>
-          </div>
-        </div>
-        <figure class="hero-visual">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Aider Vision — a lightweight, cross-platform desktop app for AI-assisted coding. Native Tauri + React, powered by Aider Vision Core."
+    />
+    <link rel="canonical" href="https://aider-vision.digitaldefiance.org/" />
+    <meta
+      property="og:title"
+      content="Aider Vision — Native AI coding, without the IDE baggage"
+    />
+    <meta
+      property="og:description"
+      content="Cursor-like AI coding in a lightweight Tauri desktop app. Powered by Aider Vision Core."
+    />
+    <meta
+      property="og:url"
+      content="https://aider-vision.digitaldefiance.org/"
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:image"
+      content="https://github.com/user-attachments/assets/40053e79-dae2-4fda-ad29-79e9115b22af"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>Aider Vision — Native AI coding, without the IDE baggage</title>
+    <link rel="icon" href="aider-vision-black.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #050505;
+        --surface: #0e0e0e;
+        --surface-raised: #161616;
+        --border: #222;
+        --border-bright: #2a2a2a;
+        --green: #14b014;
+        --green-dim: #0f8a0f;
+        --green-glow: rgba(20, 176, 20, 0.18);
+        --white: #f4f4f4;
+        --muted: #8a8a8a;
+        --muted-dim: #5c5c5c;
+        --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+        --max-width: 72rem;
+        --radius: 10px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        color-scheme: dark;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--font-sans);
+        font-size: 1.0625rem;
+        line-height: 1.65;
+        color: var(--white);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--green);
+        text-decoration: none;
+        transition: color 0.15s ease;
+      }
+
+      a:hover {
+        color: #2ed42e;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 9999;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.03) 2px,
+          rgba(0, 0, 0, 0.03) 4px
+        );
+      }
+
+      .wrap {
+        width: min(100% - 2rem, var(--max-width));
+        margin-inline: auto;
+      }
+
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        border-bottom: 1px solid var(--border);
+        background: rgba(5, 5, 5, 0.85);
+        backdrop-filter: blur(12px);
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.85rem 0;
+      }
+
+      .logo-link {
+        display: flex;
+        align-items: center;
+        color: inherit;
+      }
+
+      .logo-link:hover {
+        color: inherit;
+      }
+
+      .logo-link img {
+        height: 2.25rem;
+        width: auto;
+        display: block;
+      }
+
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+        flex-wrap: wrap;
+      }
+
+      nav a {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--muted);
+      }
+
+      nav a:hover {
+        color: var(--white);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.55rem 1.1rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        border-radius: var(--radius);
+        border: 1px solid transparent;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+        white-space: nowrap;
+      }
+
+      .btn-primary {
+        background: var(--green);
+        color: #000;
+        border-color: var(--green);
+      }
+
+      .btn-primary:hover {
+        background: #1ad41a;
+        color: #000;
+        box-shadow: 0 0 24px var(--green-glow);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: var(--white);
+        border-color: var(--border-bright);
+      }
+
+      .btn-ghost:hover {
+        border-color: var(--green);
+        color: var(--green);
+      }
+
+      .hero {
+        padding: 4.5rem 0 3.5rem;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        top: -40%;
+        right: -20%;
+        width: 55%;
+        height: 120%;
+        background: radial-gradient(
+          ellipse,
+          var(--green-glow) 0%,
+          transparent 70%
+        );
+        pointer-events: none;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 3rem;
+        align-items: center;
+        position: relative;
+      }
+
+      @media (min-width: 900px) {
+        .hero-grid {
+          grid-template-columns: 1.05fr 0.95fr;
+        }
+      }
+
+      .eyebrow {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--green);
+        margin-bottom: 1rem;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid rgba(20, 176, 20, 0.35);
+        border-radius: 999px;
+        background: rgba(20, 176, 20, 0.06);
+      }
+
+      .hero h1 {
+        font-size: clamp(2rem, 5vw, 3.15rem);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.03em;
+        margin: 0 0 1.25rem;
+      }
+
+      .hero h1 em {
+        font-style: normal;
+        color: var(--green);
+      }
+
+      .hero-lead {
+        font-size: 1.125rem;
+        color: var(--muted);
+        max-width: 36rem;
+        margin: 0 0 2rem;
+      }
+
+      .hero-lead strong {
+        color: var(--white);
+        font-weight: 500;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        color: var(--muted-dim);
+      }
+
+      .hero-meta span::before {
+        content: "// ";
+        color: var(--green-dim);
+      }
+
+      .hero-visual {
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) + 4px);
+        overflow: hidden;
+        background: var(--surface);
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.03),
+          0 24px 48px rgba(0, 0, 0, 0.5);
+      }
+
+      .hero-visual img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .hero-visual-caption {
+        padding: 0.65rem 1rem;
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--muted-dim);
+        border-top: 1px solid var(--border);
+        background: var(--surface-raised);
+      }
+
+      section {
+        padding: 4rem 0;
+        border-top: 1px solid var(--border);
+      }
+
+      .section-label {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--green);
+        margin: 0 0 0.5rem;
+      }
+
+      .section-title {
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.75rem;
+      }
+
+      .section-desc {
+        color: var(--muted);
+        max-width: 40rem;
+        margin: 0 0 2.5rem;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+        gap: 1rem;
+      }
+
+      .feature {
+        padding: 1.35rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        transition: border-color 0.15s;
+      }
+
+      .feature:hover {
+        border-color: rgba(20, 176, 20, 0.35);
+      }
+
+      .feature-icon {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--green);
+        margin-bottom: 0.75rem;
+      }
+
+      .feature h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 0.45rem;
+      }
+
+      .feature p {
+        font-size: 0.9rem;
+        color: var(--muted);
+        margin: 0;
+        line-height: 1.55;
+      }
+
+      .arch-flow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 0.5rem;
+        font-family: var(--font-mono);
+        font-size: 0.8125rem;
+        margin-bottom: 2rem;
+      }
+
+      .arch-node {
+        flex: 1 1 8rem;
+        padding: 1rem 1.15rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .arch-node strong {
+        display: block;
+        color: var(--green);
+        margin-bottom: 0.25rem;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .arch-arrow {
+        display: flex;
+        align-items: center;
+        color: var(--muted-dim);
+        font-size: 1.1rem;
+        padding: 0 0.15rem;
+      }
+
+      @media (max-width: 640px) {
+        .arch-arrow {
+          display: none;
+        }
+      }
+
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .pill {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        border: 1px solid var(--border-bright);
+        background: var(--surface-raised);
+        color: var(--muted);
+      }
+
+      .pill strong {
+        color: var(--white);
+        font-weight: 500;
+      }
+
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .steps li {
+        counter-increment: step;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+        padding: 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .steps li::before {
+        content: counter(step, decimal-leading-zero);
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--green);
+        line-height: 1;
+        padding-top: 0.15rem;
+      }
+
+      .steps h3 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 0 0 0.35rem;
+      }
+
+      .steps p {
+        font-size: 0.875rem;
+        color: var(--muted);
+        margin: 0 0 0.65rem;
+      }
+
+      pre {
+        margin: 0;
+        padding: 0.75rem 1rem;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        line-height: 1.5;
+        background: #000;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) - 2px);
+        overflow-x: auto;
+        color: #c8ffc8;
+      }
+
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.85em;
+      }
+
+      .docs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+        gap: 0.75rem;
+      }
+
+      .doc-link {
+        display: block;
+        padding: 1rem 1.15rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: inherit;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+      }
+
+      .doc-link:hover {
+        border-color: rgba(20, 176, 20, 0.4);
+        background: var(--surface-raised);
+        color: inherit;
+      }
+
+      .doc-link strong {
+        display: block;
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .doc-link span {
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      .callout {
+        margin-top: 2rem;
+        padding: 1.15rem 1.25rem;
+        border: 1px solid rgba(20, 176, 20, 0.3);
+        border-radius: var(--radius);
+        background: rgba(20, 176, 20, 0.05);
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      .callout strong {
+        color: var(--white);
+      }
+
+      .install-mac {
+        padding: 1.35rem 1.25rem;
+        margin-bottom: 2.5rem;
+        border: 1px solid rgba(20, 176, 20, 0.45);
+        border-radius: var(--radius);
+        background: linear-gradient(
+          135deg,
+          rgba(20, 176, 20, 0.08) 0%,
+          var(--surface) 100%
+        );
+      }
+
+      .install-mac .install-path-label {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--green);
+        margin: 0 0 0.5rem;
+      }
+
+      .install-mac h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0 0 0.5rem;
+      }
+
+      .install-mac p {
+        font-size: 0.875rem;
+        color: var(--muted);
+        margin: 0 0 0.85rem;
+      }
+
+      .install-mac strong {
+        color: var(--white);
+        font-weight: 500;
+      }
+
+      .install-mac .install-note {
+        margin: 0.85rem 0 0;
+        font-size: 0.8125rem;
+      }
+
+      .start-divider-title {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin: 0 0 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border);
+      }
+
+      footer {
+        padding: 2.5rem 0;
+        border-top: 1px solid var(--border);
+        font-size: 0.875rem;
+        color: var(--muted-dim);
+      }
+
+      .footer-inner {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.25rem;
+      }
+
+      .footer-links a {
+        color: var(--muted);
+        font-size: 0.8125rem;
+      }
+      .footer-links a:hover {
+        color: var(--green);
+      }
+
+      @media (max-width: 600px) {
+        nav .nav-docs {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap header-inner">
+        <a class="logo-link" href="#" aria-label="Aider Vision home">
           <img
-            src="https://github.com/user-attachments/assets/40053e79-dae2-4fda-ad29-79e9115b22af"
-            alt="Aider Vision application screenshot showing chat and terminal panels"
-            width="1277"
-            height="716"
-            loading="eager"
+            src="aider-vision-black.svg"
+            alt="Aider Vision"
+            width="231"
+            height="87"
+          />
+        </a>
+        <nav aria-label="Primary">
+          <a class="nav-docs" href="#install-mac">Install</a>
+          <a class="nav-docs" href="#features">Features</a>
+          <a class="nav-docs" href="#architecture">Architecture</a>
+          <a class="nav-docs" href="#start">Get started</a>
+          <a class="nav-docs" href="#docs">Docs</a>
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/digitaldefiance/aider-vision"
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub</a
           >
-          <figcaption class="hero-visual-caption">Chat, terminal, and settings in one native shell</figcaption>
-        </figure>
+        </nav>
       </div>
-    </section>
+    </header>
 
-    <section id="features">
-      <div class="wrap">
-        <p class="section-label">Features</p>
-        <h2 class="section-title">Built for developers who want speed, not bloat</h2>
-        <p class="section-desc">
-          No Electron shell. No VS Code fork. Aider Vision pairs a native Rust backend with a
-          minimal React front end and a headless AI engine you control.
-        </p>
-        <div class="features">
-          <article class="feature">
-            <div class="feature-icon">01</div>
-            <h3>Vision HTTP API</h3>
-            <p>All prompting flows through a structured HTTP API. React is the head; the core engine stays headless under <code>aider-vision-core/</code>.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon">02</div>
-            <h3>Real-time chat &amp; terminal</h3>
-            <p>Send prompts in a dedicated Chat tab and inspect raw engine output in a Technical Terminal for debugging.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon">03</div>
-            <h3>Process management</h3>
-            <p>Desktop spawns a local <code>aider-vision-core-serve</code> instance. Web mode uses the same API via Vite proxy or direct URL.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon">04</div>
-            <h3>Flexible configuration</h3>
-            <p>Adjust binary path, LLM model, extra CLI params, working directory, auto-approve limits, and worker mode from Settings.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon">05</div>
-            <h3>Core repo integration</h3>
-            <p>Link an <code>aider-vision-core</code> submodule or directory for advanced JSONL worker support and multi-repo workspaces.</p>
-          </article>
-          <article class="feature">
-            <div class="feature-icon">06</div>
-            <h3>Native performance</h3>
-            <p>Rust + Tauri v2 keeps memory and startup time low on macOS, Linux, and Windows — without sacrificing cross-platform parity.</p>
-          </article>
+    <main>
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div>
+            <span class="eyebrow">Native · Lean · Autonomous</span>
+            <h1>AI-assisted coding<br />without the <em>IDE baggage</em></h1>
+            <p class="hero-lead">
+              <strong>Aider Vision</strong> is a lightweight, cross-platform
+              desktop app built with <strong>Tauri</strong> and
+              <strong>React</strong>. It gives you Cursor-like AI coding
+              capabilities through a clean, focused workspace — powered by
+              <a
+                href="https://aider-vision-core.digitaldefiance.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Aider Vision Core</a
+              >, a headless evolution of
+              <a
+                href="https://github.com/paul-gauthier/aider"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Aider</a
+              >.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="#install-mac"
+                >Install for macOS</a
+              >
+              <a class="btn btn-ghost" href="#start-source"
+                >Build from source</a
+              >
+              <a
+                class="btn btn-ghost"
+                href="https://github.com/digitaldefiance/aider-vision"
+                target="_blank"
+                rel="noopener noreferrer"
+                >GitHub →</a
+              >
+            </div>
+            <div class="hero-meta">
+              <span>Homebrew cask</span>
+              <span>Signed &amp; notarized DMG</span>
+              <span>Tauri v2 + Rust</span>
+              <span>React + TypeScript</span>
+              <span>macOS · Linux · Windows</span>
+              <span>MIT License</span>
+            </div>
+          </div>
+          <figure class="hero-visual">
+            <img
+              src="https://github.com/user-attachments/assets/40053e79-dae2-4fda-ad29-79e9115b22af"
+              alt="Aider Vision application screenshot showing chat and terminal panels"
+              width="1277"
+              height="716"
+              loading="eager"
+            />
+            <figcaption class="hero-visual-caption">
+              Chat, terminal, and settings in one native shell
+            </figcaption>
+          </figure>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="architecture">
-      <div class="wrap">
-        <p class="section-label">Architecture</p>
-        <h2 class="section-title">Head and body, cleanly separated</h2>
-        <p class="section-desc">
-          Aider Vision <em>beheads</em> the old standalone Aider UX. Users never interact with the core CLI directly — every turn is API-driven.
-        </p>
-        <div class="arch-flow" role="img" aria-label="React UI connects to Vision HTTP API, which connects to Session engine, which streams events back to React">
-          <div class="arch-node"><strong>Head</strong>React UI<br><code>src/</code></div>
-          <div class="arch-arrow" aria-hidden="true">→</div>
-          <div class="arch-node"><strong>API</strong>Vision HTTP + SSE<br><code>/sessions</code></div>
-          <div class="arch-arrow" aria-hidden="true">→</div>
-          <div class="arch-node"><strong>Body</strong>Session engine<br><code>aider-vision-core/</code></div>
-          <div class="arch-arrow" aria-hidden="true">→</div>
-          <div class="arch-node"><strong>Events</strong>Stream back<br>to React</div>
-        </div>
-        <div class="stack">
-          <span class="pill"><strong>Backend</strong> Rust + Tauri v2</span>
-          <span class="pill"><strong>Frontend</strong> React + TypeScript + Vite</span>
-          <span class="pill"><strong>Styling</strong> MUI v6 + Emotion</span>
-          <span class="pill"><strong>Packages</strong> Yarn (PnP)</span>
-        </div>
-        <p class="callout">
-          <strong>Self-evolving by design.</strong> Aider Vision is built to help develop itself — dogfooding the same Vision API and chat workflow you use for your own projects.
-        </p>
-      </div>
-    </section>
-
-    <section id="start">
-      <div class="wrap">
-        <p class="section-label">Getting started</p>
-        <h2 class="section-title">Up and running in minutes</h2>
-
-        <div id="install-mac" class="install-mac">
-          <p class="install-path-label">macOS</p>
-          <h3>Homebrew — signed &amp; notarized DMG</h3>
-          <p>
-            The fastest way to install on macOS. The cask downloads a universal (Apple Silicon + Intel)
-            <strong>signed and notarized</strong> DMG — ready for Gatekeeper — and installs
-            <code>Aider Vision.app</code> to <code>/Applications/</code>.
+      <section id="features">
+        <div class="wrap">
+          <p class="section-label">Features</p>
+          <h2 class="section-title">
+            Built for developers who want speed, not bloat
+          </h2>
+          <p class="section-desc">
+            No Electron shell. No VS Code fork. Aider Vision pairs a native Rust
+            backend with a minimal React front end and a headless AI engine you
+            control.
           </p>
-          <pre><code>brew tap digital-defiance/tap
+          <div class="features">
+            <article class="feature">
+              <div class="feature-icon">01</div>
+              <h3>Vision HTTP API</h3>
+              <p>
+                All prompting flows through a structured HTTP API. React is the
+                head; the core engine stays headless under
+                <code>aider-vision-core/</code>.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-icon">02</div>
+              <h3>Real-time chat &amp; terminal</h3>
+              <p>
+                Send prompts in a dedicated Chat tab and inspect raw engine
+                output in a Technical Terminal for debugging.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-icon">03</div>
+              <h3>Process management</h3>
+              <p>
+                Desktop spawns a local
+                <code>aider-vision-core-serve</code> instance. Web mode uses the
+                same API via Vite proxy or direct URL.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-icon">04</div>
+              <h3>Flexible configuration</h3>
+              <p>
+                Adjust binary path, LLM model, extra CLI params, working
+                directory, auto-approve limits, and worker mode from Settings.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-icon">05</div>
+              <h3>Core repo integration</h3>
+              <p>
+                Link an <code>aider-vision-core</code> submodule or directory
+                for advanced JSONL worker support and multi-repo workspaces.
+              </p>
+            </article>
+            <article class="feature">
+              <div class="feature-icon">06</div>
+              <h3>Native performance</h3>
+              <p>
+                Rust + Tauri v2 keeps memory and startup time low on macOS,
+                Linux, and Windows — without sacrificing cross-platform parity.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture">
+        <div class="wrap">
+          <p class="section-label">Architecture</p>
+          <h2 class="section-title">Head and body, cleanly separated</h2>
+          <p class="section-desc">
+            Aider Vision <em>beheads</em> the old standalone Aider UX. Users
+            never interact with the core CLI directly — every turn is
+            API-driven.
+          </p>
+          <div
+            class="arch-flow"
+            role="img"
+            aria-label="React UI connects to Vision HTTP API, which connects to Session engine, which streams events back to React"
+          >
+            <div class="arch-node">
+              <strong>Head</strong>React UI<br /><code>src/</code>
+            </div>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <div class="arch-node">
+              <strong>API</strong>Vision HTTP + SSE<br /><code>/sessions</code>
+            </div>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <div class="arch-node">
+              <strong>Body</strong>Session engine<br /><code
+                >aider-vision-core/</code
+              >
+            </div>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <div class="arch-node">
+              <strong>Events</strong>Stream back<br />to React
+            </div>
+          </div>
+          <div class="stack">
+            <span class="pill"><strong>Backend</strong> Rust + Tauri v2</span>
+            <span class="pill"
+              ><strong>Frontend</strong> React + TypeScript + Vite</span
+            >
+            <span class="pill"><strong>Styling</strong> MUI v6 + Emotion</span>
+            <span class="pill"><strong>Packages</strong> Yarn (PnP)</span>
+          </div>
+          <p class="callout">
+            <strong>Self-evolving by design.</strong> Aider Vision is built to
+            help develop itself — dogfooding the same Vision API and chat
+            workflow you use for your own projects.
+          </p>
+        </div>
+      </section>
+
+      <section id="start">
+        <div class="wrap">
+          <p class="section-label">Getting started</p>
+          <h2 class="section-title">Up and running in minutes</h2>
+
+          <div id="install-mac" class="install-mac">
+            <p class="install-path-label">macOS</p>
+            <h3>Homebrew — signed &amp; notarized DMG</h3>
+            <p>
+              The fastest way to install on macOS. The cask downloads a
+              universal (Apple Silicon + Intel)
+              <strong>signed and notarized</strong> DMG — ready for Gatekeeper —
+              and installs <code>Aider Vision.app</code> to
+              <code>/Applications/</code>.
+            </p>
+            <pre><code>brew tap digital-defiance/tap
 brew install aider-vision</code></pre>
-          <p class="install-note">
-            Tap:
-            <a href="https://github.com/digital-defiance/homebrew-tap" target="_blank" rel="noopener noreferrer">digital-defiance/homebrew-tap</a>
+            <p class="install-note">
+              Tap:
+              <a
+                href="https://github.com/digital-defiance/homebrew-tap"
+                target="_blank"
+                rel="noopener noreferrer"
+                >digital-defiance/homebrew-tap</a
+              >
+            </p>
+          </div>
+
+          <h3 id="start-source" class="start-divider-title">
+            Build from source
+          </h3>
+          <p class="section-desc">
+            For development, Linux, Windows, or hacking on the app itself.
+            Requires Node.js 18+, Rust (stable), Yarn 3+, and the Aider CLI on
+            your PATH.
           </p>
-        </div>
-
-        <h3 id="start-source" class="start-divider-title">Build from source</h3>
-        <p class="section-desc">
-          For development, Linux, Windows, or hacking on the app itself. Requires Node.js 18+, Rust (stable), Yarn 3+, and the Aider CLI on your PATH.
-        </p>
-        <ol class="steps">
-          <li>
-            <div>
-              <h3>Clone the repository</h3>
-              <p>Fetch the superproject and enter the workspace.</p>
-              <pre><code>git clone https://github.com/digitaldefiance/aider-vision.git
+          <ol class="steps">
+            <li>
+              <div>
+                <h3>Clone the repository</h3>
+                <p>Fetch the superproject and enter the workspace.</p>
+                <pre><code>git clone https://github.com/digitaldefiance/aider-vision.git
 cd aider-vision</code></pre>
-            </div>
-          </li>
-          <li>
-            <div>
-              <h3>Install dependencies</h3>
-              <p>Yarn Plug'n'Play manages packages without a bloated <code>node_modules</code> tree.</p>
-              <pre><code>yarn install</code></pre>
-            </div>
-          </li>
-          <li>
-            <div>
-              <h3>Start development</h3>
-              <p>Launches the Tauri shell with hot reload for the React front end.</p>
-              <pre><code>yarn tauri dev</code></pre>
-            </div>
-          </li>
-          <li>
-            <div>
-              <h3>Build for production</h3>
-              <p>Package a native binary for your platform.</p>
-              <pre><code>yarn tauri build</code></pre>
-            </div>
-          </li>
-        </ol>
-      </div>
-    </section>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Install dependencies</h3>
+                <p>
+                  Yarn Plug'n'Play manages packages without a bloated
+                  <code>node_modules</code> tree.
+                </p>
+                <pre><code>yarn install</code></pre>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Start development</h3>
+                <p>
+                  Launches the Tauri shell with hot reload for the React front
+                  end.
+                </p>
+                <pre><code>yarn tauri dev</code></pre>
+              </div>
+            </li>
+            <li>
+              <div>
+                <h3>Build for production</h3>
+                <p>Package a native binary for your platform.</p>
+                <pre><code>yarn tauri build</code></pre>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
 
-    <section id="docs">
-      <div class="wrap">
-        <p class="section-label">Documentation</p>
-        <h2 class="section-title">Dive deeper</h2>
-        <p class="section-desc">Architecture notes, IPC contracts, development guides, and troubleshooting — all in the repo.</p>
-        <div class="docs-grid">
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noopener noreferrer">
-            <strong>Architecture</strong>
-            <span>Head/body split, API surface, multi-repo</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/IPC.md" target="_blank" rel="noopener noreferrer">
-            <strong>IPC &amp; events</strong>
-            <span>HTTP API and event stream shapes</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/DEVELOPMENT.md" target="_blank" rel="noopener noreferrer">
-            <strong>Development</strong>
-            <span>Local setup, workflows, conventions</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/USER_WORKFLOW.md" target="_blank" rel="noopener noreferrer">
-            <strong>User workflow</strong>
-            <span>How to use the app day to day</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/TROUBLESHOOTING.md" target="_blank" rel="noopener noreferrer">
-            <strong>Troubleshooting</strong>
-            <span>Common issues and fixes</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/BUILD_MACOS.md" target="_blank" rel="noopener noreferrer">
-            <strong>Build (macOS)</strong>
-            <span>Platform-specific build notes</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/ROADMAP.md" target="_blank" rel="noopener noreferrer">
-            <strong>Roadmap</strong>
-            <span>Active backlog and fix order</span>
-          </a>
-          <a class="doc-link" href="https://github.com/digitaldefiance/aider-vision/blob/main/README.md" target="_blank" rel="noopener noreferrer">
-            <strong>README</strong>
-            <span>Configuration reference on GitHub</span>
-          </a>
+      <section id="docs">
+        <div class="wrap">
+          <p class="section-label">Documentation</p>
+          <h2 class="section-title">Dive deeper</h2>
+          <p class="section-desc">
+            Architecture notes, IPC contracts, development guides, and
+            troubleshooting — all in the repo.
+          </p>
+          <div class="docs-grid">
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/ARCHITECTURE.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>Architecture</strong>
+              <span>Head/body split, API surface, multi-repo</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/IPC.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>IPC &amp; events</strong>
+              <span>HTTP API and event stream shapes</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/DEVELOPMENT.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>Development</strong>
+              <span>Local setup, workflows, conventions</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/USER_WORKFLOW.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>User workflow</strong>
+              <span>How to use the app day to day</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/TROUBLESHOOTING.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>Troubleshooting</strong>
+              <span>Common issues and fixes</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/BUILD_MACOS.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>Build (macOS)</strong>
+              <span>Platform-specific build notes</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/docs/ROADMAP.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>Roadmap</strong>
+              <span>Active backlog and fix order</span>
+            </a>
+            <a
+              class="doc-link"
+              href="https://github.com/digitaldefiance/aider-vision/blob/main/README.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <strong>README</strong>
+              <span>Configuration reference on GitHub</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap footer-inner">
+        <p>© 2026 Digital Defiance, Jessica Mulein · MIT License</p>
+        <div class="footer-links">
+          <a
+            href="https://github.com/digitaldefiance/aider-vision"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Repository</a
+          >
+          <a
+            href="https://aider-vision-core.digitaldefiance.org"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Vision Core</a
+          >
+          <a
+            href="https://github.com/paul-gauthier/aider"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Aider</a
+          >
         </div>
       </div>
-    </section>
-  </main>
-
-  <footer>
-    <div class="wrap footer-inner">
-      <p>© 2026 Digital Defiance, Jessica Mulein · MIT License</p>
-      <div class="footer-links">
-        <a href="https://github.com/digitaldefiance/aider-vision" target="_blank" rel="noopener noreferrer">Repository</a>
-        <a href="https://github.com/Digital-Defiance/aider-vision-core" target="_blank" rel="noopener noreferrer">Vision Core</a>
-        <a href="https://github.com/paul-gauthier/aider" target="_blank" rel="noopener noreferrer">Aider</a>
-      </div>
-    </div>
-  </footer>
-</body>
+    </footer>
+  </body>
 </html>

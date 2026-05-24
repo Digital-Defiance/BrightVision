@@ -65,7 +65,7 @@ Living backlog for chat UX, engine behavior, and longer-term product direction.
 
 | # | Status | Item |
 |---|--------|------|
-| 18 | Longer-term | In-app **TODO** system and **Kiro-like spec-driven development** — design: [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md) |
+| 18 | **Done** | Spec-driven tasks: Tasks tab, HTTP todos API, `active_todo_id` on messages, templates + checklist — [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md) |
 
 ---
 
@@ -81,7 +81,7 @@ Living backlog for chat UX, engine behavior, and longer-term product direction.
 
 ## Suggested fix order
 
-1. #18: implement per [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md) (design drafted)  
+1. Optional #18 v3 polish (see [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md))  
 
 ## Related docs
 

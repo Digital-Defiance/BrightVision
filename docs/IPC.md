@@ -39,6 +39,31 @@ POST /sessions/{session_id}/files/upload
 
 Response includes updated `files_in_chat` and `events` (tool_output / errors).
 
+### Workspace tasks (spec-driven)
+
+Todos live in `.aider-vision/todos.json` under the session workspace.
+
+```http
+GET    /sessions/{session_id}/todos
+POST   /sessions/{session_id}/todos          {"title", "spec?", "template?"}
+PATCH  /sessions/{session_id}/todos/{id}     partial update (incl. checklist)
+DELETE /sessions/{session_id}/todos/{id}
+PUT    /sessions/{session_id}/todos/active   {"activeId": "…" | null}
+```
+
+Send a message with task context:
+
+```http
+POST /sessions/{session_id}/messages
+{
+  "content": "Implement the login flow",
+  "active_todo_id": "<task-uuid>",
+  "inject_todo_spec": true
+}
+```
+
+The `done` event may include `active_todo_id`; edited files and commits are appended to that task’s `links`.
+
 Optional auth: set `AIDER_VISION_TOKEN` and send `Authorization: Bearer <token>`.
 
 ## Multi-repo workspaces (including nested submodules)

@@ -1,6 +1,8 @@
 # Spec-driven development & in-app TODOs (roadmap #18)
 
-Design sketch — not implemented. Goal: lightweight **Kiro-like** flow inside Aider Vision without cloning IDE patterns.
+**v1 shipped** in the desktop/web UI. This doc describes the model and future work.
+
+Goal: lightweight **Kiro-like** flow inside Aider Vision without cloning IDE patterns.
 
 ## Problems to solve
 
@@ -50,12 +52,26 @@ Optional: `POST /messages` field `active_todo_id` to attach turns.
 - Full formal verification, test generation pipelines, or external Kiro import.
 - Cloud sync of TODOs (local workspace only).
 
-## Suggested implementation order
+## v1 (shipped)
 
-1. File format + Tauri/React CRUD for `.aider-vision/todos.json`
-2. Chat “active TODO” chip + inject spec into first message of a turn
-3. Core command `/todo` mirror for headless parity
-4. Link `done.edited_files` and git commits to TODO `links` in UI
+1. `.aider-vision/todos.json` — Tauri `read_workspace_todos` / `write_workspace_todos`; browser uses `localStorage` keyed by workspace
+2. **Tasks** nav tab — `TodoPanel` editor, Start work / Mark done / Set active
+3. Chat — header chip for active task; spec prepended on first send after activation (`formatTodoContext`)
+4. Turn links — `done.edited_files` and `commit:…` appended to active task `links`
+5. Core — `/todo list|add|active|done` via `workspace_todos.py`
+
+## v2 (shipped)
+
+1. **HTTP API** — `GET/POST/PATCH/DELETE` todos and `PUT …/todos/active` on the session API ([IPC.md](./IPC.md))
+2. **`active_todo_id` + `inject_todo_spec`** on `POST /messages`; `done.active_todo_id` and server-side link capture
+3. **Templates** — `feature`, `bugfix`, `refactor` on create (UI + API)
+4. **Checklist** — per-task items in JSON and in injected spec context
+
+## Possible v3
+
+- HTTP sync without requiring an active session (workspace-scoped routes)
+- Auto-complete tasks from spec checklist when all items checked
+- Import/export tasks markdown
 
 ## Open questions
 
