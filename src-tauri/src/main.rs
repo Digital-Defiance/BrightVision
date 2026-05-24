@@ -1,9 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
-use tauri::{Emitter, State};
-use tokio::process::{Child, Command};
-use tokio::io::{BufReader, BufReadExt, AsyncWriteExt};
+use tauri::{Emitter, Manager, State};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Child;
+use tokio::sync::Mutex;
 
 struct AppState {
     child: Mutex<Option<Child>>,
@@ -19,12 +19,12 @@ async fn start_aider(
     working_dir: String,
     auto_approve_limit: i32,
 ) -> Result<(), String> {
-    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    let mut child_guard = state.child.lock().await.map_err(|e| e.to_string())?;
     if child_guard.is_some() {
         return Err("Aider is already running".into());
     }
 
-    let mut cmd = Command::new("sh");
+    let mut cmd = tokio::process::Command::new("sh");
     cmd.arg("-c");
     let mut cmd_str = format!(
         "LITELLM_EXTRA_PARAMS=\"{}\" {} --model {}",
@@ -50,7 +50,7 @@ async fn start_aider(
     drop(child_guard);
 
     let app_handle_clone = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let _ = app_handle_clone.emit("aider-output", line);
@@ -58,7 +58,7 @@ async fn start_aider(
     });
 
     let app_handle_clone = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             let _ = app_handle_clone.emit("aider-error", line);
@@ -70,18 +70,21 @@ async fn start_aider(
 
 #[tauri::command]
 async fn stop_aider(state: State<'_, AppState>) -> Result<(), String> {
-    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
-    if let Some(mut child) = child_guard.take() {
-        child.kill().await.map_err(|e| e.to_string())?;
+    let mut child = {
+        let mut guard = state.child.lock().await.map_err(|e| e.to_string())?;
+        guard.take()
+    };
+    if let Some(mut c) = child {
+        c.kill().await.map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
 #[tauri::command]
 async fn send_to_aider(state: State<'_, AppState>, input: String) -> Result<(), String> {
-    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
-    if let Some(child) = child_guard.as_mut() {
-        let mut stdin = child.stdin.as_mut().ok_or("Stdin not available")?;
+    let mut guard = state.child.lock().await.map_err(|e| e.to_string())?;
+    if let Some(child) = guard.as_mut() {
+        let stdin = child.stdin.as_mut().ok_or("Stdin not available")?;
         stdin.write_all(format!("{}\n", input).as_bytes()).await.map_err(|e| e.to_string())?;
     } else {
         return Err("Aider is not running".into());
