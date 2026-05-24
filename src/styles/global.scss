@@ -1,0 +1,61 @@
+@use 'variables' as *;
+@use 'brand';
+
+// Glass TTY VT220 — src/assets/fonts/Glass_TTY_VT220.woff2 (see BRAND_FONT_FILE in brand.ts)
+$brand-font-url: '../assets/fonts/Glass_TTY_VT220.woff2';
+
+@font-face {
+  font-family: 'Glass TTY VT220';
+  src: url($brand-font-url) format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Glass_TTY_VT220';
+  src: url($brand-font-url) format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+// Global layout & polish — component styling stays on MUI (theme + sx).
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: $vision-font-sans;
+  background-color: $vision-bg-default;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// Monospace regions outside MUI TextField slotProps
+.vision-mono {
+  font-family: $vision-font-mono;
+}
+
+// Subtle scrollbars (dark shell)
+* {
+  scrollbar-width: thin;
+  scrollbar-color: $vision-divider transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: $vision-divider;
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: lighten($vision-divider, 8%);
+}

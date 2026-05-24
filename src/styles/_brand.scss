@@ -1,0 +1,29 @@
+// Brand wordmark — requires Glass TTY VT220 in src/assets/fonts/ (see global.scss @font-face).
+
+.vision-brand-logo {
+  display: block;
+  line-height: 0;
+
+  svg {
+    display: block;
+    height: 100%;
+    width: auto;
+    max-width: 100%;
+  }
+
+  &--header {
+    height: 28px;
+    max-width: 240px;
+  }
+
+  &--rail {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 8px;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}

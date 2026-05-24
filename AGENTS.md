@@ -6,7 +6,7 @@ You are the lead architect and autonomous developer for **Aider Vision**, a cros
 ## 🛠 Technical Constraints
 - **Backend**: Tauri v2 (Rust). Leverage native OS APIs for file watching, process spawning, git integration, and system tray management.
 - **Frontend**: React 18 + TypeScript + Vite. Keep the bundle small. Use functional components and hooks.
-- **Styling**: Tailwind CSS. Maintain a consistent, modern dark-mode-first design system.
+- **Styling**: MUI v6 + Emotion (`src/theme.ts`, `sx`, `styled()`). Optional global SCSS in `src/styles/` (Vite + `sass`) for resets, scrollbars, and non-MUI markup — do not style MUI components primarily via SCSS classes.
 - **State Management**: React Context + `useReducer` or Zustand (if complexity grows). Avoid heavy global state libraries unless necessary.
 - **Dependencies**: Strictly open-source/permissive licenses. Audit every new dependency for bloat and security.
 
@@ -16,8 +16,16 @@ You are the lead architect and autonomous developer for **Aider Vision**, a cros
 - **Accessibility**: Ensure keyboard navigation, proper contrast ratios, and semantic HTML.
 - **Cross-Platform Parity**: macOS (Apple Silicon) and Ubuntu Linux are primary targets. Abstract OS-specific calls in Rust. Use platform-aware UI elements where appropriate.
 
+## 🔌 Core integration (beheaded)
+
+- **Body** `aider-vision-core/` — translocated engine; no user-facing CLI. All turns via **Vision HTTP API**.
+- **Head** `src/` — React only; use `createVisionApiSession()` / `CoreHttpClient`. See `docs/ARCHITECTURE.md`, `docs/IPC.md`.
+- **Desktop**: Tauri `start_core_api` spawns local serve; React still uses HTTP.
+- **Web**: `aider-vision-core-serve` or Vite proxy `/api/core` → `:8741`.
+- **Workspace**: Git superproject root; nested submodules handled in core `RepoSet`.
+
 ## 🗺 Evolution Roadmap
-1. **Process & Terminal Integration**: Rust backend spawns `aider` with configurable args. Stream stdout/stderr to React in real-time. Support kill/restart.
+1. **Process & Terminal Integration**: Rust backend spawns JSONL worker or CLI. Stream structured events to React. Support kill/restart.
 2. **LLM Chat Interface**: Parse aider's output or intercept LLM tokens for a clean chat UI. Support markdown rendering, code highlighting, and copy-to-clipboard.
 3. **Git Visualization**: Native Rust git bindings to show diffs, commit history, and branch status. Auto-stage/commit AI-generated changes.
 4. **File System Watcher**: Track project files, highlight modified/added/deleted files, and provide quick navigation.

@@ -1,11 +1,11 @@
 # Aider Vision
 
-A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider](https://github.com/paul-gauthier/aider) AI coding assistant.
+A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider Vision Core](https://github.com/Digital-Defiance/aider-vision-core) AI coding assistant which is a headless version of [Aider](https://github.com/paul-gauthier/aider) with some improvements.
 
 ## 🚀 Features
 
-- **Process Management**: Start, stop, and monitor the Aider CLI or JSONL worker process directly from the UI.
-- **Flexible Worker Modes**: Automatically detect and switch between `jsonl` (Session API), `cli`, or `auto` fallback modes.
+- **Vision API**: All prompting goes through the HTTP API (React is the head; core is headless under `aider-vision-core/`).
+- **Process Management**: Desktop spawns local `aider-vision-core-serve`; web uses the same API via Vite proxy or direct URL.
 - **Real-time Interaction**: Send prompts and view responses in a dedicated Chat tab, alongside a Technical Terminal for debugging.
 - **Customizable Configuration**: Easily adjust the binary path, LLM model, extra CLI parameters, working directory, and auto-approve limits.
 - **Core Repository Integration**: Seamlessly link to an `aider-vision-core` submodule or directory for advanced JSONL worker support.
@@ -15,7 +15,7 @@ A lightweight, cross-platform desktop application built with **Tauri** and **Rea
 
 - **Backend**: Rust + Tauri v2
 - **Frontend**: React + TypeScript + Vite
-- **Styling**: Tailwind CSS
+- **Styling**: MUI v6 + Emotion (`src/theme.ts`); global SCSS in `src/styles/`
 - **Package Manager**: Yarn (Plug'n'Play)
 
 ## 📦 Getting Started

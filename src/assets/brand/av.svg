@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 103 86.57">
+  <defs>
+    <style>
+      .cls-1 {
+        font-family: 'Glass_TTY_VT220', 'Glass TTY VT220';
+        font-size: 60px;
+        isolation: isolate;
+      }
+
+      .cls-2 {
+        fill: #14b014;
+      }
+
+      .cls-3 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <text class="cls-1" transform="translate(21.48 64.26)"><tspan class="cls-2" x="0" y="0">a</tspan><tspan class="cls-3" x="30" y="0">v</tspan></text>
+</svg>

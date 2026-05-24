@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 231 86.57">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #14b014;
+        isolation: isolate;
+      }
+
+      .cls-1, .cls-2 {
+        font-family: 'Glass_TTY_VT220', 'Glass TTY VT220';
+        font-size: 60px;
+      }
+
+      .cls-2 {
+        fill: #fff;
+      }
+    </style>
+  </defs>
+  <text class="cls-2" transform="translate(32.01 74.79)"><tspan x="0" y="0">vision</tspan></text>
+  <text class="cls-1" transform="translate(18.99 53.79)"><tspan x="0" y="0">aider</tspan></text>
+</svg>

@@ -12,6 +12,13 @@ export default defineConfig(async () => ({
     strictPort: true,
     host: host || false,
     port: 1420,
+    proxy: {
+      "/api/core": {
+        target: "http://127.0.0.1:8741",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/core/, ""),
+      },
+    },
     hmr: host
       ? {
           protocol: "ws",

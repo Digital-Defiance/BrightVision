@@ -1,3 +1,5 @@
+activate.sh
+
 # Dependencies
 node_modules/
 src-tauri/target/
@@ -27,3 +29,7 @@ Thumbs.db
 
 # Aider
 .aider*
+
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc

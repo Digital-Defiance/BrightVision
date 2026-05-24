@@ -1,0 +1,94 @@
+@use '../../styles/variables' as *;
+
+.vision-activity {
+  flex-shrink: 0;
+  padding: 0 20px 10px;
+  border-bottom: 1px solid $vision-divider;
+
+  &__track {
+    position: relative;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba($vision-divider, 0.6);
+    overflow: hidden;
+  }
+
+  &__fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, $vision-accent-violet, $vision-accent-cyan);
+    transition: width 0.35s ease-out;
+
+    &--flow {
+      width: 42% !important;
+      animation: vision-activity-flow 1.35s ease-in-out infinite;
+    }
+  }
+
+  &__glow {
+    position: absolute;
+    inset: -6px 0;
+    background: radial-gradient(
+      ellipse 80% 120% at 50% 50%,
+      rgba($vision-accent-cyan, 0.12),
+      transparent 70%
+    );
+    pointer-events: none;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 6px;
+    min-height: 18px;
+  }
+
+  &__label {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: $vision-accent-cyan;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+
+  &__detail {
+    color: rgba(#e2e8f0, 0.55);
+    font-size: 0.7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(520px, 55vw);
+  }
+
+  &--error {
+    .vision-activity__fill {
+      background: linear-gradient(90deg, #f59e0b, #ef4444);
+      width: 100% !important;
+      animation: none;
+    }
+    .vision-activity__label {
+      color: #fbbf24;
+    }
+  }
+
+  &--confirm .vision-activity__fill {
+    background: linear-gradient(90deg, $vision-accent-amber, $vision-accent-violet);
+  }
+
+  &--tool .vision-activity__fill--flow {
+    animation-duration: 0.95s;
+  }
+}
+
+@keyframes vision-activity-flow {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}

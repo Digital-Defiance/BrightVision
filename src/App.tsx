@@ -1,116 +1,315 @@
-import { useState, useEffect, useRef } from 'react'
-import { Terminal, Settings, GitBranch, MessageSquare, Save, RotateCcw, Play, Square, Send } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
+import ChatIcon from '@mui/icons-material/Chat'
+import GitHubIcon from '@mui/icons-material/GitHub'
+import SettingsIcon from '@mui/icons-material/Settings'
+import TerminalIcon from '@mui/icons-material/Terminal'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import StopIcon from '@mui/icons-material/Stop'
+import { Alert, Box, Button, Chip, Container, Paper, Snackbar, Stack, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { DISPLAY_CORE, ErrorSource, prefixForTechnicalLog, prefixForUserFacing } from './brand'
+import { AppChrome } from './components/layout/AppChrome'
+import { DEFAULT_CONFIG, defaultCoreApiUrl, type AiderConfig } from './ipc/config'
+import { type CoreEventBase } from './ipc/events'
+import { isTauriRuntime } from './ipc/isTauri'
+import { useAiderSession } from './hooks/useAiderSession'
+import { useCommandCatalog } from './hooks/useCommandCatalog'
+import { useGitStatus } from './hooks/useGitStatus'
+import { useSessionActivity } from './hooks/useSessionActivity'
+import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
+import { GitPanel } from './components/GitPanel'
+import { WelcomePanel } from './components/onboarding/WelcomePanel'
+import { SettingsPanel } from './components/settings/SettingsPanel'
+import { useProcess } from './progress/processStore'
 
-interface AiderConfig {
-  binaryPath: string
-  model: string
-  extraParams: string
-  workingDir: string
-  autoApproveLimit: number
-}
+const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
-interface ChatMessage {
-  id: number
-  role: 'user' | 'assistant' | 'system'
-  content: string
-}
+type TabId = 'chat' | 'terminal' | 'git' | 'settings'
 
-interface ToolEvent {
-  id: number
-  type: 'tool_call' | 'tool_result'
-  name?: string
-  input?: string
-  output?: string
+function migrateConfig(raw: Partial<AiderConfig> & Record<string, unknown>): AiderConfig {
+  const merged: AiderConfig = { ...DEFAULT_CONFIG, ...raw }
+  if (raw.coreRepoPath && typeof raw.coreRepoPath === 'string') {
+    merged.coreEnginePath = raw.coreRepoPath
+  }
+  if (!Array.isArray(merged.contextFiles)) {
+    merged.contextFiles = []
+  }
+  if (!merged.coreApiUrl || merged.coreApiUrl === DEFAULT_CONFIG.coreApiUrl) {
+    if (!isTauriRuntime()) merged.coreApiUrl = defaultCoreApiUrl()
+  }
+  const wd = merged.workingDir.replace(/\\/g, '/')
+  if (wd.endsWith('/src-tauri') || wd.endsWith('src-tauri')) {
+    merged.workingDir = wd.replace(/\/?src-tauri\/?$/, '') || '.'
+  }
+  return merged
 }
 
 interface TerminalLine {
   id: number
   text: string
   type: 'stdout' | 'stderr'
+  source?: ErrorSource
+  channel?: 'user' | 'technical'
 }
 
-const DEFAULT_CONFIG: AiderConfig = {
-  binaryPath: 'aider',
-  model: 'ollama_chat/qwen3.6:27b-q4_K_M',
-  extraParams: '{"think": false}',
-  workingDir: '.',
-  autoApproveLimit: 0
-}
+const NAV: { id: TabId; label: string; icon: ReactNode }[] = [
+  { id: 'chat', label: 'Chat', icon: <ChatIcon /> },
+  { id: 'terminal', label: 'Terminal', icon: <TerminalIcon /> },
+  { id: 'git', label: 'Git', icon: <GitHubIcon /> },
+  { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
+]
 
 function App() {
-  const [activeTab, setActiveTab] = useState('chat')
+  const [activeTab, setActiveTab] = useState<TabId>('chat')
   const [config, setConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
-  const [isRunning, setIsRunning] = useState(false)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([])
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
   const [inputValue, setInputValue] = useState('')
   const [remainingAutoApproves, setRemainingAutoApproves] = useState(0)
   const [statusMessage, setStatusMessage] = useState('')
+  const [snackbar, setSnackbar] = useState<{ message: string; severity: 'error' | 'info' } | null>(
+    null
+  )
+  const [showWelcome, setShowWelcome] = useState(
+    () => localStorage.getItem(WELCOME_DISMISSED_KEY) !== '1'
+  )
+  const [engineInstallPath, setEngineInstallPath] = useState<string | undefined>()
+  const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const terminalEndRef = useRef<HTMLDivElement>(null)
-  const [unlistenChat, setUnlistenChat] = useState<UnlistenFn | null>(null)
-  const [unlistenTool, setUnlistenTool] = useState<UnlistenFn | null>(null)
-  const [unlistenStatus, setUnlistenStatus] = useState<UnlistenFn | null>(null)
-  const [unlistenOutput, setUnlistenOutput] = useState<UnlistenFn | null>(null)
-  const [unlistenError, setUnlistenError] = useState<UnlistenFn | null>(null)
+  const streamingAssistantId = useRef<number | null>(null)
+  const unlistenersRef = useRef<UnlistenFn[]>([])
 
   useEffect(() => {
     const stored = localStorage.getItem('aider-vision-config')
+    let merged = DEFAULT_CONFIG
     if (stored) {
       try {
-        const parsed = JSON.parse(stored)
-        setConfig(parsed)
-        setSavedConfig(parsed)
+        const parsed = JSON.parse(stored) as Partial<AiderConfig> & Record<string, unknown>
+        merged = migrateConfig(parsed)
       } catch (e) {
         console.error('Failed to parse stored config', e)
       }
     }
+    const apply = (cfg: AiderConfig) => {
+      setConfig(cfg)
+      setSavedConfig(cfg)
+    }
+    if (isTauriRuntime()) {
+      invoke<string>('detect_workspace', { hint: merged.workingDir || null })
+        .then((dir) => {
+          const next = { ...merged, workingDir: dir }
+          if (dir !== merged.workingDir) {
+            setSavedConfig(next)
+            localStorage.setItem('aider-vision-config', JSON.stringify(next))
+          }
+          apply(next)
+        })
+        .catch(() => apply(merged))
+    } else {
+      apply(merged)
+    }
   }, [])
 
   useEffect(() => {
-    const setupListeners = async () => {
-      const listenChat = await listen<{ role: string; content: string }>('aider-chat', (event) => {
-        setChatMessages(prev => [...prev, {
-          id: Date.now(),
-          role: event.payload.role as 'user' | 'assistant' | 'system',
-          content: event.payload.content
-        }])
-      })
-      setUnlistenChat(() => listenChat)
+    if (!isTauriRuntime()) return
+    invoke<string>('engine_install_path', { coreEnginePath: savedConfig.coreEnginePath })
+      .then(setEngineInstallPath)
+      .catch(() => setEngineInstallPath(undefined))
+  }, [savedConfig.coreEnginePath])
 
-      const listenTool = await listen<any>('aider-tool', (event) => {
-        setToolEvents(prev => [...prev, {
-          id: Date.now(),
-          type: event.payload.type,
-          name: event.payload.payload?.name,
-          input: event.payload.payload?.input,
-          output: event.payload.payload?.output
-        }])
-      })
-      setUnlistenTool(() => listenTool)
-
-      const listenStatus = await listen<string>('aider-status', (event) => {
-        setStatusMessage(event.payload)
-        setTerminalLines(prev => [...prev, { id: Date.now(), text: `[STATUS] ${event.payload}`, type: 'stdout' }])
-      })
-      setUnlistenStatus(() => listenStatus)
-
-      const listenOutput = await listen<string>('aider-output', (event) => {
-        setTerminalLines(prev => [...prev, { id: Date.now(), text: event.payload, type: 'stdout' }])
-      })
-      setUnlistenOutput(() => listenOutput)
-
-      const listenError = await listen<string>('aider-error', (event) => {
-        setTerminalLines(prev => [...prev, { id: Date.now(), text: event.payload, type: 'stderr' }])
-      })
-      setUnlistenError(() => listenError)
-    }
-    setupListeners()
+  const dismissWelcome = useCallback(() => {
+    setShowWelcome(false)
+    localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
   }, [])
+
+  const handleChooseProject = useCallback(async () => {
+    if (!isTauriRuntime()) return
+    try {
+      const selected = await invoke<string | null>('pick_workspace_folder')
+      if (!selected) return
+      const next = { ...config, workingDir: selected }
+      setConfig(next)
+      setSavedConfig(next)
+      localStorage.setItem('aider-vision-config', JSON.stringify(next))
+      setSnackbar({ message: 'Project folder updated', severity: 'info' })
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [config])
+
+  const appendStderr = useCallback((payload: string) => {
+    const id = Date.now()
+    setTerminalLines((prev) => [
+      ...prev,
+      {
+        id,
+        text: `${prefixForUserFacing('core')} ${payload}`,
+        type: 'stderr',
+        source: 'core',
+        channel: 'user',
+      },
+      {
+        id: id + 1,
+        text: `${prefixForTechnicalLog()} ${payload}`,
+        type: 'stderr',
+        source: 'core',
+        channel: 'technical',
+      },
+    ])
+    setChatMessages((chatPrev) => [
+      ...chatPrev,
+      {
+        id,
+        role: 'system',
+        content: `${prefixForUserFacing('core')} ${payload}`,
+      },
+    ])
+  }, [])
+
+  const process = useProcess()
+
+  const bumpGitRefresh = useCallback(() => {
+    setGitRefreshKey((k) => k + 1)
+  }, [])
+
+  const handleCoreEvent = useCallback((ev: CoreEventBase) => {
+    process.ingestCoreEvent(ev)
+    if (ev.type === 'done') bumpGitRefresh()
+    const id = Date.now()
+
+    switch (ev.type) {
+      case 'user_message':
+        setChatMessages((prev) => [
+          ...prev,
+          { id, role: 'user', content: String(ev.text ?? '') },
+        ])
+        break
+      case 'token': {
+        const chunk = String(ev.text ?? '')
+        if (!chunk) break
+        if (streamingAssistantId.current === null) {
+          streamingAssistantId.current = id
+          setChatMessages((prev) => [...prev, { id, role: 'assistant', content: chunk }])
+        } else {
+          const sid = streamingAssistantId.current
+          setChatMessages((prev) =>
+            prev.map((m) => (m.id === sid ? { ...m, content: m.content + chunk } : m))
+          )
+        }
+        break
+      }
+      case 'tool_output':
+      case 'tool_error':
+      case 'tool_warning':
+        setToolEvents((prev) => [
+          ...prev,
+          {
+            id,
+            type: 'tool_result',
+            name: ev.type,
+            output: String(ev.text ?? ''),
+          },
+        ])
+        setTerminalLines((prev) => [
+          ...prev,
+          { id, text: `[${ev.type}] ${ev.text ?? ''}`, type: 'stdout' },
+        ])
+        break
+      case 'confirm':
+        setTerminalLines((prev) => [
+          ...prev,
+          {
+            id,
+            text: `[confirm] ${ev.question ?? ''}${ev.auto_answered ? ' (auto)' : ''}`,
+            type: 'stdout',
+          },
+        ])
+        break
+      case 'done':
+        streamingAssistantId.current = null
+        setStatusMessage('Ready')
+        if (ev.edited_files && Array.isArray(ev.edited_files) && ev.edited_files.length > 0) {
+          setTerminalLines((prev) => [
+            ...prev,
+            {
+              id,
+              text: `Edited: ${(ev.edited_files as string[]).join(', ')}`,
+              type: 'stdout',
+            },
+          ])
+        }
+        if (ev.commit_hash) {
+          setTerminalLines((prev) => [
+            ...prev,
+            {
+              id: id + 1,
+              text: `Commit ${ev.commit_hash}: ${ev.commit_message ?? ''}`,
+              type: 'stdout',
+            },
+          ])
+        }
+        break
+      case 'error':
+        streamingAssistantId.current = null
+        setTerminalLines((prev) => [
+          ...prev,
+          {
+            id,
+            text: `${prefixForUserFacing('core')} ${ev.text ?? 'Unknown error'}`,
+            type: 'stderr',
+            source: 'core',
+            channel: 'user',
+          },
+        ])
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id,
+            role: 'system',
+            content: `${prefixForUserFacing('core')} ${ev.text ?? 'Unknown error'}`,
+          },
+        ])
+        break
+      default:
+        setTerminalLines((prev) => [
+          ...prev,
+          { id, text: JSON.stringify(ev), type: 'stdout' },
+        ])
+    }
+  }, [process, bumpGitRefresh])
+
+  const { pendingConfirm, dismissConfirm, lastGit, setFilesInChat, wrapHandler } =
+    useSessionActivity()
+  const { isRunning, isBusy, sessionInfo, httpClient, start, stop, send, undo } = useAiderSession(
+    wrapHandler(handleCoreEvent)
+  )
+  const { commands } = useCommandCatalog(httpClient, sessionInfo?.session_id ?? null)
+  const {
+    status: gitStatus,
+    loading: gitLoading,
+    refresh: refreshGit,
+  } = useGitStatus(savedConfig.workingDir, gitRefreshKey, isRunning)
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    const setup = async () => {
+      unlistenersRef.current.push(
+        await listen<string>('aider-error', (event) => appendStderr(event.payload))
+      )
+    }
+    setup()
+    return () => {
+      unlistenersRef.current.forEach((fn) => fn())
+      unlistenersRef.current = []
+    }
+  }, [appendStderr])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -123,6 +322,7 @@ function App() {
   const handleSave = () => {
     setSavedConfig(config)
     localStorage.setItem('aider-vision-config', JSON.stringify(config))
+    setSnackbar({ message: 'Settings saved', severity: 'info' })
   }
 
   const handleReset = () => {
@@ -133,284 +333,257 @@ function App() {
 
   const handleStart = async () => {
     try {
-      await invoke('start_aider', {
-        binary: savedConfig.binaryPath,
-        model: savedConfig.model,
-        extraParams: savedConfig.extraParams,
-        workingDir: savedConfig.workingDir,
-        autoApproveLimit: savedConfig.autoApproveLimit
-      })
-      setIsRunning(true)
+      const { info, workingDir } = await start(savedConfig)
+      if (workingDir !== savedConfig.workingDir) {
+        const next = { ...savedConfig, workingDir }
+        setSavedConfig(next)
+        setConfig(next)
+        localStorage.setItem('aider-vision-config', JSON.stringify(next))
+      }
+      setFilesInChat(info.files_in_chat ?? [])
       setRemainingAutoApproves(savedConfig.autoApproveLimit)
+      streamingAssistantId.current = null
       setChatMessages([])
       setToolEvents([])
-      setTerminalLines([{ id: Date.now(), text: 'Aider process started.', type: 'stdout' }])
-      setStatusMessage('Aider started')
+      setTerminalLines([
+        {
+          id: Date.now(),
+          text: `${prefixForUserFacing('vision')} Started ${DISPLAY_CORE} (session ${info.session_id.slice(0, 8)}…).`,
+          type: 'stdout',
+          source: 'vision',
+        },
+      ])
+      const files = info.files_in_chat?.length ? info.files_in_chat.join(', ') : '(repo map)'
+      setStatusMessage(`Session active — ${files}`)
+      dismissWelcome()
+      setActiveTab('chat')
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
-      setTerminalLines(prev => [...prev, { id: Date.now(), text: `Error: ${err}`, type: 'stderr' }])
+      setSnackbar({ message: `Could not start: ${msg}`, severity: 'error' })
+      setTerminalLines((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: `${prefixForUserFacing('vision')} Could not start: ${msg}`,
+          type: 'stderr',
+          source: 'vision',
+        },
+      ])
     }
   }
 
   const handleStop = async () => {
     try {
-      await invoke('stop_aider')
-      setIsRunning(false)
+      await stop()
+      setFilesInChat([])
       setRemainingAutoApproves(0)
-      setTerminalLines(prev => [...prev, { id: Date.now(), text: 'Aider process stopped.', type: 'stdout' }])
-      setStatusMessage('Aider stopped')
+      setTerminalLines((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          text: `${prefixForUserFacing('vision')} Stopped ${DISPLAY_CORE}.`,
+          type: 'stdout',
+          source: 'vision',
+        },
+      ])
+      setStatusMessage('Stopped')
     } catch (err) {
-      console.error(err)
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
     }
   }
 
   const handleSend = async () => {
     if (!inputValue.trim() || !isRunning) return
     try {
-      await invoke('send_to_aider', { input: inputValue })
-      setChatMessages(prev => [...prev, { id: Date.now(), role: 'user', content: inputValue }])
+      await send(inputValue)
       if (remainingAutoApproves > 0) {
-        setRemainingAutoApproves(prev => Math.max(0, prev - 1))
+        setRemainingAutoApproves((prev) => Math.max(0, prev - 1))
       }
       setInputValue('')
     } catch (err) {
-      console.error(err)
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
     }
   }
 
-  const generateCommandPreview = () => {
-    const cmd = `${config.binaryPath} --model ${config.model}`
-    const extra = config.extraParams ? `LITELLM_EXTRA_PARAMS="${config.extraParams}" ` : ''
-    const autoApprove = config.autoApproveLimit > 0 ? ' --auto-approve' : ''
-    return `${extra}${cmd}${autoApprove}`
+  const handleUndo = async () => {
+    try {
+      await undo()
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
   }
 
+  const apiPreview = `POST ${savedConfig.coreApiUrl}/sessions → POST .../messages (SSE)\nworkspace: ${savedConfig.workingDir}\nmodel: ${savedConfig.model}\ncontext: ${savedConfig.contextFiles.join(', ') || '(none)'}`
+
+  const terminalColor = (line: TerminalLine) => {
+    if (line.type !== 'stderr') return 'text.primary'
+    return line.source === 'vision' ? 'warning.main' : 'error.main'
+  }
+
+  const sessionFiles = sessionInfo?.files_in_chat
+
+  const headerExtra = (
+    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }} noWrap>
+        {statusMessage || (isRunning ? 'Session live' : 'Stopped')}
+      </Typography>
+      {isRunning && sessionInfo && (
+        <Chip
+          label={`${sessionInfo.files_in_chat?.length ?? 0} files`}
+          size="small"
+          variant="outlined"
+          title={sessionInfo.files_in_chat?.join('\n')}
+        />
+      )}
+      {remainingAutoApproves > 0 && (
+        <Chip
+          label={`Auto: ${remainingAutoApproves}`}
+          size="small"
+          color="primary"
+          variant="outlined"
+        />
+      )}
+    </Stack>
+  )
+
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100 font-sans">
-      {/* Sidebar */}
-      <aside className="w-16 flex flex-col items-center py-4 bg-gray-950 border-r border-gray-800">
-        <button 
-          onClick={() => setActiveTab('chat')}
-          className={`p-3 mb-2 rounded-lg transition-colors ${activeTab === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-        >
-          <MessageSquare size={24} />
-        </button>
-        <button 
-          onClick={() => setActiveTab('terminal')}
-          className={`p-3 mb-2 rounded-lg transition-colors ${activeTab === 'terminal' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-        >
-          <Terminal size={24} />
-        </button>
-        <button 
-          onClick={() => setActiveTab('git')}
-          className={`p-3 mb-2 rounded-lg transition-colors ${activeTab === 'git' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-        >
-          <GitBranch size={24} />
-        </button>
-        <div className="mt-auto">
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`p-3 rounded-lg transition-colors ${activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-          >
-            <Settings size={24} />
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col">
-        <header className="h-12 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900">
-          <h1 className="text-lg font-semibold tracking-tight">Aider Vision</h1>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-              <span className="text-xs text-gray-400">{statusMessage || (isRunning ? 'Aider Running' : 'Aider Stopped')}</span>
-            </div>
-            {remainingAutoApproves > 0 && (
-              <div className="flex items-center gap-1 bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs">
-                <span>Auto-approve: {remainingAutoApproves}</span>
-              </div>
-            )}
-          </div>
-        </header>
-        
-        <div className="flex-1 p-6 overflow-auto">
+    <>
+      <AppChrome
+        nav={NAV}
+        activeTab={activeTab}
+        onTabChange={(id) => setActiveTab(id as TabId)}
+        process={process.snapshot}
+        isRunning={isRunning}
+        headerExtra={headerExtra}
+      >
           {activeTab === 'chat' && (
-            <div className="flex flex-col h-full max-w-4xl mx-auto">
-              <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-                {chatMessages.length === 0 && (
-                  <div className="bg-gray-800 p-4 rounded-lg shadow-sm text-center text-gray-400">
-                    <p>Welcome to Aider Vision. Start a conversation to begin coding.</p>
-                  </div>
-                )}
-                {chatMessages.map((msg) => (
-                  <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-200'}`}>
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    </div>
-                  </div>
-                ))}
-                {toolEvents.map((tool) => (
-                  <div key={tool.id} className="flex justify-start">
-                    <div className="max-w-[80%] p-3 rounded-lg bg-gray-800/50 border border-gray-700 text-sm font-mono">
-                      <div className="text-yellow-400 mb-1">
-                        {tool.type === 'tool_call' ? `🛠 Calling ${tool.name || 'tool'}...` : `✅ ${tool.name || 'tool'} result:`}
-                      </div>
-                      <pre className="text-gray-300 overflow-x-auto whitespace-pre-wrap">
-                        {tool.type === 'tool_call' ? JSON.stringify(tool.input, null, 2) : JSON.stringify(tool.output, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  placeholder={isRunning ? "Ask Aider to modify your code..." : "Start Aider to interact..."}
-                  disabled={!isRunning}
-                  className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                />
-                <button 
-                  onClick={handleSend}
-                  disabled={!isRunning || !inputValue.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Send size={18} /> Send
-                </button>
-              </div>
-            </div>
+            <>
+            {!isRunning && showWelcome && (
+              <WelcomePanel
+                projectPath={savedConfig.workingDir}
+                enginePath={engineInstallPath}
+                onChooseProject={handleChooseProject}
+                onOpenSettings={() => setActiveTab('settings')}
+                onStart={() => {
+                  setActiveTab('terminal')
+                  void handleStart()
+                }}
+                onDismiss={dismissWelcome}
+              />
+            )}
+            <ChatPanel
+              messages={chatMessages}
+              toolEvents={toolEvents}
+              inputValue={inputValue}
+              isRunning={isRunning}
+              isBusy={isBusy}
+              pendingConfirm={pendingConfirm}
+              chatEndRef={chatEndRef}
+              onInputChange={setInputValue}
+              onSend={handleSend}
+              onDismissConfirm={dismissConfirm}
+              commands={commands}
+              onPickCommand={(cmd) => setInputValue(cmd)}
+            />
+            </>
           )}
+
           {activeTab === 'terminal' && (
-            <div className="flex flex-col h-full bg-gray-950 rounded-lg border border-gray-800 overflow-hidden">
-              <div className="flex-1 p-4 font-mono text-sm overflow-y-auto space-y-1">
-                {terminalLines.map((line) => (
-                  <div key={line.id} className={line.type === 'stderr' ? 'text-red-400' : 'text-gray-300'}>
-                    {line.text}
-                  </div>
-                ))}
+            <Paper variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}
+              >
+                Technical log — includes {DISPLAY_CORE} details for debugging
+              </Typography>
+              <Box sx={{ flex: 1, overflow: 'auto', p: 2, fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                {terminalLines
+                  .filter((line) => line.channel !== 'user')
+                  .map((line) => (
+                    <Typography
+                      key={line.id}
+                      component="div"
+                      sx={{ color: terminalColor(line), mb: 0.5 }}
+                    >
+                      {line.text}
+                    </Typography>
+                  ))}
                 <div ref={terminalEndRef} />
-              </div>
-              <div className="p-4 border-t border-gray-800 bg-gray-900">
-                <div className="flex gap-2">
-                  <button 
-                    onClick={handleStart} 
-                    disabled={isRunning}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    <Play size={18} /> Start
-                  </button>
-                  <button 
-                    onClick={handleStop} 
-                    disabled={!isRunning}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
-                  >
-                    <Square size={18} /> Stop
-                  </button>
-                </div>
-              </div>
-            </div>
+              </Box>
+              <Stack direction="row" spacing={1} sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Button
+                  variant="contained"
+                  color="success"
+                  startIcon={<PlayArrowIcon />}
+                  onClick={handleStart}
+                  disabled={isRunning}
+                >
+                  Start
+                </Button>
+                <Button
+                  variant="contained"
+                  color="error"
+                  startIcon={<StopIcon />}
+                  onClick={handleStop}
+                  disabled={!isRunning}
+                >
+                  Stop
+                </Button>
+              </Stack>
+            </Paper>
           )}
+
           {activeTab === 'git' && (
-            <div className="bg-gray-950 p-4 rounded-lg h-full flex items-center justify-center text-gray-500">
-              Git History & Diff Viewer Placeholder
-            </div>
+            <Box sx={{ height: '100%', overflow: 'auto', py: 1 }}>
+              <GitPanel
+                lastGit={lastGit}
+                gitStatus={gitStatus}
+                gitLoading={gitLoading}
+                onRefreshGit={refreshGit}
+                onUndo={handleUndo}
+                isRunning={isRunning}
+              />
+            </Box>
           )}
+
           {activeTab === 'settings' && (
-            <div className="max-w-xl mx-auto space-y-6">
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <Settings size={20} /> Model & System Configuration
-              </h2>
-              
-              <div className="space-y-4 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-400">Aider Binary / Command</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={config.binaryPath}
-                    onChange={(e) => setConfig({...config, binaryPath: e.target.value})}
-                    placeholder="aider or python3 -m aider"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-400">LLM Model</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={config.model}
-                    onChange={(e) => setConfig({...config, model: e.target.value})}
-                    placeholder="ollama_chat/qwen3.6:27b-q4_K_M"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-400">LiteLLM Extra Params (JSON)</label>
-                  <textarea 
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                    value={config.extraParams}
-                    onChange={(e) => setConfig({...config, extraParams: e.target.value})}
-                    placeholder='{"think": false}'
-                    rows={3}
-                  />
-                  <p className="text-xs text-gray-500">Passed as LITELLM_EXTRA_PARAMS environment variable.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-400">Working Directory</label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={config.workingDir}
-                    onChange={(e) => setConfig({...config, workingDir: e.target.value})}
-                    placeholder="~/projects/my-app"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-400">Auto-Approve Limit</label>
-                  <input 
-                    type="number" 
-                    min="0"
-                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={config.autoApproveLimit}
-                    onChange={(e) => setConfig({...config, autoApproveLimit: parseInt(e.target.value) || 0})}
-                    placeholder="0 (disabled)"
-                  />
-                  <p className="text-xs text-gray-500">Set &gt;0 to enable --auto-approve. Counts down per prompt sent.</p>
-                </div>
-              </div>
-
-              <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-                <label className="block text-sm font-medium text-gray-400 mb-2">Command Preview</label>
-                <code className="block bg-gray-950 p-3 rounded text-sm font-mono text-green-400 break-all">
-                  {generateCommandPreview()}
-                </code>
-              </div>
-
-              <div className="flex gap-3">
-                <button 
-                  onClick={handleSave}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  <Save size={18} /> Save Configuration
-                </button>
-                <button 
-                  onClick={handleReset}
-                  className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  <RotateCcw size={18} /> Reset Defaults
-                </button>
-              </div>
-            </div>
+            <Container maxWidth="sm" disableGutters>
+              <SettingsPanel
+                config={config}
+                apiPreview={apiPreview}
+                sessionFiles={sessionFiles}
+                onChange={setConfig}
+                onSave={handleSave}
+                onReset={handleReset}
+              />
+            </Container>
           )}
-        </div>
-      </main>
-    </div>
+      </AppChrome>
+
+      <Snackbar
+        open={snackbar !== null}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {snackbar ? (
+          <Alert severity={snackbar.severity} onClose={() => setSnackbar(null)} variant="filled">
+            {snackbar.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
+    </>
   )
 }
 

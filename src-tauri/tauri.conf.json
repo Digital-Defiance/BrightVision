@@ -11,6 +11,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Aider Vision",
         "width": 1280,
         "height": 720,
