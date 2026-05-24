@@ -3,7 +3,7 @@
  */
 
 import headerLogoPng from './assets/brand/aider-vision.png'
-import railLogoPng from './assets/brand/aider-vision-square-logo.png'
+import railLogoPng from './assets/brand/av.png'
 
 export const PRODUCT_VISION = 'aider-vision'
 export const PRODUCT_CORE = 'aider-vision-core'

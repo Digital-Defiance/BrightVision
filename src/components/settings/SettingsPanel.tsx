@@ -129,6 +129,8 @@ export function SettingsPanel({
             size="small"
             value={config.pythonPath}
             onChange={(e) => onChange({ ...config, pythonPath: e.target.value })}
+            placeholder=".venv/bin/python3"
+            helperText="Leave empty to use the repo .venv (run source activate.sh once)."
           />
           <TextField
             label="Core API token (optional)"

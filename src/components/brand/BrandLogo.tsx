@@ -1,6 +1,6 @@
 import { Box } from '@mui/material'
 import headerSvg from '../../assets/brand/aider-vision.svg?raw'
-import railSvg from '../../assets/brand/aider-vision-square-logo.svg?raw'
+import railSvg from '../../assets/brand/av.svg?raw'
 import {
   BRAND_HEADER_LOGO_PNG,
   BRAND_LOGO_MODE,
@@ -41,8 +41,10 @@ export function BrandLogo({ variant }: BrandLogoProps) {
                 objectPosition: 'left',
               }
             : {
-                width: 52,
-                height: 52,
+                width: '100%',
+                maxWidth: 80,
+                height: 'auto',
+                minHeight: 44,
                 objectFit: 'contain',
                 alignSelf: 'center',
                 mb: 1,

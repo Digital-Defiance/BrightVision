@@ -10,7 +10,7 @@
 
 ```bash
 git submodule update --init --recursive
-source activate.sh   # venv + pip install -e aider-vision-core
+source activate.sh   # venv + pip install -e aider-vision-core + uvicorn
 yarn install
 ```
 

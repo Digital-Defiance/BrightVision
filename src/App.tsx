@@ -99,10 +99,19 @@ function App() {
       setSavedConfig(cfg)
     }
     if (isTauriRuntime()) {
-      invoke<string>('detect_workspace', { hint: merged.workingDir || null })
-        .then((dir) => {
-          const next = { ...merged, workingDir: dir }
-          if (dir !== merged.workingDir) {
+      Promise.all([
+        invoke<string>('detect_workspace', { hint: merged.workingDir || null }),
+        merged.pythonPath.trim()
+          ? Promise.resolve(merged.pythonPath)
+          : invoke<string>('default_python_path'),
+      ])
+        .then(([dir, pythonPath]) => {
+          const next = {
+            ...merged,
+            workingDir: dir,
+            pythonPath: merged.pythonPath.trim() || pythonPath,
+          }
+          if (dir !== merged.workingDir || next.pythonPath !== merged.pythonPath) {
             setSavedConfig(next)
             localStorage.setItem('aider-vision-config', JSON.stringify(next))
           }

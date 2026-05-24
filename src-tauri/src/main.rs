@@ -23,6 +23,39 @@ fn project_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+fn python_candidate_exists(path: &Path) -> bool {
+    path.is_file() && std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
+}
+
+/// Prefer project venv / explicit config over bare `python3` (often missing uvicorn).
+fn resolve_python_executable(configured: &str) -> String {
+    if !configured.trim().is_empty() {
+        let p = PathBuf::from(configured.trim());
+        if python_candidate_exists(&p) {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    if let Ok(env_py) = std::env::var("AIDER_VISION_PYTHON") {
+        let p = PathBuf::from(env_py.trim());
+        if python_candidate_exists(&p) {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    let root = project_root();
+    for rel in [".venv/bin/python3", ".venv/bin/python"] {
+        let p = root.join(rel);
+        if python_candidate_exists(&p) {
+            return p.to_string_lossy().into_owned();
+        }
+    }
+    "python3".to_string()
+}
+
+#[tauri::command]
+fn default_python_path() -> String {
+    resolve_python_executable("")
+}
+
 fn vision_serve_script(engine_root: &Path) -> PathBuf {
     engine_root.join("scripts/vision_serve.py")
 }
@@ -119,11 +152,7 @@ async fn start_core_api(
     }
 
     let script = vision_serve_script(&engine_root);
-    let py = if python_path.trim().is_empty() {
-        "python3".to_string()
-    } else {
-        python_path
-    };
+    let py = resolve_python_executable(&python_path);
 
     let mut cmd = Command::new(&py);
     cmd.arg(&script)
@@ -339,6 +368,7 @@ fn main() {
             stop_core_api,
             drain_core_api_logs,
             default_workspace,
+            default_python_path,
             detect_workspace,
             engine_install_path,
             git_workspace_status,
