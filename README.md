@@ -1,5 +1,7 @@
 # Aider Vision
 
+<img width="231" height="87" alt="Aider Vision" title="Aider Vision" src="aider-vision-black.svg" />
+
 A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider Vision Core](https://github.com/Digital-Defiance/aider-vision-core) AI coding assistant which is a headless version of [Aider](https://github.com/paul-gauthier/aider) with some improvements.
 
 ## 🚀 Features
