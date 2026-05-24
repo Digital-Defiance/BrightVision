@@ -1,5 +1,9 @@
 # Developing Aider Vision
 
+Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain and follow it until the open backlog is complete.
+
+**Project site:** [aider-vision.digitaldefiance.org](https://aider-vision.digitaldefiance.org) — static landing page in `docs/index.html`, deployed via [GitHub Pages](../.github/workflows/pages.yml) on pushes to `main` under `docs/`.
+
 ## Prerequisites
 
 - Node 18+ and Yarn

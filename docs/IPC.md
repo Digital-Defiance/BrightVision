@@ -14,6 +14,31 @@ aider-vision-core-serve --host 127.0.0.1 --port 8741
 
 See `aider-vision-core/aider_vision_core/http_api.py` — create session, `POST /sessions/{id}/messages` returns Server-Sent Events with the same event dicts.
 
+Answer blocking confirms while a message is in flight:
+
+```http
+POST /sessions/{session_id}/confirm
+{"confirm_id": "<from confirm event>", "answer": true}
+```
+
+Session create accepts `auto_yes` (default `false`) and `auto_commits` (default `true`).
+
+Add images or PDFs to the chat without sending a message:
+
+```http
+POST /sessions/{session_id}/files
+{"paths": [".aider-vision/attachments/screenshot.png"]}
+```
+
+Browser upload (base64 data URLs accepted):
+
+```http
+POST /sessions/{session_id}/files/upload
+{"files": [{"filename": "shot.png", "content_base64": "data:image/png;base64,..."}]}
+```
+
+Response includes updated `files_in_chat` and `events` (tool_output / errors).
+
 Optional auth: set `AIDER_VISION_TOKEN` and send `Authorization: Bearer <token>`.
 
 ## Multi-repo workspaces (including nested submodules)
@@ -45,7 +70,7 @@ Each `data:` line in the message stream is a JSON object:
 {"type": "user_message", "text": "..."}
 {"type": "token", "text": "partial"}
 {"type": "tool_output", "text": "..."}
-{"type": "confirm", "question": "...", "auto_answered": true}
+{"type": "confirm", "confirm_id": "…", "question": "…", "auto_answered": false}
 {"type": "done", "assistant_text": "...", "edited_files": ["src/foo.ts"], "commit_hash": "abc123"}
 {"type": "error", "text": "..."}
 ```

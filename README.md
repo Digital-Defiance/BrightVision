@@ -1,6 +1,8 @@
 # Aider Vision
 
-<img width="231" height="87" alt="Aider Vision" title="Aider Vision" src="aider-vision-black.svg" />
+**Website:** [aider-vision.digitaldefiance.org](https://aider-vision.digitaldefiance.org)
+
+<img width="231" height="87" alt="Aider Vision" title="Aider Vision" src="https://aider-vision.digitaldefiance.org/aider-vision-black.svg" />
 
 A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider Vision Core](https://github.com/Digital-Defiance/aider-vision-core) AI coding assistant which is a headless version of [Aider](https://github.com/paul-gauthier/aider) with some improvements.
 
@@ -28,14 +30,29 @@ The plan is to let Aider Vision develop itself. I am using Qwen Coder 3.6 27b q4
 
 ## 📦 Getting Started
 
-### Prerequisites
+### macOS (Homebrew)
+
+The fastest way to install on macOS is via our Homebrew tap. The cask ships a **signed and notarized** universal DMG — Gatekeeper-ready, no security warnings.
+
+```bash
+brew tap digital-defiance/tap
+brew install aider-vision
+```
+
+This installs `Aider Vision.app` to `/Applications/`.
+
+Tap repository: [digital-defiance/homebrew-tap](https://github.com/digital-defiance/homebrew-tap)
+
+### From source
+
+#### Prerequisites
 
 - Node.js (v18+)
 - Rust (latest stable)
 - Yarn (v3+)
 - Aider CLI installed and accessible in your PATH
 
-### Installation
+#### Installation
 
 1. Clone the repository:
    ```bash
