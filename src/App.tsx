@@ -8,6 +8,7 @@ interface AiderConfig {
   model: string
   extraParams: string
   workingDir: string
+  autoApproveLimit: number
 }
 
 interface TerminalLine {
@@ -20,7 +21,8 @@ const DEFAULT_CONFIG: AiderConfig = {
   binaryPath: 'aider',
   model: 'ollama_chat/qwen3.6:27b-q4_K_M',
   extraParams: '{"think": false}',
-  workingDir: '.'
+  workingDir: '.',
+  autoApproveLimit: 0
 }
 
 function App() {
@@ -30,6 +32,7 @@ function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
   const [inputValue, setInputValue] = useState('')
+  const [remainingAutoApproves, setRemainingAutoApproves] = useState(0)
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const [unlistenOutput, setUnlistenOutput] = useState<UnlistenFn | null>(null)
   const [unlistenError, setUnlistenError] = useState<UnlistenFn | null>(null)
@@ -83,9 +86,11 @@ function App() {
         binary: savedConfig.binaryPath,
         model: savedConfig.model,
         extraParams: savedConfig.extraParams,
-        workingDir: savedConfig.workingDir
+        workingDir: savedConfig.workingDir,
+        autoApproveLimit: savedConfig.autoApproveLimit
       })
       setIsRunning(true)
+      setRemainingAutoApproves(savedConfig.autoApproveLimit)
       setTerminalLines([{ id: Date.now(), text: 'Aider process started.', type: 'stdout' }])
     } catch (err) {
       console.error(err)
@@ -97,6 +102,7 @@ function App() {
     try {
       await invoke('stop_aider')
       setIsRunning(false)
+      setRemainingAutoApproves(0)
       setTerminalLines(prev => [...prev, { id: Date.now(), text: 'Aider process stopped.', type: 'stdout' }])
     } catch (err) {
       console.error(err)
@@ -108,6 +114,9 @@ function App() {
     try {
       await invoke('send_to_aider', { input: inputValue })
       setTerminalLines(prev => [...prev, { id: Date.now(), text: `> ${inputValue}`, type: 'stdout' }])
+      if (remainingAutoApproves > 0) {
+        setRemainingAutoApproves(prev => Math.max(0, prev - 1))
+      }
       setInputValue('')
     } catch (err) {
       console.error(err)
@@ -116,10 +125,9 @@ function App() {
 
   const generateCommandPreview = () => {
     const cmd = `${config.binaryPath} --model ${config.model}`
-    if (config.extraParams) {
-      return `LITELLM_EXTRA_PARAMS="${config.extraParams}" ${cmd}`
-    }
-    return cmd
+    const extra = config.extraParams ? `LITELLM_EXTRA_PARAMS="${config.extraParams}" ` : ''
+    const autoApprove = config.autoApproveLimit > 0 ? ' --auto-approve' : ''
+    return `${extra}${cmd}${autoApprove}`
   }
 
   return (
@@ -158,9 +166,16 @@ function App() {
       <main className="flex-1 flex flex-col">
         <header className="h-12 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900">
           <h1 className="text-lg font-semibold tracking-tight">Aider Vision</h1>
-          <div className="flex items-center gap-2">
-            <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-            <span className="text-xs text-gray-400">{isRunning ? 'Aider Running' : 'Aider Stopped'}</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+              <span className="text-xs text-gray-400">{isRunning ? 'Aider Running' : 'Aider Stopped'}</span>
+            </div>
+            {remainingAutoApproves > 0 && (
+              <div className="flex items-center gap-1 bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs">
+                <span>Auto-approve: {remainingAutoApproves}</span>
+              </div>
+            )}
           </div>
         </header>
         
@@ -276,6 +291,19 @@ function App() {
                     onChange={(e) => setConfig({...config, workingDir: e.target.value})}
                     placeholder="~/projects/my-app"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-400">Auto-Approve Limit</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={config.autoApproveLimit}
+                    onChange={(e) => setConfig({...config, autoApproveLimit: parseInt(e.target.value) || 0})}
+                    placeholder="0 (disabled)"
+                  />
+                  <p className="text-xs text-gray-500">Set &gt;0 to enable --auto-approve. Counts down per prompt sent.</p>
                 </div>
               </div>
 

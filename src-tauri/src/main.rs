@@ -17,6 +17,7 @@ async fn start_aider(
     model: String,
     extra_params: String,
     working_dir: String,
+    auto_approve_limit: i32,
 ) -> Result<(), String> {
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     if child_guard.is_some() {
@@ -25,12 +26,15 @@ async fn start_aider(
 
     let mut cmd = Command::new("sh");
     cmd.arg("-c");
-    let cmd_str = format!(
+    let mut cmd_str = format!(
         "LITELLM_EXTRA_PARAMS=\"{}\" {} --model {}",
         extra_params.replace("\"", "\\\""),
         binary,
         model
     );
+    if auto_approve_limit > 0 {
+        cmd_str.push_str(" --auto-approve");
+    }
     cmd.arg(&cmd_str);
     cmd.current_dir(&working_dir);
     cmd.stdout(std::process::Stdio::piped());
