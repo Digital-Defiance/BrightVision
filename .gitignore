@@ -1,2 +1,29 @@
+# Dependencies
+node_modules/
+src-tauri/target/
+target/
+
+# Build outputs
+dist/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Aider
 .aider*
-node_modules
