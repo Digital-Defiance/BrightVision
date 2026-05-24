@@ -4,6 +4,8 @@
 
 A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider Vision Core](https://github.com/Digital-Defiance/aider-vision-core) AI coding assistant which is a headless version of [Aider](https://github.com/paul-gauthier/aider) with some improvements.
 
+<img width="1277" height="716" alt="Screenshot 2026-05-24 at 11 53 11 AM" src="https://github.com/user-attachments/assets/40053e79-dae2-4fda-ad29-79e9115b22af" />
+
 ## 🚀 Features
 
 - **Vision API**: All prompting goes through the HTTP API (React is the head; core is headless under `aider-vision-core/`).
