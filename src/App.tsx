@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react'
-import { Terminal, Settings, GitBranch, MessageSquare, Save, RotateCcw } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Terminal, Settings, GitBranch, MessageSquare, Save, RotateCcw, Play, Square } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 
 interface AiderConfig {
   binaryPath: string
   model: string
   extraParams: string
   workingDir: string
+}
+
+interface TerminalLine {
+  id: number
+  text: string
+  type: 'stdout' | 'stderr'
 }
 
 const DEFAULT_CONFIG: AiderConfig = {
@@ -19,6 +27,12 @@ function App() {
   const [activeTab, setActiveTab] = useState('chat')
   const [config, setConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
+  const [isRunning, setIsRunning] = useState(false)
+  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
+  const [inputValue, setInputValue] = useState('')
+  const terminalEndRef = useRef<HTMLDivElement>(null)
+  const [unlistenOutput, setUnlistenOutput] = useState<UnlistenFn | null>(null)
+  const [unlistenError, setUnlistenError] = useState<UnlistenFn | null>(null)
 
   useEffect(() => {
     const stored = localStorage.getItem('aider-vision-config')
@@ -33,6 +47,25 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    const setupListeners = async () => {
+      const listenOutput = await listen<string>('aider-output', (event) => {
+        setTerminalLines(prev => [...prev, { id: Date.now(), text: event.payload, type: 'stdout' }])
+      })
+      setUnlistenOutput(() => listenOutput)
+
+      const listenError = await listen<string>('aider-error', (event) => {
+        setTerminalLines(prev => [...prev, { id: Date.now(), text: event.payload, type: 'stderr' }])
+      })
+      setUnlistenError(() => listenError)
+    }
+    setupListeners()
+  }, [])
+
+  useEffect(() => {
+    terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [terminalLines])
+
   const handleSave = () => {
     setSavedConfig(config)
     localStorage.setItem('aider-vision-config', JSON.stringify(config))
@@ -42,6 +75,43 @@ function App() {
     setConfig(DEFAULT_CONFIG)
     setSavedConfig(DEFAULT_CONFIG)
     localStorage.removeItem('aider-vision-config')
+  }
+
+  const handleStart = async () => {
+    try {
+      await invoke('start_aider', {
+        binary: savedConfig.binaryPath,
+        model: savedConfig.model,
+        extraParams: savedConfig.extraParams,
+        workingDir: savedConfig.workingDir
+      })
+      setIsRunning(true)
+      setTerminalLines([{ id: Date.now(), text: 'Aider process started.', type: 'stdout' }])
+    } catch (err) {
+      console.error(err)
+      setTerminalLines(prev => [...prev, { id: Date.now(), text: `Error: ${err}`, type: 'stderr' }])
+    }
+  }
+
+  const handleStop = async () => {
+    try {
+      await invoke('stop_aider')
+      setIsRunning(false)
+      setTerminalLines(prev => [...prev, { id: Date.now(), text: 'Aider process stopped.', type: 'stdout' }])
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleSend = async () => {
+    if (!inputValue.trim() || !isRunning) return
+    try {
+      await invoke('send_to_aider', { input: inputValue })
+      setTerminalLines(prev => [...prev, { id: Date.now(), text: `> ${inputValue}`, type: 'stdout' }])
+      setInputValue('')
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const generateCommandPreview = () => {
@@ -86,8 +156,12 @@ function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col">
-        <header className="h-12 border-b border-gray-800 flex items-center px-4 bg-gray-900">
+        <header className="h-12 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-900">
           <h1 className="text-lg font-semibold tracking-tight">Aider Vision</h1>
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
+            <span className="text-xs text-gray-400">{isRunning ? 'Aider Running' : 'Aider Stopped'}</span>
+          </div>
         </header>
         
         <div className="flex-1 p-6 overflow-auto">
@@ -109,8 +183,42 @@ function App() {
             </div>
           )}
           {activeTab === 'terminal' && (
-            <div className="bg-gray-950 p-4 rounded-lg font-mono text-sm h-full flex items-center justify-center text-gray-500">
-              Terminal Output Placeholder
+            <div className="flex flex-col h-full bg-gray-950 rounded-lg border border-gray-800 overflow-hidden">
+              <div className="flex-1 p-4 font-mono text-sm overflow-y-auto space-y-1">
+                {terminalLines.map((line) => (
+                  <div key={line.id} className={line.type === 'stderr' ? 'text-red-400' : 'text-gray-300'}>
+                    {line.text}
+                  </div>
+                ))}
+                <div ref={terminalEndRef} />
+              </div>
+              <div className="p-4 border-t border-gray-800 bg-gray-900">
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    placeholder={isRunning ? "Type a command or prompt..." : "Start Aider to interact..."}
+                    disabled={!isRunning}
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                  />
+                  <button 
+                    onClick={handleStart} 
+                    disabled={isRunning}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <Play size={18} /> Start
+                  </button>
+                  <button 
+                    onClick={handleStop} 
+                    disabled={!isRunning}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <Square size={18} /> Stop
+                  </button>
+                </div>
+              </div>
             </div>
           )}
           {activeTab === 'git' && (
