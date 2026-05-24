@@ -22,6 +22,10 @@ A lightweight, cross-platform desktop application built with **Tauri** and **Rea
 - **Styling**: MUI v6 + Emotion (`src/theme.ts`); global SCSS in `src/styles/`
 - **Package Manager**: Yarn (Plug'n'Play)
 
+## Note:
+
+The plan is to let Aider Vision develop itself. I am using Qwen Coder 3.6 27b q4_K_M on an Apple Mac Pro M4 Max with 64GB RAM with 16 cores (12 Performance and 4 Efficiency).
+
 ## 📦 Getting Started
 
 ### Prerequisites
