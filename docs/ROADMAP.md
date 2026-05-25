@@ -6,7 +6,19 @@ Living backlog for chat UX, engine behavior, spec-driven work, and charter-level
 
 **Agents:** Read this file before substantive work; follow **Suggested fix order** until open items are **Done**; update statuses in the same session when you ship or learn something new. Instructions: `AGENTS.md` (Product roadmap) and `.cursor/rules/roadmap.mdc`.
 
-## Current focus — dogfooding
+## Current focus — cecli engine migration (Priority)
+
+**Blocking work:** port Vision HTTP/session layer onto **cecli** in `bright-vision-core`, then swap submodule. Do not start routine UX backlog until [CECLI_MIGRATION_ROADMAP.md](./CECLI_MIGRATION_ROADMAP.md) Gate A4 passes (or user reprioritizes).
+
+| Doc | Use when |
+|-----|----------|
+| [CECLI_MIGRATION_ROADMAP.md](./CECLI_MIGRATION_ROADMAP.md) | **Agent execution plan** — phases, gates, sessions, checklist |
+| [CORE_FILE_MERGE.md](./CORE_FILE_MERGE.md) | Per-file PORT_NEW / MERGE_HUNKS / KEEP_CECLI |
+| [BRIGHT_VISION_PIVOT.md](./BRIGHT_VISION_PIVOT.md) | Rebrand, website, PyPI/Homebrew (after engine swap) |
+
+---
+
+## Dogfooding (after engine swap)
 
 Primary validation mode: **use the desktop app on real repos** (especially hacking on Aider Vision itself), not more automation or CI.
 
