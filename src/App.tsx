@@ -19,6 +19,10 @@ import {
   MAX_TERMINAL_LINES,
   MAX_TOOL_EVENTS,
   parseTokenUsage,
+  popPendingUserMessageId,
+  reconcileUserMessageInChat,
+  removeChatMessageById,
+  shiftPendingUserMessageId,
 } from './utils/chatStream'
 import { isTauriRuntime } from './ipc/isTauri'
 import { CoreHttpClient } from './ipc/httpClient'
@@ -115,6 +119,8 @@ function App() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const streamingAssistantId = useRef<number | null>(null)
+  const pendingUserMessageIdsRef = useRef<number[]>([])
+  const chatMessageIdSeqRef = useRef(0)
   const todoInjectedIdRef = useRef<string | null>(null)
   const recordTurnLinksRef = useRef<(links: string[]) => void | Promise<void>>(async () => {})
   const reloadTodosRef = useRef<() => void | Promise<void>>(async () => {})
@@ -244,21 +250,51 @@ function App() {
     setGitRefreshKey((k) => k + 1)
   }, [])
 
+  const nextChatMessageId = useCallback(
+    () => Date.now() + ++chatMessageIdSeqRef.current,
+    []
+  )
+
+  const appendUserMessageToChat = useCallback(
+    (content: string, trackPending: boolean) => {
+      const id = nextChatMessageId()
+      if (trackPending) pendingUserMessageIdsRef.current.push(id)
+      setChatMessages((prev) =>
+        capList([...prev, { id, role: 'user' as const, content }], MAX_CHAT_MESSAGES)
+      )
+    },
+    [nextChatMessageId]
+  )
+
+  const removeLastPendingUserMessage = useCallback(() => {
+    const id = popPendingUserMessageId(pendingUserMessageIdsRef.current)
+    setChatMessages((prev) => removeChatMessageById(prev, id))
+  }, [])
+
   const handleCoreEvent = useCallback((ev: CoreEventBase) => {
     process.ingestCoreEvent(ev)
     if (ev.type === 'done') bumpGitRefresh()
     const id = Date.now()
 
     switch (ev.type) {
-      case 'user_message':
+      case 'user_message': {
         streamingAssistantId.current = null
+        const serverText = String(ev.text ?? '')
+        const pendingId = shiftPendingUserMessageId(pendingUserMessageIdsRef.current)
         setChatMessages((prev) =>
           capList(
-            [...prev, { id, role: 'user' as const, content: String(ev.text ?? '') }],
+            reconcileUserMessageInChat(
+              prev,
+              pendingId,
+              serverText,
+              (id, content) => ({ id, role: 'user' as const, content }),
+              nextChatMessageId
+            ),
             MAX_CHAT_MESSAGES
           )
         )
         break
+      }
       case 'token': {
         const chunk = String(ev.text ?? '')
         if (!chunk) break
@@ -453,7 +489,7 @@ function App() {
           { id, text: JSON.stringify(ev), type: 'stdout' },
         ])
     }
-  }, [process, bumpGitRefresh])
+  }, [process, bumpGitRefresh, nextChatMessageId])
 
   const { pendingConfirm, setPendingConfirm, dismissConfirm, lastGit, setFilesInChat, wrapHandler } =
     useSessionActivity()
@@ -598,6 +634,7 @@ function App() {
       setRemainingAutoApproves(savedConfig.autoApproveLimit)
       todoInjectedIdRef.current = null
       streamingAssistantId.current = null
+      pendingUserMessageIdsRef.current = []
       setChatMessages([])
       setToolEvents([])
       setTerminalLines([
@@ -848,6 +885,8 @@ function App() {
   const handleSend = async () => {
     if (!inputValue.trim() || !isRunning) return
     const text = inputValue.trim()
+    setInputValue('')
+    appendUserMessageToChat(text, true)
     const injectSpec = Boolean(activeTodo && todoInjectedIdRef.current !== activeTodo.id)
     const todoOptions = activeTodo
       ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
@@ -855,7 +894,6 @@ function App() {
     try {
       const result = await send(text, todoOptions)
       if (injectSpec && activeTodo) todoInjectedIdRef.current = activeTodo.id
-      setInputValue('')
       if (result.queued) {
         setSnackbar({
           message: 'Queued — will send when the agent finishes the current turn',
@@ -869,6 +907,8 @@ function App() {
         setStatusMessage('Stopped')
         return
       }
+      removeLastPendingUserMessage()
+      setInputValue(text)
       setSnackbar({
         message: err instanceof Error ? err.message : String(err),
         severity: 'error',

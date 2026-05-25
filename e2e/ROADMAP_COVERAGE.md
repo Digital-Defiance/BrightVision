@@ -7,14 +7,14 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. CI is optional.
 | Roadmap | Status in product | E2E / tests |
 |---------|-------------------|-------------|
 | **Core lifecycle** | Done | `session-lifecycle.spec.ts` |
-| **#1–2, #8–11, #13, #25** Chat UX | Done | `chat-ux.spec.ts` |
-| **#3–5** Queue / stop / multiline | Done | `chat-input.spec.ts` |
+| **#1–2, #8–11, #13, #25** Chat UX | Done | `chat-ux.spec.ts` (`chat-message-user` test ids) |
+| **#3–5** Queue / stop / multiline | Done | `chat-input.spec.ts` (optimistic send: `helpers/chatSend.ts`, `chatStream.test.ts`) |
 | **#7** Confirm | Done | `confirm-flow.spec.ts` |
 | **#12** `/add` Tab paths | Done (Tauri) | `path-completion.spec.ts` (mock Tauri) |
 | **#16** Images/PDF | Done | `file-upload.spec.ts` (web upload + mock native pick) |
 | **#17** Prompt before commit | Done | `settings-config.spec.ts` |
 | **#18** Tasks / generate-spec | Done | `tasks-workspace.spec.ts` |
-| **#19** Submodule verify | Done | `release-hygiene.spec.ts` (+ `yarn verify:submodule` when `.venv` exists) |
+| **#19** Submodule verify | Partial (automated; manual A–D dogfood) | `release-hygiene.spec.ts` (+ `yarn verify:submodule` when `.venv` exists) |
 | **#23–24** Process + chat | Done | lifecycle + chat suites |
 | **#26** Git poll (not inotify) | Partial | `git-polling.spec.ts`, `src/hooks/useGitStatus.test.ts` |
 | **#27** Git visualization | Done (desktop) | `tauri-git.spec.ts` (mock Tauri) |
@@ -32,6 +32,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. CI is optional.
 | `mockTauri.ts` | `git_*`, `complete_workspace_path`, `pick_and_stage_chat_images`, … |
 | `tauriFixtures.ts` | Sample git graph / status / path list |
 | `session.ts` | `startMockSession({ tauri: true })`, tab navigation |
+| `chatSend.ts` | `expectOptimisticSend` — empty input + `chat-message-user` after Send/Queue |
 | `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config priming |
 
 ## Real desktop smoke

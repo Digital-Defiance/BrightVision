@@ -4,6 +4,19 @@ Living backlog for chat UX, engine behavior, spec-driven work, and charter-level
 
 **Agents:** Read this file before substantive work; follow **Suggested fix order** until open items are **Done**; update statuses in the same session when you ship or learn something new. Instructions: `AGENTS.md` (Product roadmap) and `.cursor/rules/roadmap.mdc`.
 
+## Current focus — dogfooding
+
+Primary validation mode: **use the desktop app on real repos** (especially hacking on Aider Vision itself), not more automation or CI.
+
+| Doc | Use when |
+|-----|----------|
+| [USER_WORKFLOW.md](./USER_WORKFLOW.md) | Workspace = **superproject root** (`aider-vision/`), not `aider-vision-core/` alone |
+| [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) | Editing files under `aider-vision-core/` + parent tree in one session |
+| [TESTING.md](./TESTING.md) | Before/after sessions: `yarn test:local` (quick), `yarn test:full` before larger changes |
+| [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | Stuck Connecting, orphaned `:8741`, Stop vs Start |
+
+Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file path, expected vs actual commit repo).
+
 ## Status legend
 
 | Status | Meaning |
@@ -20,8 +33,8 @@ Living backlog for chat UX, engine behavior, spec-driven work, and charter-level
 
 | # | Status | Item |
 |---|--------|------|
-| **19** | **Done** | Submodule / multi-repo verified: `yarn verify:submodule` + `test_superproject_integration.py` (RepoSet, `/add` paths, Session). Manual UI pass still useful for SEARCH/REPLACE + commit. See [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md). |
-| **31** | **Open** | **Release hygiene** — commit/tag `aider-vision-core`, bump submodule pointer, verify ([RELEASE.md](./RELEASE.md)). Code is landed locally; not yet tagged in git. **Operator task** (not blocked on code). |
+| **19** | **Partial** | **Automated:** `yarn verify:submodule`, `test_git_workspace.py`, `test_superproject_integration.py` (RepoSet, `/add` paths, Session). **Dogfooding sign-off:** manual A–D in [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) via `yarn tauri dev` — not yet a roadmap **Done**. |
+| **31** | **Open** | **Release hygiene** — commit/tag `aider-vision-core`, bump submodule pointer ([RELEASE.md](./RELEASE.md)). Defer until dogfooding is stable; operator/git, not blocking daily use. |
 
 ---
 
@@ -105,29 +118,33 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 | **27** | **Done** | Git visualization (charter §3) | Working tree, inline diffs, commit graph + details, stage all/file, auto-stage on `done`, undo + refresh. **Nice-to-have:** syntax-highlighted diffs |
 | **28** | **Partial** | Context awareness (charter §5) | **Done:** images/PDF, `/add` paths, terminal tail, Tauri folder picker, **web folder path** dialog → `addFiles`. **Open:** file-tree picker, modified-file highlights (**#26**) |
 | **29** | **Longer-term** | Plugin / extension system | Custom Rust commands, third-party LLM providers, packaged extensions |
-| **30** | **Partial** | Web / non-Tauri parity | **Done:** folder path attach, localStorage todos, Vite `/api/core` proxy. **Open:** path Tab complete, full generate-spec UX without desktop |
+| **30** | **Partial** | Web / non-Tauri parity | **Done:** folder path attach, localStorage todos, Vite `/api/core` proxy; `/add` Tab on **desktop** (#12). **Open:** `/add` Tab on web-only dev; full generate-spec UX without desktop (dogfood Tasks tab on desktop first). |
 
 ---
 
 ## Known context
 
-- **#19 / #31:** Submodule verification passes; release still needs git tag + pointer bump (see [RELEASE.md](./RELEASE.md)).
-- **Stuck “Connecting”:** Use Terminal **Stop** (enabled while activity bar shows boot/connect); quit app to clear orphaned `:8741` listeners. Covered by `e2e/session-lifecycle.spec.ts`.
-- **E2E:** Most **Done** roadmap rows have Playwright coverage on web preview (mock `/api/core` + mock Tauri `invoke` for desktop paths); see [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md). Real `yarn tauri dev` smoke remains manual.
+- **Local testing (no CI required):** `yarn test:fast` / `yarn test:local` / `yarn test:full`; see [TESTING.md](./TESTING.md). Playwright mocks `/api/core` + Tauri `invoke` — does **not** replace `yarn tauri dev` dogfooding ([e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md)).
+- **#19:** Core/submodule wiring is automated-green; treat **SUBMODULE_VERIFICATION.md** sections A–D as the dogfooding gate for “hack on Vision itself.”
+- **#31:** Release tagging when you want reproducible pins for others — not required for solo dogfood on `main`.
+- **Stuck “Connecting”:** Terminal **Stop** while activity bar shows boot/connect; quit app to clear orphaned `:8741` ([TROUBLESHOOTING.md](./TROUBLESHOOTING.md)). Covered in mocked e2e only.
 - **`POST /sessions/{id}/confirm`**: body `{ "confirm_id", "answer": true|false }`.
 - **Message queue**: drain on turn end; Stop does not clear queue.
-- **`/add` completion**: desktop Tauri only.
-- **Tasks:** `.aider-vision/todos.json`; desktop mirrors via Tauri when core is down.
+- **`/add` completion**: Tauri desktop only (#12); type path manually on web-only `yarn dev`.
+- **Tasks:** `.aider-vision/todos.json`; workspace API when session + core up; Tauri file mirror when core is down.
 - **18d:** Task list uses **manual order** (Up/Down); `depends_on` shows **blocked** chip, not auto-sort.
+- **Dogfooding friction to watch:** wrong workspace (submodule-only root), proposed vs applied edits, commit in wrong repo, Tasks generate-spec + Implement on real core.
 
 ## Suggested fix order
 
-1. **#31** — [RELEASE.md](./RELEASE.md): commit/tag core, bump submodule, `yarn verify:submodule` (operator / git)
-2. **#19** — Manual UI pass (submodule edit + Tasks generate/implement)
-3. **#26** — Native file watcher (or deeper modified-file highlights in Git/Tasks)
-4. **#28** — File-tree context picker (web + desktop)
-5. **#20–22** — Kiro-depth spec features (when prioritizing spec product)
-6. **#29, #30** — Plugins, remaining web parity (longer horizon)
+**While dogfooding** (fix only what blocks daily use; file small roadmap/doc updates when you learn something):
+
+1. **#19 dogfooding** — [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) A–D on `yarn tauri dev` (superproject root); Tasks generate-spec + one **Implement** step on a real task.
+2. **Friction from dogfood** — promote to **Open** rows or fix immediately (lifecycle, git tab, context attach, tasks sync).
+3. **#28** (if context picking hurts) — file-tree / modified-file highlights over **#26** watcher unless git poll is insufficient.
+4. **#31** — [RELEASE.md](./RELEASE.md) when sharing builds or pinning submodule for collaborators.
+5. **#20–22** — Kiro-depth spec product (after dogfood stabilizes core loop).
+6. **#29, #30** — Plugins, remaining web parity (longer horizon).
 
 ## Related docs
 
@@ -138,4 +155,4 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 - [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) — superproject + submodule  
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — common failures  
 - [BUILD_MACOS.md](./BUILD_MACOS.md) — DMG / signing  
-- [TESTING.md](./TESTING.md) — Vitest, Rust git tests, Playwright e2e ([roadmap matrix](../e2e/ROADMAP_COVERAGE.md))  
+- [TESTING.md](./TESTING.md) — local-first: Vitest, Rust, Playwright e2e ([roadmap matrix](../e2e/ROADMAP_COVERAGE.md))  

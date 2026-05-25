@@ -102,3 +102,37 @@ export function capList<T>(items: T[], max: number): T[] {
   if (items.length <= max) return items
   return items.slice(items.length - max)
 }
+
+/** Shift the oldest optimistic user-message id (FIFO, matches send / SSE order). */
+export function shiftPendingUserMessageId(pendingIds: number[]): number | undefined {
+  return pendingIds.shift()
+}
+
+/** Drop the most recently registered optimistic id (failed send). */
+export function popPendingUserMessageId(pendingIds: number[]): number | undefined {
+  return pendingIds.pop()
+}
+
+/** Apply core `user_message` SSE to chat, or append when there is no pending optimistic bubble. */
+export function reconcileUserMessageInChat<T extends { id: number; content: string }>(
+  messages: readonly T[],
+  pendingMessageId: number | undefined,
+  serverText: string,
+  createMessage: (id: number, content: string) => T,
+  nextId: () => number
+): T[] {
+  if (pendingMessageId !== undefined) {
+    return messages.map((m) =>
+      m.id === pendingMessageId ? { ...m, content: serverText } : m
+    )
+  }
+  return [...messages, createMessage(nextId(), serverText)]
+}
+
+export function removeChatMessageById<T extends { id: number }>(
+  messages: readonly T[],
+  messageId: number | undefined
+): T[] {
+  if (messageId === undefined) return [...messages]
+  return messages.filter((m) => m.id !== messageId)
+}

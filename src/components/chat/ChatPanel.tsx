@@ -140,6 +140,13 @@ export function ChatPanel({
               }}
             >
               <Paper
+                data-testid={
+                  msg.role === 'user'
+                    ? 'chat-message-user'
+                    : msg.role === 'assistant'
+                      ? 'chat-message-assistant'
+                      : 'chat-message-system'
+                }
                 sx={{
                   position: 'relative',
                   px: 2,

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expectOptimisticSend } from './helpers/chatSend'
 import { defaultTurnEvents } from './helpers/fixtures'
 import { openChat, startMockSession } from './helpers/session'
 
@@ -11,6 +12,7 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
   test('assistant turn shows section chips and reply', async ({ page }) => {
     await page.getByTestId('chat-input').fill('Explain the module')
     await page.getByTestId('chat-send').click()
+    await expectOptimisticSend(page, 'Explain the module')
 
     await expect(page.getByText('Thinking', { exact: true })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('Answer', { exact: true })).toBeVisible()
@@ -20,6 +22,7 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
   test('proposed edit accordion and applied label after done', async ({ page }) => {
     await page.getByTestId('chat-input').fill('Patch src/example.ts')
     await page.getByTestId('chat-send').click()
+    await expectOptimisticSend(page, 'Patch src/example.ts')
 
     await expect(page.getByText('Proposed only')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('src/example.ts').first()).toBeVisible()
@@ -28,6 +31,7 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
   test('token stats footer after turn', async ({ page }) => {
     await page.getByTestId('chat-input').fill('stats please')
     await page.getByTestId('chat-send').click()
+    await expectOptimisticSend(page, 'stats please')
 
     const stats = page.getByTestId('token-stats')
     await expect(stats).toBeVisible({ timeout: 15_000 })
@@ -37,12 +41,11 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
   test('dismiss removes a chat bubble', async ({ page }) => {
     await page.getByTestId('chat-input').fill('hello-e2e-dismiss')
     await page.getByTestId('chat-send').click()
-    await expect(page.getByText('hello-e2e-dismiss')).toBeVisible({ timeout: 15_000 })
+    await expectOptimisticSend(page, 'hello-e2e-dismiss')
 
     await page
-      .locator('.MuiPaper-root')
+      .getByTestId('chat-message-user')
       .filter({ hasText: 'hello-e2e-dismiss' })
-      .last()
       .getByLabel('Dismiss message')
       .click()
     await expect(page.getByText('hello-e2e-dismiss')).toHaveCount(0)

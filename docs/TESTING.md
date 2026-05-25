@@ -41,7 +41,7 @@ yarn test
 yarn test:watch
 ```
 
-Covers chat stream parsing, commit graph layout, auto-stage policy, session lifecycle, git labels.
+Covers chat stream parsing (including optimistic user-message reconcile), commit graph layout, auto-stage policy, session lifecycle, git labels.
 
 ## Rust (Tauri git_ops)
 
@@ -65,8 +65,8 @@ yarn test:e2e
 |-------|------|
 | `session-lifecycle.spec.ts` | Start/stop, connecting, health recovery |
 | `navigation.spec.ts` | Main tabs |
-| `chat-ux.spec.ts` | Sections, proposed edits, token stats |
-| `chat-input.spec.ts` | Queue, stop turn, multiline |
+| `chat-ux.spec.ts` | Sections, proposed edits, token stats; optimistic user bubble on send |
+| `chat-input.spec.ts` | Send clears input + user bubble; queue, stop turn, multiline |
 | `confirm-flow.spec.ts` | Confirm banner |
 | `chat-context.spec.ts` | Folder attach |
 | `tasks-workspace.spec.ts` | Tasks + generate-spec |
