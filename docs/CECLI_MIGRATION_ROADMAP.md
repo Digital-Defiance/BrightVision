@@ -2,7 +2,7 @@
 
 **Owner:** Cursor agent (lead implementer)  
 **User role:** approve submodule swap / releases; optional manual dogfood sign-off  
-**Status:** Gate A4 passed (20 pytest) — outer repo defaults to `bright-vision-core`; dogfood with `source activate.sh && yarn tauri dev`  
+**Status:** Gate A4/A8 + submodule verify PASS — `bright-vision-core` @ `f448ab67d`; dogfood `source activate.sh && yarn tauri dev`  
 **Last updated:** 2026-05-25
 
 This is the **single execution plan** for moving the desktop shell from `aider_vision_core` to **cecli + `bright_vision_core`**, without cherry-picking git history. Tier rules: [CORE_FILE_MERGE.md](./CORE_FILE_MERGE.md). Pivot context: [BRIGHT_VISION_PIVOT.md](./BRIGHT_VISION_PIVOT.md).
@@ -251,10 +251,12 @@ Copy into PR description; agent checks all before claiming “migration complete
 - [ ] `test_http_session_todos.py` / `test_workspace_todos.py` green
 
 ### Phase B (outer repo)
-- [ ] Submodule pinned to bright SHA
-- [ ] `yarn test:local` green
-- [ ] Tauri finds `scripts/vision_serve.py` under bright root
-- [ ] `aider-vision-core` deinit only after above
+- [x] Default `coreEnginePath` → `bright-vision-core` (`config.ts`, `activate.sh`)
+- [x] `yarn test:local` green (68 vitest + 4 cargo)
+- [x] Tauri `BRIGHT_VISION_HEADLESS` + engine env aliases
+- [x] Product rebrand (window title, bundle id, `brand.ts`, localStorage migration)
+- [x] Commit `bright-vision-core` port (`f448ab67d`) + pin submodule SHA in parent (stage/commit parent when ready)
+- [ ] `aider-vision-core` deinit (optional after dogfood)
 
 ### Parity (shell unchanged)
 - [ ] `src/ipc/events.ts` types still satisfied
@@ -268,8 +270,8 @@ Copy into PR description; agent checks all before claiming “migration complete
 
 | Submodule | Branch / SHA | Notes |
 |-----------|--------------|-------|
-| `aider-vision-core` | _(current prod)_ | keep until Gate A4 |
-| `bright-vision-core` | `main` @ TBD | after port branch merge |
+| `aider-vision-core` | `789ead8aa` | legacy fallback (`BRIGHT_VISION_ENGINE=aider-vision-core`) |
+| `bright-vision-core` | `f448ab67d` | `bright_vision_core` on cecli; parent submodule pointer staged |
 
 ---
 

@@ -1,14 +1,14 @@
-# Aider Vision Roadmap
+# Bright Vision Roadmap
 
 Living backlog for chat UX, engine behavior, spec-driven work, and charter-level evolution ([AGENTS.md](../AGENTS.md) § Evolution).
 
-**Public summary:** [README.md](../README.md#-roadmap-status) · [docs site](https://aider-vision.digitaldefiance.org/#roadmap) (`docs/index.html`). Update those summaries when statuses change here.
+**Public summary:** [README.md](../README.md#-roadmap-status) · [docs site](https://bright-vision.digitaldefiance.org/#roadmap) (`docs/index.html`). Update those summaries when statuses change here.
 
 **Agents:** Read this file before substantive work; follow **Suggested fix order** until open items are **Done**; update statuses in the same session when you ship or learn something new. Instructions: `AGENTS.md` (Product roadmap) and `.cursor/rules/roadmap.mdc`.
 
 ## Current focus — cecli engine migration (Priority)
 
-**Blocking work:** port Vision HTTP/session layer onto **cecli** in `bright-vision-core`, then swap submodule. Do not start routine UX backlog until [CECLI_MIGRATION_ROADMAP.md](./CECLI_MIGRATION_ROADMAP.md) Gate A4 passes (or user reprioritizes).
+**Status:** Gate A4/A8 pytest green; default engine `bright-vision-core`. **Next:** dogfood `yarn tauri dev`, pin submodule SHA in parent, optional deinit `aider-vision-core`.
 
 | Doc | Use when |
 |-----|----------|

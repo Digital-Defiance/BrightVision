@@ -2,15 +2,15 @@
 
 ## What you install
 
-**Aider Vision** is the desktop app. **Aider Vision Core** ships inside it (submodule at `aider-vision-core/`). You do not add core to every project you code on.
+**Bright Vision** is the desktop app. **Bright Vision Core** ships inside it (submodule at `bright-vision-core/`: cecli + HTTP API). You do not add core to every project you code on.
 
-## First-time setup (developers of Vision)
+## First-time setup (developers)
 
 ```bash
-git clone https://github.com/Digital-Defiance/aider-vision.git
+git clone https://github.com/Digital-Defiance/aider-vision.git   # repo name may become bright-vision
 cd aider-vision
 git submodule update --init --recursive
-source activate.sh
+source activate.sh          # pip install -e bright-vision-core
 yarn install
 yarn tauri dev
 ```
@@ -33,9 +33,11 @@ For local Ollama: set **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`)
 
 | Goal | Project workspace | Engine |
 |------|-------------------|--------|
-| Hack on Aider Vision itself | `aider-vision` repo root | Bundled `aider-vision-core` |
+| Hack on Bright Vision itself | repo root (superproject) | Bundled `bright-vision-core` |
 | Work on any other repo | That repo’s root (via picker) | Same bundled engine |
 
 ## Environment
 
-- `AIDER_VISION_ENGINE` — optional absolute path to core if not using the default bundle.
+- `BRIGHT_VISION_ENGINE` / `AIDER_VISION_ENGINE` — optional absolute path to engine root.
+- `BRIGHT_VISION_HEADLESS` / `AIDER_VISION_HEADLESS` — set by Tauri when spawning the API child.
+- `BRIGHT_VISION_TOKEN` / `AIDER_VISION_TOKEN` — optional Bearer token for `:8741`.

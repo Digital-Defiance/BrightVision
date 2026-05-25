@@ -112,7 +112,8 @@ See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) if the session sticks on **Connec
 ```bash
 yarn test:git-workspace
 yarn verify:submodule          # needs .venv — also in test-local.sh release
-cd aider-vision-core && python -m pytest tests/ -q
+yarn test:bright-core              # bright-vision-core (default engine)
+cd bright-vision-core && python -m pytest tests/basic/ -q
 ```
 
 ## Script aliases
