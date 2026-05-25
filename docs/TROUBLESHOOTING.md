@@ -1,5 +1,14 @@
 # Troubleshooting Aider Vision
 
+## Stuck on “Connecting” (desktop)
+
+The activity bar can show **Connecting** to `http://127.0.0.1:8741` while the header says **Stopped** if a **Start** is still in progress or a previous start left the UI in a bad state.
+
+1. Click **Stop** on the Terminal tab — it stays enabled whenever the activity bar shows **Connecting** / **Starting engine** (not only when the session is “live”).
+2. Click **Start** again only after Stop finishes; a second Start while connecting will stop the stuck attempt first.
+3. If the port is still busy, quit the app fully and reopen it (startup clears orphaned listeners on `:8741`).
+4. Check Terminal → technical log for Python/uvicorn errors from `aider-vision-core-serve`.
+
 ## `No module named 'aider'`
 
 This is almost always a **stale repo-map cache**, not a missing pip package.

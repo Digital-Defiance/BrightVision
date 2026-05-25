@@ -17,7 +17,13 @@ export function VisionActivityBar({ process }: VisionActivityBarProps) {
   const phaseClass = `vision-activity--${process.phase}`
 
   return (
-    <Box className={`vision-activity ${phaseClass}`} role="status" aria-live="polite">
+    <Box
+      className={`vision-activity ${phaseClass}`}
+      role="status"
+      aria-live="polite"
+      data-testid="vision-activity"
+      data-phase={process.phase}
+    >
       <Box className="vision-activity__track">
         <Box
           className={`vision-activity__fill ${indeterminate ? 'vision-activity__fill--flow' : ''}`}

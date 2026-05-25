@@ -8,6 +8,7 @@ export function TokenStatsBar({ stats }: TokenStatsBarProps) {
   if (!stats) return null
   return (
     <Typography
+      data-testid="token-stats"
       variant="caption"
       color="text.secondary"
       sx={{

@@ -39,10 +39,11 @@ cd .. && yarn sync:core <version>
 ```bash
 source activate.sh
 yarn verify:submodule
-yarn tsc --noEmit
+yarn test:full         # local: tsc + vitest + rust + e2e (see TESTING.md)
+# or: sh scripts/test-local.sh release   # adds verify:submodule when .venv exists
 cd aider-vision-core && python -m pytest tests/basic/test_workspace_todos.py \
   tests/basic/test_todo_spec_generate.py tests/basic/test_todo_spec_jobs.py -q
-yarn tauri dev   # smoke: Tasks tab, Generate spec (background), chat while generating
+yarn tauri dev   # smoke: Terminal Start/Stop, Tasks tab, Generate spec (background), Git tab
 ```
 
 ## 4. Optional

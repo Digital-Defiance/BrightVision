@@ -39,6 +39,7 @@ import { useWorkspaceTodos } from './hooks/useWorkspaceTodos'
 import { WelcomePanel } from './components/onboarding/WelcomePanel'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { useProcess } from './progress/processStore'
+import { isSessionLifecycleActive } from './utils/sessionLifecycle'
 
 const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
@@ -167,6 +168,14 @@ function App() {
       .then(setEngineInstallPath)
       .catch(() => setEngineInstallPath(undefined))
   }, [savedConfig.coreEnginePath])
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return
+    void invoke('stop_core_api').catch(() => {})
+    return () => {
+      void invoke('stop_core_api').catch(() => {})
+    }
+  }, [])
 
   const dismissWelcome = useCallback(() => {
     setShowWelcome(false)
@@ -450,6 +459,7 @@ function App() {
     useSessionActivity()
   const {
     isRunning,
+    isStarting,
     isBusy,
     queuedCount,
     sessionInfo,
@@ -464,9 +474,23 @@ function App() {
     undo,
   } = useAiderSession(wrapHandler(handleCoreEvent))
 
+  const lifecycleActive = isSessionLifecycleActive(
+    process.snapshot,
+    isRunning,
+    isStarting
+  )
+
   const todoApiClient = useMemo(
     () => new CoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
     [savedConfig.coreApiUrl, savedConfig.coreApiToken]
+  )
+
+  const workspaceTodosApi = useMemo(
+    () => ({
+      client: httpClient ?? todoApiClient,
+      workspace: savedConfig.workingDir,
+    }),
+    [httpClient, todoApiClient, savedConfig.workingDir]
   )
 
   const { paths: pathSuggestions, active: pathAssistActive } = usePathCompletion(
@@ -490,10 +514,7 @@ function App() {
     importMarkdown,
     httpReady: todosHttpReady,
     tauriLocal: todosTauriLocal,
-  } = useWorkspaceTodos(
-    savedConfig.workingDir,
-    { client: httpClient ?? todoApiClient, workspace: savedConfig.workingDir },
-    () => {
+  } = useWorkspaceTodos(savedConfig.workingDir, workspaceTodosApi, () => {
       setSnackbar({
         message: 'Task marked done — all checklist items complete',
         severity: 'info',
@@ -561,6 +582,10 @@ function App() {
   }
 
   const handleStart = async () => {
+    if (lifecycleActive) {
+      await stop()
+      process.idle()
+    }
     try {
       const { info, workingDir } = await start(savedConfig)
       if (workingDir !== savedConfig.workingDir) {
@@ -606,6 +631,7 @@ function App() {
   const handleStop = async () => {
     try {
       await stop()
+      process.idle()
       setFilesInChat([])
       setRemainingAutoApproves(0)
       setTerminalLines((prev) => [
@@ -707,6 +733,25 @@ function App() {
       })
     }
   }, [isRunning, savedConfig.workingDir, addFiles, setFilesInChat])
+
+  const handleAttachFolderPath = useCallback(
+    async (relativePath: string) => {
+      if (!isRunning) return
+      const path = relativePath.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+      if (!path) return
+      try {
+        const info = await addFiles([path])
+        setFilesInChat(info.files_in_chat)
+        setSnackbar({ message: `Added folder ${path} to session context`, severity: 'info' })
+      } catch (err) {
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+    },
+    [isRunning, addFiles, setFilesInChat]
+  )
 
   const handleStartWork = useCallback(
     async (todo: TodoItem) => {
@@ -872,8 +917,15 @@ function App() {
 
   const headerExtra = (
     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }} noWrap>
-        {statusMessage || (isRunning ? 'Session live' : 'Stopped')}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ maxWidth: 280 }}
+        noWrap
+        data-testid="session-status"
+      >
+        {statusMessage ||
+          (isStarting ? 'Starting…' : isRunning ? 'Session live' : 'Stopped')}
       </Typography>
       {isRunning && sessionInfo && (
         <Chip
@@ -958,6 +1010,9 @@ function App() {
               terminalTailAvailable={terminalLines.some((l) => l.text.trim().length > 0)}
               onAttachContextDirectory={
                 isTauriRuntime() ? () => void handleAttachContextDirectory() : undefined
+              }
+              onAttachFolderPath={
+                !isTauriRuntime() ? (path) => void handleAttachFolderPath(path) : undefined
               }
             />
             </>
@@ -1053,17 +1108,19 @@ function App() {
                   variant="contained"
                   color="success"
                   startIcon={<PlayArrowIcon />}
-                  onClick={handleStart}
-                  disabled={isRunning}
+                  data-testid="terminal-start"
+                  onClick={() => void handleStart()}
+                  disabled={lifecycleActive}
                 >
-                  Start
+                  {lifecycleActive && !isRunning ? 'Starting…' : 'Start'}
                 </Button>
                 <Button
                   variant="contained"
                   color="error"
                   startIcon={<StopIcon />}
-                  onClick={handleStop}
-                  disabled={!isRunning}
+                  data-testid="terminal-stop"
+                  onClick={() => void handleStop()}
+                  disabled={!lifecycleActive}
                 >
                   Stop
                 </Button>

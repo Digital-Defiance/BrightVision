@@ -21,7 +21,7 @@ Living backlog for chat UX, engine behavior, spec-driven work, and charter-level
 | # | Status | Item |
 |---|--------|------|
 | **19** | **Done** | Submodule / multi-repo verified: `yarn verify:submodule` + `test_superproject_integration.py` (RepoSet, `/add` paths, Session). Manual UI pass still useful for SEARCH/REPLACE + commit. See [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md). |
-| **31** | **Open** | **Release hygiene** — commit/tag `aider-vision-core`, bump submodule pointer, verify ([RELEASE.md](./RELEASE.md)). Code is landed locally; not yet tagged in git. |
+| **31** | **Open** | **Release hygiene** — commit/tag `aider-vision-core`, bump submodule pointer, verify ([RELEASE.md](./RELEASE.md)). Code is landed locally; not yet tagged in git. **Operator task** (not blocked on code). |
 
 ---
 
@@ -57,6 +57,7 @@ Living backlog for chat UX, engine behavior, spec-driven work, and charter-level
 | 14 | **Done** | No longer pass workspace dir as chat file (`Session.create` empty `fnames`) |
 | 17 | **Done** | Settings: prompt before commit → `auto_commits: false` on session create |
 | — | **Done** | Terminate `:8741` core API on app quit (Tauri) |
+| — | **Done** | **Core API lifecycle** — Start/Stop tied to activity-bar phases (`sessionLifecycle`), cancel in-flight start, `start_core_api` timeout, health fetch timeouts, port cleanup on stop/launch, SSE reader release ([TROUBLESHOOTING.md](./TROUBLESHOOTING.md)) |
 
 ## Multi-modal & platform
 
@@ -97,20 +98,22 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 | # | Status | Charter theme | Tactical mapping / gap |
 |---|--------|---------------|-------------------------|
-| **23** | **Done** | Process & terminal integration | Vision HTTP/SSE, `useAiderSession`, stop/queue, Tauri core spawn, terminal stream |
+| **23** | **Done** | Process & terminal integration | Vision HTTP/SSE, `useAiderSession`, stop/queue, Tauri core spawn, terminal stream, reliable start/stop lifecycle |
 | **24** | **Done** | LLM chat interface | Chat panel, markdown, proposed edits, confirms, token stats |
 | **25** | **Done** | (overlap) Richer chat sections | Same as chat **#25** |
 | **26** | **Partial** | File system watcher | Git status polls on **Git** tab + while session runs (8s); native FS notify still open |
 | **27** | **Done** | Git visualization (charter §3) | Working tree, inline diffs, commit graph + details, stage all/file, auto-stage on `done`, undo + refresh. **Nice-to-have:** syntax-highlighted diffs |
-| **28** | **Partial** | Context awareness (charter §5) | **Done:** session files (images/PDF), `/add` paths, terminal tail + **folder picker** (Tauri) → `addFiles`. **Open:** web folder attach, file-tree picker, modified-file highlights (**#26**) |
+| **28** | **Partial** | Context awareness (charter §5) | **Done:** images/PDF, `/add` paths, terminal tail, Tauri folder picker, **web folder path** dialog → `addFiles`. **Open:** file-tree picker, modified-file highlights (**#26**) |
 | **29** | **Longer-term** | Plugin / extension system | Custom Rust commands, third-party LLM providers, packaged extensions |
-| **30** | **Open** | Web / non-Tauri parity | Browser: localStorage todos; no Tauri git picker, path Tab complete, or full generate-spec without core |
+| **30** | **Partial** | Web / non-Tauri parity | **Done:** folder path attach, localStorage todos, Vite `/api/core` proxy. **Open:** path Tab complete, full generate-spec UX without desktop |
 
 ---
 
 ## Known context
 
-- **#19 / #31:** Submodule verification passes; release still needs git tag + pointer bump.
+- **#19 / #31:** Submodule verification passes; release still needs git tag + pointer bump (see [RELEASE.md](./RELEASE.md)).
+- **Stuck “Connecting”:** Use Terminal **Stop** (enabled while activity bar shows boot/connect); quit app to clear orphaned `:8741` listeners. Covered by `e2e/session-lifecycle.spec.ts`.
+- **E2E:** Most **Done** roadmap rows have Playwright coverage on web preview (mock `/api/core` + mock Tauri `invoke` for desktop paths); see [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md). Real `yarn tauri dev` smoke remains manual.
 - **`POST /sessions/{id}/confirm`**: body `{ "confirm_id", "answer": true|false }`.
 - **Message queue**: drain on turn end; Stop does not clear queue.
 - **`/add` completion**: desktop Tauri only.
@@ -119,11 +122,12 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 ## Suggested fix order
 
-1. **#31** — [RELEASE.md](./RELEASE.md): commit/tag core, bump submodule, `yarn verify:submodule`
+1. **#31** — [RELEASE.md](./RELEASE.md): commit/tag core, bump submodule, `yarn verify:submodule` (operator / git)
 2. **#19** — Manual UI pass (submodule edit + Tasks generate/implement)
-3. **#28** — Web folder attach; file-tree / modified-file highlights (**#26**)
-4. **#20–22** — Kiro-depth spec features (when prioritizing spec product)
-6. **#29, #30** — Plugins, web parity (longer horizon)
+3. **#26** — Native file watcher (or deeper modified-file highlights in Git/Tasks)
+4. **#28** — File-tree context picker (web + desktop)
+5. **#20–22** — Kiro-depth spec features (when prioritizing spec product)
+6. **#29, #30** — Plugins, remaining web parity (longer horizon)
 
 ## Related docs
 
@@ -134,4 +138,4 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 - [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) — superproject + submodule  
 - [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — common failures  
 - [BUILD_MACOS.md](./BUILD_MACOS.md) — DMG / signing  
-- [TESTING.md](./TESTING.md) — Vitest, Rust git tests, Playwright e2e  
+- [TESTING.md](./TESTING.md) — Vitest, Rust git tests, Playwright e2e ([roadmap matrix](../e2e/ROADMAP_COVERAGE.md))  

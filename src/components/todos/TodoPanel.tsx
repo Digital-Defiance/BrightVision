@@ -222,7 +222,10 @@ export function TodoPanel({
   const blocked = selected ? isTodoBlocked(selected, todos) : false
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+    <Box
+      data-testid="todo-panel"
+      sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}
+    >
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1 }} flexWrap="wrap" useFlexGap>
         <Typography variant="subtitle1" fontWeight={600}>
           Tasks
@@ -244,7 +247,13 @@ export function TodoPanel({
               ))}
             </Select>
           </FormControl>
-          <Button size="small" startIcon={<AddIcon />} onClick={handleNew} disabled={loading}>
+          <Button
+            data-testid="todo-new"
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={handleNew}
+            disabled={loading}
+          >
             New
           </Button>
           {onExportMarkdown && (

@@ -8,7 +8,7 @@ interface ConfirmBannerProps {
 
 export function ConfirmBanner({ confirm, onAnswer }: ConfirmBannerProps) {
   return (
-    <Alert severity="warning" sx={{ mb: 2 }}>
+    <Alert severity="warning" sx={{ mb: 2 }} data-testid="confirm-banner">
       <AlertTitle>Confirmation required</AlertTitle>
       <Typography variant="body2">{confirm.question}</Typography>
       {confirm.subject && (

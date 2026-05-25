@@ -4,6 +4,7 @@ mod git_ops;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State, WindowEvent};
@@ -128,6 +129,41 @@ fn spawn_stderr_reader(
     });
 }
 
+async fn child_still_running(child: &mut Child) -> bool {
+    matches!(child.try_wait(), Ok(None))
+}
+
+fn port_listening(port: u16) -> bool {
+    use std::net::{SocketAddr, TcpStream};
+    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap_or_else(|_| "127.0.0.1:0".parse().unwrap());
+    TcpStream::connect_timeout(&addr, Duration::from_millis(400)).is_ok()
+}
+
+/// Best-effort: free the API port when a prior serve process outlived the app.
+#[cfg(unix)]
+fn kill_listeners_on_port(port: u16) {
+    let Ok(output) = std::process::Command::new("lsof")
+        .args(["-ti", &format!(":{}", port)])
+        .output()
+    else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let pid = line.trim();
+        if !pid.is_empty() {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", pid])
+                .output();
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_listeners_on_port(_port: u16) {}
+
 #[tauri::command]
 async fn start_core_api(
     app: tauri::AppHandle,
@@ -139,9 +175,17 @@ async fn start_core_api(
     port: u16,
 ) -> Result<String, String> {
     let mut guard = state.serve_child.lock().await;
-    if guard.is_some() {
-        let p = *state.api_port.lock().await;
-        return Ok(format!("http://127.0.0.1:{}", p));
+    if let Some(ref mut child) = *guard {
+        if child_still_running(child).await {
+            let p = *state.api_port.lock().await;
+            return Ok(format!("http://127.0.0.1:{}", p));
+        }
+        let _ = child.kill().await;
+        *guard = None;
+    }
+    if port_listening(port) {
+        kill_listeners_on_port(port);
+        tokio::time::sleep(Duration::from_millis(350)).await;
     }
 
     let engine_root = resolve_app_engine(&core_engine_path)?;
@@ -198,9 +242,14 @@ async fn start_core_api(
 
 #[tauri::command]
 async fn stop_core_api(state: State<'_, AppState>) -> Result<(), String> {
+    let port = *state.api_port.lock().await;
     let mut guard = state.serve_child.lock().await;
     if let Some(mut child) = guard.take() {
         child.kill().await.map_err(|e| e.to_string())?;
+        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    }
+    if port_listening(port) {
+        kill_listeners_on_port(port);
     }
     Ok(())
 }

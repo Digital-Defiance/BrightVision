@@ -36,6 +36,7 @@ export function ChatImageAttach({
           <IconButton
             size="small"
             aria-label="Attach images"
+            data-testid={useNativePicker ? 'chat-attach-native' : 'chat-attach-web'}
             disabled={disabled}
             onClick={() => {
               if (useNativePicker && onNativePick) {

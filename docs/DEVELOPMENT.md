@@ -90,6 +90,22 @@ Import from `src/progress` or use `useProcess()` in components.
 
 Universal (arm64 + x86_64) signed DMG: [BUILD_MACOS.md](./BUILD_MACOS.md).
 
+## Local testing
+
+Default before you push (no CI required):
+
+```bash
+yarn test:local
+```
+
+Larger UI/session changes:
+
+```bash
+yarn test:full
+```
+
+Details and tiers: [TESTING.md](./TESTING.md).
+
 ## Compatibility audit
 
 After changing `aider-vision-core`, run:

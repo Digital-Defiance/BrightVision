@@ -363,6 +363,7 @@ export function GitPanel({
           </Typography>
           {isTauriRuntime() && gitStatus?.is_repo && gitStatus.files.length > 0 && (
             <Button
+              data-testid="git-stage-all"
               size="small"
               variant="outlined"
               disabled={stagingAll || gitLoading}

@@ -39,8 +39,8 @@ export class CoreHttpClient {
     return h
   }
 
-  async health(): Promise<{ status: string; auth_required: boolean }> {
-    const res = await fetch(`${this.baseUrl}/health`)
+  async health(signal?: AbortSignal): Promise<{ status: string; auth_required: boolean }> {
+    const res = await fetch(`${this.baseUrl}/health`, { signal })
     if (!res.ok) throw new Error(`health: ${res.status}`)
     return res.json()
   }
@@ -523,18 +523,26 @@ export class CoreHttpClient {
       }
     }
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (value) {
-        buffer += decoder.decode(value, { stream: true })
-      }
-      const parts = buffer.split('\n\n')
-      if (done) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) {
+          buffer += decoder.decode(value, { stream: true })
+        }
+        const parts = buffer.split('\n\n')
+        if (done) {
+          yield* emitParts(parts)
+          break
+        }
+        buffer = parts.pop() ?? ''
         yield* emitParts(parts)
-        break
       }
-      buffer = parts.pop() ?? ''
-      yield* emitParts(parts)
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        /* already released */
+      }
     }
   }
 }

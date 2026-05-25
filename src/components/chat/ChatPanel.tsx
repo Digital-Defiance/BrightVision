@@ -1,7 +1,6 @@
 import CloseIcon from '@mui/icons-material/Close'
 import SendIcon from '@mui/icons-material/Send'
 import StopIcon from '@mui/icons-material/Stop'
-import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import TerminalIcon from '@mui/icons-material/Terminal'
 import {
   Alert,
@@ -20,6 +19,7 @@ import type { CoreConfirmEvent } from '../../ipc/events'
 import { parseFileCommandInput, replaceFileCommandPath } from '../../utils/fileCommandComplete'
 import { ConfirmBanner } from '../ConfirmBanner'
 import { AssistantMessageBody } from './AssistantMessageBody'
+import { ChatFolderAttach } from './ChatFolderAttach'
 import { ChatImageAttach } from './ChatImageAttach'
 import { CommandAssist } from './CommandAssist'
 import { TokenStatsBar } from './TokenStatsBar'
@@ -65,6 +65,7 @@ interface ChatPanelProps {
   onAttachTerminalTail?: () => void
   terminalTailAvailable?: boolean
   onAttachContextDirectory?: () => void
+  onAttachFolderPath?: (relativePath: string) => void
 }
 
 export function ChatPanel({
@@ -92,6 +93,7 @@ export function ChatPanel({
   onAttachTerminalTail,
   terminalTailAvailable = false,
   onAttachContextDirectory,
+  onAttachFolderPath,
 }: ChatPanelProps) {
   const pathTabIndex = useRef(0)
   const pathPrefix = parseFileCommandInput(inputValue)?.pathPrefix ?? ''
@@ -253,22 +255,20 @@ export function ChatPanel({
             <TerminalIcon fontSize="small" />
           </IconButton>
         )}
-        {onAttachContextDirectory && (
-          <IconButton
-            size="small"
-            aria-label="Add folder to session context"
-            title="Add folder to context"
+        {(onAttachContextDirectory || onAttachFolderPath) && (
+          <ChatFolderAttach
             disabled={!isRunning}
-            onClick={onAttachContextDirectory}
-          >
-            <FolderOpenIcon fontSize="small" />
-          </IconButton>
+            useNativePicker={Boolean(onAttachContextDirectory)}
+            onNativePick={onAttachContextDirectory}
+            onAddFolderPath={onAttachFolderPath}
+          />
         )}
         <TextField
           fullWidth
           size="small"
           multiline
           maxRows={6}
+          inputProps={{ 'data-testid': 'chat-input' }}
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
           onKeyDown={(e) => {
@@ -310,6 +310,7 @@ export function ChatPanel({
         {isBusy ? (
           <Stack direction="row" spacing={0.5} sx={{ alignSelf: 'flex-end' }}>
             <Button
+              data-testid="chat-queue"
               variant="contained"
               endIcon={<SendIcon />}
               onClick={onSend}
@@ -318,6 +319,7 @@ export function ChatPanel({
               Queue
             </Button>
             <Button
+              data-testid="chat-stop-turn"
               variant="outlined"
               color="warning"
               startIcon={<StopIcon />}
@@ -328,6 +330,7 @@ export function ChatPanel({
           </Stack>
         ) : (
           <Button
+            data-testid="chat-send"
             variant="contained"
             endIcon={<SendIcon />}
             onClick={onSend}

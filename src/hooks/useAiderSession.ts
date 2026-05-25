@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_CONFIG, type AiderConfig } from '../ipc/config'
 import type { CoreHttpClient, CoreSessionInfo, SendMessageOptions } from '../ipc/httpClient'
 import type { CoreEventBase } from '../ipc/events'
@@ -10,12 +10,14 @@ import { useProcess } from '../progress/processStore'
 export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
   const process = useProcess()
   const [isRunning, setIsRunning] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [queuedCount, setQueuedCount] = useState(0)
   const [sessionInfo, setSessionInfo] = useState<CoreSessionInfo | null>(null)
   const [apiUrl, setApiUrl] = useState<string | null>(null)
   const [httpClient, setHttpClient] = useState<CoreHttpClient | null>(null)
   const sessionRef = useRef<VisionApiSession | null>(null)
+  const pendingStartRef = useRef<VisionApiSession | null>(null)
   const busyRef = useRef(false)
   const queueRef = useRef<string[]>([])
   const drainQueueRef = useRef<() => Promise<void>>(async () => {})
@@ -29,18 +31,30 @@ export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
     syncQueueCount()
   }, [syncQueueCount])
 
+  const startGenerationRef = useRef(0)
+
   const start = useCallback(
     async (config: AiderConfig) => {
-      let resolved = config
-      if (isTauriRuntime()) {
-        const workingDir = await invoke<string>('detect_workspace', {
-          hint: config.workingDir || null,
-        })
-        resolved = { ...config, workingDir }
-      }
+      const generation = ++startGenerationRef.current
+      setIsStarting(true)
       const session = createVisionApiSession(onCoreEvent, (update) => process.apply(update))
+      pendingStartRef.current = session
+      let resolved = config
       try {
+        if (isTauriRuntime()) {
+          const workingDir = await invoke<string>('detect_workspace', {
+            hint: config.workingDir || null,
+          })
+          if (generation !== startGenerationRef.current) {
+            throw new DOMException('Start superseded', 'AbortError')
+          }
+          resolved = { ...config, workingDir }
+        }
         const info = await session.start(resolved)
+        if (generation !== startGenerationRef.current) {
+          await session.stop().catch(() => {})
+          throw new DOMException('Start superseded', 'AbortError')
+        }
         process.idle()
         sessionRef.current = session
         clearQueue()
@@ -50,33 +64,64 @@ export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
         setIsRunning(true)
         return { info, workingDir: resolved.workingDir }
       } catch (err) {
-        process.fail(err instanceof Error ? err.message : String(err))
+        if (generation === startGenerationRef.current) {
+          process.fail(err instanceof Error ? err.message : String(err))
+        }
         throw err
+      } finally {
+        if (generation === startGenerationRef.current) {
+          pendingStartRef.current = null
+          setIsStarting(false)
+        }
       }
     },
     [onCoreEvent, process, clearQueue]
   )
 
   const stop = useCallback(async () => {
+    startGenerationRef.current += 1
     process.begin('stopping')
+    pendingStartRef.current?.cancelStart()
+    sessionRef.current?.cancelSend()
+    const pending = pendingStartRef.current
+    const active = sessionRef.current
+    pendingStartRef.current = null
+
+    const shutdown = async () => {
+      if (pending) await pending.stop().catch(() => {})
+      if (active) await active.stop().catch(() => {})
+      if (isTauriRuntime()) {
+        await invoke('stop_core_api').catch(() => {})
+      }
+    }
+
     try {
       clearQueue()
-      if (sessionRef.current) {
-        await sessionRef.current.stop()
-        sessionRef.current = null
-      }
+      await Promise.race([
+        shutdown(),
+        new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+      ])
+      sessionRef.current = null
       setIsRunning(false)
       setIsBusy(false)
       busyRef.current = false
       setSessionInfo(null)
       setApiUrl(null)
       setHttpClient(null)
+    } finally {
+      setIsStarting(false)
       process.idle()
-    } catch (err) {
-      process.fail(err instanceof Error ? err.message : String(err))
-      throw err
     }
   }, [process, clearQueue])
+
+  useEffect(() => {
+    return () => {
+      startGenerationRef.current += 1
+      pendingStartRef.current?.cancelStart()
+      void pendingStartRef.current?.stop().catch(() => {})
+      void sessionRef.current?.stop().catch(() => {})
+    }
+  }, [])
 
   const sendOne = useCallback(
     async (content: string, todoOptions?: SendMessageOptions) => {
@@ -168,6 +213,7 @@ export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
 
   return {
     isRunning,
+    isStarting,
     isBusy,
     queuedCount,
     clearQueue,

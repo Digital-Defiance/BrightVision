@@ -70,6 +70,7 @@ export function CommandAssist({
 
       {pathAssistActive && pathSuggestions.length > 0 && (
         <Paper
+          data-testid="path-suggestions"
           variant="outlined"
           sx={{
             maxHeight: 180,

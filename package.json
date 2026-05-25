@@ -13,8 +13,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rust": "cd src-tauri && cargo test",
+    "test:fast": "yarn tsc --noEmit && yarn test",
+    "test:local": "yarn tsc --noEmit && yarn test && yarn test:rust",
     "test:e2e": "playwright test",
-    "test:all": "yarn tsc --noEmit && yarn test && yarn test:rust && yarn test:e2e",
+    "test:full": "yarn tsc --noEmit && yarn test && yarn test:rust && yarn test:e2e",
+    "test:all": "yarn test:full",
+    "test:local:sh": "sh scripts/test-local.sh",
     "test:git-workspace": "cd aider-vision-core && python -m pytest tests/basic/test_git_workspace.py -q",
     "verify:submodule": "sh scripts/verify_submodule.sh",
     "sync:core": "bash aider-vision-core/scripts/sync_aider_vision.sh"

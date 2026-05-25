@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly E2E?: string
+}
+
 declare module '*.svg' {
   const src: string
   export default src

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchGitWorkspaceStatus, type GitWorkspaceStatus } from '../ipc/gitStatus'
 import { isTauriRuntime } from '../ipc/isTauri'
 
-const POLL_MS = 8_000
+/** Git status poll interval while session runs or Git tab is open (roadmap #26 partial). */
+export const GIT_STATUS_POLL_MS = 8_000
+const POLL_MS = GIT_STATUS_POLL_MS
 
 export function useGitStatus(
   workingDir: string,
