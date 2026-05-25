@@ -31,7 +31,8 @@ export function ResourceOverlaySection({ prefs, onChange }: ResourceOverlaySecti
         Resource overlay
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Small HUD at the bottom-left of the workspace showing system CPU, RAM, and GPU
+        Compact CPU, RAM, and GPU readout in the bottom of the left nav column (does not
+        cover chat or images)
         (NVIDIA via <code>nvidia-smi</code> when available).
       </Typography>
       <Stack spacing={1}>
@@ -67,7 +68,7 @@ export function ResourceOverlaySection({ prefs, onChange }: ResourceOverlaySecti
               onChange={(_, v) => onChange({ ...prefs, showGpu: v })}
             />
           }
-          label="Show GPU (when nvidia-smi is available)"
+          label="Show GPU % (NVIDIA: nvidia-smi; Apple Silicon: IOKit)"
         />
         <TextField
           select

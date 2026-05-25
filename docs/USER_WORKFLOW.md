@@ -19,13 +19,13 @@ On launch, **project** defaults to the app repo. Use Chat welcome or Settings to
 
 ## Local LLM (recommended)
 
-Before **Terminal → Start**, run Ollama and preload a model with [local-llm](https://github.com/Digital-Defiance/local-llm) (`./local-llm.sh start aider-vision`). Match **Settings → LLM model** to `ollama_chat/<Ollama tag>`. Details: [LOCAL_LLM.md](./LOCAL_LLM.md).
+For local Ollama: set **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`), match **Settings → LLM model** to `ollama_chat/<tag>`, then **Terminal → Local LLM → Start** (or enable **Auto before session** and use **Terminal → Start**). Details: [LOCAL_LLM.md](./LOCAL_LLM.md).
 
 ## Day-to-day use
 
 1. **Open the app** — project path is auto-detected or restored from last session.
 2. **Choose project** (optional) — welcome card or Settings → folder picker. This is the git repo the agent edits.
-3. **Settings** (optional) — model (local: `ollama_chat/…` after local-llm), LiteLLM params, context files → **Save**.
+3. **Settings** (optional) — model (local: `ollama_chat/…`), LiteLLM params, context files → **Save**.
 4. **Terminal → Start** — spawns core from the app bundle, opens an HTTP session on your project.
 5. **Chat** — send prompts; git activity appears on the Git tab.
 

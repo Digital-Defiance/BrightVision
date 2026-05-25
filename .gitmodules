@@ -1,3 +1,6 @@
 [submodule "aider-vision-core"]
 	path = aider-vision-core
 	url = https://github.com/Digital-Defiance/aider-vision-core.git
+[submodule "bright-vision-core"]
+	path = bright-vision-core
+	url = https://github.com/Digital-Defiance/bright-vision-core.git

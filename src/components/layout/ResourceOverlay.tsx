@@ -1,56 +1,84 @@
-import { Box, Typography } from '@mui/material'
-import { VISION_SIDEBAR_W } from './AppChrome'
-import {
-  formatResourceOverlayLine,
-  type ResourceSnapshot,
-} from '../../ipc/resourceSnapshot'
+import { Box, Stack, Typography } from '@mui/material'
+import { resourceOverlayRows, type ResourceSnapshot } from '../../ipc/resourceSnapshot'
 import type { ResourceOverlayPrefs } from '../../theme/resourceOverlayPrefs'
 
 interface ResourceOverlayProps {
-  snapshot: ResourceSnapshot
+  snapshot: ResourceSnapshot | null
   prefs: ResourceOverlayPrefs
+  ready: boolean
 }
 
-export function ResourceOverlay({ snapshot, prefs }: ResourceOverlayProps) {
-  const warn = snapshot.cpuPct >= prefs.warnCpuPct
-  const line = formatResourceOverlayLine(snapshot, prefs.showGpu)
+function RailMetricRow({
+  label,
+  value,
+  title,
+}: {
+  label: string
+  value: string
+  title?: string
+}) {
+  return (
+    <Box
+      title={title}
+      sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        gap: 0.5,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <Typography component="span" variant="caption" sx={{ fontSize: 'inherit', opacity: 0.85 }}>
+        {label}
+      </Typography>
+      <Typography
+        component="span"
+        variant="caption"
+        sx={{ fontSize: 'inherit', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+      >
+        {value}
+      </Typography>
+    </Box>
+  )
+}
+
+/** Compact CPU/RAM/GPU readout in the nav gap below Settings (bottom of left column). */
+export function ResourceOverlay({ snapshot, prefs, ready }: ResourceOverlayProps) {
+  const warn = snapshot != null && snapshot.cpuPct >= prefs.warnCpuPct
+  const rows = snapshot != null ? resourceOverlayRows(snapshot, prefs.showGpu) : null
 
   return (
     <Box
       data-testid="resource-overlay"
       role="status"
       aria-live="polite"
+      aria-busy={!snapshot}
       sx={{
-        position: 'fixed',
-        left: VISION_SIDEBAR_W + 12,
-        bottom: 12,
-        zIndex: 1200,
-        pointerEvents: 'none',
-        px: 1.25,
-        py: 0.5,
-        borderRadius: 1,
-        border: 1,
-        borderColor: warn ? 'warning.main' : 'divider',
-        bgcolor: 'rgba(15, 15, 20, 0.82)',
-        backdropFilter: 'blur(6px)',
+        pt: 1,
+        pb: 0.5,
+        borderTop: 1,
+        borderColor: warn ? 'warning.dark' : 'divider',
         fontFamily: 'var(--vision-font-terminal, monospace)',
-        fontSize: '0.7rem',
+        fontSize: '0.58rem',
+        lineHeight: 1.45,
         color: warn ? 'warning.light' : 'text.secondary',
-        boxShadow: warn
-          ? '0 0 12px rgba(251, 191, 36, 0.25)'
-          : '0 2px 8px rgba(0,0,0,0.35)',
       }}
     >
-      <Typography component="span" variant="caption" sx={{ fontSize: 'inherit' }}>
-        {line}
-      </Typography>
-      <Typography
-        component="span"
-        variant="caption"
-        sx={{ display: 'block', fontSize: '0.62rem', opacity: 0.75, mt: 0.25 }}
-      >
-        {snapshot.memUsedMb} / {snapshot.memTotalMb} MB · {snapshot.scope}
-      </Typography>
+      {rows ? (
+        <Stack spacing={0.35}>
+          {rows.map((row) => (
+            <RailMetricRow key={row.id} label={row.label} value={row.value} title={row.title} />
+          ))}
+        </Stack>
+      ) : (
+        <Typography
+          component="div"
+          variant="caption"
+          sx={{ fontSize: 'inherit', textAlign: 'center' }}
+        >
+          {ready ? 'unavailable' : '…'}
+        </Typography>
+      )}
     </Box>
   )
 }

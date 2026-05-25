@@ -24,9 +24,7 @@ import { ChatFolderAttach } from './ChatFolderAttach'
 import { ChatImageAttach } from './ChatImageAttach'
 import { CommandAssist } from './CommandAssist'
 import { SuggestedFilesTray } from './SuggestedFilesTray'
-import { ThinkingTimerBar } from './ThinkingTimerBar'
 import { TokenStatsBar } from './TokenStatsBar'
-import type { LiveThinkingState } from '../../hooks/useThinkingTiming'
 import type { TurnThinkingTiming } from '../../utils/thinkingTiming'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 
@@ -81,10 +79,8 @@ interface ChatPanelProps {
   onSuggestedDismiss?: (path: string) => void
   onSuggestedClearAll?: () => void
   thinkingTimingPrefs?: ThinkingTimingPrefs
-  liveThinking?: LiveThinkingState | null
   turnActivityHint?: string
   turnStalled?: boolean
-  lastEventAgoMs?: number | null
 }
 
 export function ChatPanel({
@@ -120,10 +116,8 @@ export function ChatPanel({
   onSuggestedDismiss,
   onSuggestedClearAll,
   thinkingTimingPrefs,
-  liveThinking = null,
   turnActivityHint = '',
   turnStalled = false,
-  lastEventAgoMs = null,
 }: ChatPanelProps) {
   const pathTabIndex = useRef(0)
   const pathPrefix = parseFileCommandInput(inputValue)?.pathPrefix ?? ''
@@ -273,10 +267,6 @@ export function ChatPanel({
       </Box>
 
       <TokenStatsBar stats={tokenStats} />
-
-      {liveThinking && (
-        <ThinkingTimerBar live={liveThinking} lastEventAgoMs={lastEventAgoMs} />
-      )}
 
       {onSuggestedAddOne &&
         onSuggestedAddAll &&

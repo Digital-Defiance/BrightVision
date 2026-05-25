@@ -1,13 +1,16 @@
 import { Box, LinearProgress, Typography } from '@mui/material'
+import { ThinkingTimerInline } from '../chat/ThinkingTimerBar'
+import type { LiveThinkingState } from '../../utils/thinkingTiming'
 import type { ProcessSnapshot } from '../../progress/types'
 import './VisionActivityBar.scss'
 
 interface VisionActivityBarProps {
   process: ProcessSnapshot
+  liveTiming?: LiveThinkingState | null
 }
 
-export function VisionActivityBar({ process }: VisionActivityBarProps) {
-  const show = process.active || process.phase === 'error'
+export function VisionActivityBar({ process, liveTiming = null }: VisionActivityBarProps) {
+  const show = process.active || process.phase === 'error' || liveTiming != null
   if (!show) return null
 
   const indeterminate = process.progress === null
@@ -21,7 +24,10 @@ export function VisionActivityBar({ process }: VisionActivityBarProps) {
       ? `${process.current}/${process.total}`
       : null
 
-  const phaseClass = `vision-activity--${process.phase}`
+  const phaseClass = process.active ? `vision-activity--${process.phase}` : 'vision-activity--reasoning'
+  const primaryLabel = process.active
+    ? process.label
+    : liveTiming?.phaseLabel.toUpperCase() ?? 'WORKING'
 
   return (
     <Box
@@ -32,7 +38,7 @@ export function VisionActivityBar({ process }: VisionActivityBarProps) {
       aria-valuemin={0}
       aria-valuemax={100}
       data-testid="vision-activity"
-      data-phase={process.phase}
+      data-phase={process.active ? process.phase : 'timing'}
       data-indeterminate={indeterminate ? 'true' : 'false'}
     >
       <LinearProgress
@@ -54,13 +60,14 @@ export function VisionActivityBar({ process }: VisionActivityBarProps) {
       />
       <Box className="vision-activity__meta">
         <Typography variant="caption" className="vision-activity__label" component="span">
-          {process.label}
+          {primaryLabel}
           {pct != null && (
             <Box component="span" className="vision-activity__pct" sx={{ ml: 1 }}>
               {pct}%
             </Box>
           )}
         </Typography>
+        {liveTiming && <ThinkingTimerInline live={liveTiming} />}
         {(process.detail || countLabel) && (
           <Typography variant="caption" className="vision-activity__detail" component="span">
             {countLabel && process.detail

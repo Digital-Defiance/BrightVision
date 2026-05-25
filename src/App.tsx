@@ -86,6 +86,7 @@ import { useThinkingTiming } from './hooks/useThinkingTiming'
 import { useSessionStallWatch } from './hooks/useSessionStallWatch'
 import { useResourceOverlay } from './hooks/useResourceOverlay'
 import {
+  clearAllThinkingStats,
   clearModelThinkingStats,
   loadThinkingStats,
   saveThinkingStats,
@@ -755,7 +756,7 @@ function AppShell({
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
   stallWatchRef.current = stallWatch.touchEvent
 
-  const thinkingTiming = useThinkingTiming(savedConfig.model, thinkingTimingPrefs, isBusy)
+  const thinkingTiming = useThinkingTiming(savedConfig.model, thinkingTimingPrefs)
   thinkingTimingRef.current = {
     beginTurn: thinkingTiming.beginTurn,
     syncContent: thinkingTiming.syncContent,
@@ -891,8 +892,14 @@ function AppShell({
     const next = clearModelThinkingStats(loadThinkingStats(), savedConfig.model)
     saveThinkingStats(next)
     thinkingTiming.refreshStats()
-    setSnackbar({ message: 'Thinking stats cleared for current model', severity: 'info' })
+    setSnackbar({ message: 'Timing history cleared for current model', severity: 'info' })
   }, [savedConfig.model, thinkingTiming])
+
+  const handleClearAllThinkingStats = useCallback(() => {
+    saveThinkingStats(clearAllThinkingStats())
+    thinkingTiming.refreshStats()
+    setSnackbar({ message: 'All timing history cleared', severity: 'info' })
+  }, [thinkingTiming])
 
   const appendTerminalLog = useCallback((lines: string[]) => {
     if (!lines.length) return
@@ -1301,6 +1308,8 @@ function AppShell({
     const todoOptions = activeTodo
       ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
       : undefined
+    thinkingTimingRef.current.beginTurn(text.length)
+    turnTimingActiveRef.current = true
     try {
       const result = await send(text, todoOptions)
       if (injectSpec && activeTodo) todoInjectedIdRef.current = activeTodo.id
@@ -1313,6 +1322,8 @@ function AppShell({
         void reloadTodos()
       }
     } catch (err) {
+      turnTimingActiveRef.current = false
+      thinkingTimingRef.current.reset()
       if (err instanceof Error && err.name === 'AbortError') {
         setStatusMessage('Stopped')
         return
@@ -1440,12 +1451,14 @@ function AppShell({
         onTabChange={(id) => setActiveTab(id as TabId)}
         process={process.snapshot}
         isRunning={isRunning}
+        liveTiming={thinkingTiming.live}
         headerExtra={headerExtra}
-        footerOverlay={
-          resourceOverlay.enabled && resourceOverlay.snapshot ? (
+        railFooter={
+          resourceOverlay.enabled ? (
             <ResourceOverlay
               snapshot={resourceOverlay.snapshot}
               prefs={resourceOverlayPrefs}
+              ready={resourceOverlay.ready}
             />
           ) : undefined
         }
@@ -1481,14 +1494,8 @@ function AppShell({
               onSend={handleSend}
               onCancelSend={handleCancelSend}
               thinkingTimingPrefs={thinkingTimingPrefs}
-              liveThinking={thinkingTiming.live}
               turnActivityHint={stallWatch.hint}
               turnStalled={stallWatch.stalled}
-              lastEventAgoMs={
-                stallWatch.activity.kind !== 'idle'
-                  ? stallWatch.activity.sinceLastEventMs
-                  : null
-              }
               onConfirmAnswer={handleConfirmAnswer}
               onDismissMessage={handleDismissMessage}
               commands={commands}
@@ -1658,8 +1665,9 @@ function AppShell({
                 onAppearanceChange={setAppearance}
                 thinkingTimingPrefs={thinkingTimingPrefs}
                 onThinkingTimingPrefsChange={setThinkingTimingPrefs}
-                thinkingModelSummary={thinkingTiming.modelSummary}
+                thinkingStatsStore={thinkingTiming.statsStore}
                 onClearThinkingStatsForModel={handleClearThinkingStatsForModel}
+                onClearAllThinkingStats={handleClearAllThinkingStats}
                 resourceOverlayPrefs={resourceOverlayPrefs}
                 onResourceOverlayPrefsChange={setResourceOverlayPrefs}
                 onSave={handleSave}

@@ -11,9 +11,9 @@ export interface AiderConfig {
    * Ollama API URL for LiteLLM (`OLLAMA_API_BASE`). Empty = do not inject; use shell / LiteLLM default.
    */
   ollamaApiBase: string
-  /** Optional path to a local-llm clone; used last when reading `local-llm.env`. */
+  /** Optional directory for `local-llm.env` (applied last when reading env). */
   localLlmRoot: string
-  /** Desktop: start Ollama + preload model before Vision session (plain local-llm). */
+  /** Desktop: built-in Local LLM (Ollama + preload) before Vision session. */
   manageLocalLlm: boolean
   extraParams: string
   /** Git project the agent edits (any repo; does not need aider-vision-core inside it). */

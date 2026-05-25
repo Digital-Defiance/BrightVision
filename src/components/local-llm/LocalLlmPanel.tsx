@@ -67,6 +67,15 @@ export function LocalLlmPanel({
     }
     setError(null)
     try {
+      try {
+        const keepLogs = await invoke<string[]>('local_llm_refresh_keep_alive', {
+          ollamaHost,
+          modelTag,
+        })
+        onLogLines?.(keepLogs.map((l) => `[local-llm] ${l}`))
+      } catch {
+        // Ollama may be stopped; status fetch below still runs.
+      }
       const [s, models] = await Promise.all([
         invoke<LocalLlmRuntimeStatus>('local_llm_status', { ollamaHost, modelTag }),
         invoke<OllamaModelsSnapshot>('ollama_models_snapshot', { ollamaHost, modelTag }),
@@ -76,7 +85,7 @@ export function LocalLlmPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }, [ollamaHost, modelTag])
+  }, [ollamaHost, modelTag, onLogLines])
 
   useEffect(() => {
     void refresh()
@@ -150,8 +159,8 @@ export function LocalLlmPanel({
   if (!isTauriRuntime()) {
     return (
       <Alert severity="info" sx={{ mb: compact ? 0 : 2 }}>
-        Local LLM management is built into the desktop app. On web, run{' '}
-        <code>local-llm.sh start aider-vision</code> separately.
+        Local LLM management is built into the desktop app. On web, start Ollama and
+        preload your model manually, then match Settings to <code>ollama_chat/&lt;tag&gt;</code>.
       </Alert>
     )
   }
@@ -180,9 +189,9 @@ export function LocalLlmPanel({
           <Chip size="small" label="built-in" variant="outlined" color="primary" />
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          Plain profile (chat model only) — replaces <code>./local-llm.sh start aider-vision</code>{' '}
-          for Vision. Reads <code>local-llm.env</code> for host and tag; optional shell script
-          remains for Roo/indexed stacks.
+          Starts Ollama if needed, pulls your tag, and preloads with{' '}
+          <code>keep_alive: -1</code>. Host and model tag come from <code>local-llm.env</code> and
+          Settings.
         </Typography>
         <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
           {statusChip(status?.ollamaRunning ?? false, 'Ollama up', 'Ollama down')}

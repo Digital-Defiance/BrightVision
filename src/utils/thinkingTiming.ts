@@ -1,16 +1,37 @@
 import type { AssistantSection, AssistantSectionKind } from './chatStream'
 import { getActiveAssistantSection } from './chatStream'
 
+/** Wall-clock from Send until the turn completes (includes queue + model wait + streaming). */
+export type ResponseElapsedMs = number
+
+export interface LiveThinkingState {
+  responseElapsedMs: ResponseElapsedMs
+  /** Time in Thinking / Reasoning sections only (excludes queue wait and Answer). */
+  thoughtElapsedMs: number
+  activeKind: AssistantSectionKind | null
+  activeElapsedMs: number
+  phaseLabel: string
+}
+
+function phaseLabelForKind(kind: AssistantSectionKind | null): string {
+  if (kind === 'thinking') return 'Thinking'
+  if (kind === 'reasoning') return 'Reasoning'
+  if (kind === 'answer') return 'Answer'
+  if (kind === 'body') return 'Working'
+  return 'Waiting for model'
+}
+
 export interface SectionDuration {
   kind: AssistantSectionKind
   durationMs: number
 }
 
 export interface TurnThinkingTiming {
+  /** Wall-clock response time: Send → turn done (same as live `responseElapsedMs` at finalize). */
   turnDurationMs: number
   sections: SectionDuration[]
   userPromptChars: number
-  /** Sum of thinking + reasoning section durations. */
+  /** Think time: sum of Thinking + Reasoning section durations only. */
   thoughtMs: number
 }
 
@@ -30,6 +51,29 @@ export function isThoughtSection(kind: AssistantSectionKind): boolean {
 
 export function sumThoughtMs(sections: SectionDuration[]): number {
   return sections.filter((s) => isThoughtSection(s.kind)).reduce((n, s) => n + s.durationMs, 0)
+}
+
+/** Elapsed think time for the current turn (closed sections + open thinking/reasoning slice). */
+export function computeLiveThoughtMs(tracker: TurnTimingTracker, now = Date.now()): number {
+  let ms = sumThoughtMs(tracker.sections)
+  if (tracker.activeKind !== null && isThoughtSection(tracker.activeKind)) {
+    ms += Math.max(0, now - tracker.activeStartMs)
+  }
+  return ms
+}
+
+export function buildLiveThinkingState(
+  tracker: TurnTimingTracker,
+  now = Date.now()
+): LiveThinkingState {
+  const kind = tracker.activeKind
+  return {
+    responseElapsedMs: Math.max(0, now - tracker.turnStartMs),
+    thoughtElapsedMs: computeLiveThoughtMs(tracker, now),
+    activeKind: kind,
+    activeElapsedMs: kind !== null ? Math.max(0, now - tracker.activeStartMs) : 0,
+    phaseLabel: phaseLabelForKind(kind),
+  }
 }
 
 /** Map section index in `splitAssistantSections` output → duration ms (when kinds align in order). */

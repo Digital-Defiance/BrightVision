@@ -9,7 +9,7 @@ Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain a
 - Node 18+ and Yarn
 - Rust toolchain (for Tauri)
 - Python 3.10+ with `aider-vision-core` installed editable
-- **LLM:** local [Ollama](https://ollama.com/) + [local-llm](https://github.com/Digital-Defiance/local-llm) recommended — see [LOCAL_LLM.md](./LOCAL_LLM.md)
+- **LLM:** local [Ollama](https://ollama.com/) recommended — see [LOCAL_LLM.md](./LOCAL_LLM.md)
 
 ## First-time setup
 
@@ -19,14 +19,7 @@ source activate.sh   # venv + pip install -e aider-vision-core + uvicorn
 yarn install
 ```
 
-**local-llm (optional symlink):** link your [local-llm](https://github.com/Digital-Defiance/local-llm) clone for shared config with Vision:
-
-```bash
-ln -s ~/Code/local-llm local-llm   # path to your clone; `local-llm` is gitignored
-./local-llm/local-llm.sh start aider-vision
-```
-
-See [LOCAL_LLM.md](./LOCAL_LLM.md).
+**Optional `local-llm.env`:** create `local-llm/local-llm.env` in the repo (gitignored dir) with `DATA_MODEL` and `OLLAMA_HOST`. At runtime use **Terminal → Local LLM → Start** or **Auto before session**. See [LOCAL_LLM.md](./LOCAL_LLM.md).
 
 ## After a core PyPI release
 

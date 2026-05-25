@@ -30,7 +30,7 @@ Thumbs.db
 # Aider
 .aider*
 
-# Optional symlink to your local-llm clone at repo root only (see docs/LOCAL_LLM.md)
+# Optional local-llm.env directory at repo root (see docs/LOCAL_LLM.md)
 /local-llm
 
 

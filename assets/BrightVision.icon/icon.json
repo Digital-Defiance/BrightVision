@@ -6,16 +6,8 @@
     {
       "layers" : [
         {
-          "glass" : false,
-          "image-name" : "av-large.png",
-          "name" : "av-large",
-          "position" : {
-            "scale" : 1,
-            "translation-in-points" : [
-              39.5,
-              -60.5
-            ]
-          }
+          "image-name" : "bright-vision-logo.svg",
+          "name" : "bright-vision-logo"
         }
       ],
       "shadow" : {

@@ -197,6 +197,14 @@ async fn local_llm_start_plain(
 }
 
 #[tauri::command]
+async fn local_llm_refresh_keep_alive(
+    ollama_host: String,
+    model_tag: String,
+) -> Result<Vec<String>, String> {
+    local_llm_runtime::local_llm_refresh_keep_alive(&ollama_host, &model_tag).await
+}
+
+#[tauri::command]
 async fn local_llm_stop_plain(
     ollama_host: String,
     model_tag: String,
@@ -995,6 +1003,7 @@ fn main() {
             local_llm_status,
             ollama_models_snapshot,
             local_llm_start_plain,
+            local_llm_refresh_keep_alive,
             local_llm_stop_plain,
             llm_ping,
             git_workspace_status,

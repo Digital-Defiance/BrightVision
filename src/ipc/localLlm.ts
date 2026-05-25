@@ -57,11 +57,11 @@ export interface LocalLlmSnapshot {
   ollamaHost: string | null
   dataModel: string | null
   llmMode: string | null
-  /** Resolved `{app}/local-llm` when present (symlink OK). */
+  /** Resolved `{app}/local-llm` when present (optional env directory). */
   repoLocalLlmRoot?: string | null
 }
 
-/** Map an Ollama tag from local-llm to a LiteLLM model id for Vision. */
+/** Map an Ollama tag from `local-llm.env` to a LiteLLM model id for Vision. */
 export function isOllamaVisionModel(model: string): boolean {
   const m = model.trim().toLowerCase()
   return m.startsWith('ollama_chat/') || m.startsWith('ollama/')
@@ -95,7 +95,7 @@ function isDefaultOllamaModel(model: string): boolean {
 }
 
 /**
- * Merge local-llm env into Vision config.
+ * Merge `local-llm.env` into Vision config.
  * `fillEmpty` — only set fields the user has not configured (recommended on startup).
  */
 export function applyLocalLlmToConfig(

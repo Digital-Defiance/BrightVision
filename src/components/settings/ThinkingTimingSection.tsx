@@ -1,35 +1,36 @@
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
-import { Box, Button, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material'
-import type { ModelThinkingSummary } from '../../utils/thinkingStats'
+import { Button, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material'
 import {
   DEFAULT_THINKING_TIMING_PREFS,
   type ThinkingTimingPrefs,
 } from '../../theme/thinkingTimingPrefs'
-import { formatDurationMs } from '../../utils/thinkingTiming'
+import type { ThinkingStatsStore } from '../../utils/thinkingStats'
+import { ThinkingStatsPanel } from './ThinkingStatsPanel'
 
 interface ThinkingTimingSectionProps {
   prefs: ThinkingTimingPrefs
-  modelSummary: ModelThinkingSummary | null
+  statsStore: ThinkingStatsStore
   currentModel: string
   onChange: (next: ThinkingTimingPrefs) => void
   onClearModelStats: () => void
+  onClearAllStats: () => void
 }
 
 export function ThinkingTimingSection({
   prefs,
-  modelSummary,
+  statsStore,
   currentModel,
   onChange,
   onClearModelStats,
+  onClearAllStats,
 }: ThinkingTimingSectionProps) {
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Typography variant="subtitle2" fontWeight={600} gutterBottom>
-        Thinking timers
+        Response & think timing
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Track elapsed time per assistant section (Thinking / Reasoning / Answer) during each turn.
-        Stats accumulate per LLM model vs. prompt size.
+        <strong>Response time</strong> is Send → done. <strong>Think time</strong> is only
+        Thinking / Reasoning sections. History and statistics are stored locally per model.
       </Typography>
       <Stack spacing={0.5}>
         <FormControlLabel
@@ -39,7 +40,7 @@ export function ThinkingTimingSection({
               onChange={(_, v) => onChange({ ...prefs, showLiveTimer: v })}
             />
           }
-          label="Live timer while agent is working"
+          label="Live Response / Think timer in top activity bar"
         />
         <FormControlLabel
           control={
@@ -57,7 +58,7 @@ export function ThinkingTimingSection({
               onChange={(_, v) => onChange({ ...prefs, showMessageTurnTotal: v })}
             />
           }
-          label="Total turn time on assistant messages"
+          label="Response & Think time on completed messages"
         />
         <FormControlLabel
           control={
@@ -66,7 +67,7 @@ export function ThinkingTimingSection({
               onChange={(_, v) => onChange({ ...prefs, showStatsInSettings: v })}
             />
           }
-          label="Show model averages here"
+          label="Statistics & history in Settings"
         />
         <Button
           size="small"
@@ -77,41 +78,12 @@ export function ThinkingTimingSection({
         </Button>
       </Stack>
       {prefs.showStatsInSettings && (
-        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
-          <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-            Model: <strong>{currentModel || 'unknown'}</strong>
-          </Typography>
-          {modelSummary ? (
-            <Stack spacing={0.25}>
-              <Typography variant="body2">
-                Avg thought time: {formatDurationMs(modelSummary.avgThoughtMs)} (
-                {modelSummary.sampleCount} turn{modelSummary.sampleCount === 1 ? '' : 's'})
-              </Typography>
-              <Typography variant="body2">
-                Avg turn time: {formatDurationMs(modelSummary.avgTurnMs)}
-              </Typography>
-              {modelSummary.avgMsPer1kChars != null && (
-                <Typography variant="body2">
-                  ~{formatDurationMs(modelSummary.avgMsPer1kChars)} thought per 1k prompt chars
-                </Typography>
-              )}
-            </Stack>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              No samples yet — complete a turn with Thinking/Reasoning sections.
-            </Typography>
-          )}
-          <Button
-            size="small"
-            color="inherit"
-            startIcon={<DeleteOutlineIcon />}
-            sx={{ mt: 1 }}
-            onClick={onClearModelStats}
-            disabled={!modelSummary}
-          >
-            Clear stats for this model
-          </Button>
-        </Box>
+        <ThinkingStatsPanel
+          store={statsStore}
+          currentModel={currentModel}
+          onClearModel={onClearModelStats}
+          onClearAll={onClearAllStats}
+        />
       )}
     </Paper>
   )

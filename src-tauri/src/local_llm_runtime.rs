@@ -1,4 +1,4 @@
-//! Built-in plain local-llm profile: Ollama up, pull chat model, preload — no Qdrant.
+//! Built-in Local LLM: Ollama up, pull chat model, preload with keep_alive=-1.
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -247,6 +247,7 @@ impl OllamaClient {
             "model": model,
             "prompt": "ping",
             "stream": false,
+            "keep_alive": -1,
             "options": { "num_predict": 1 }
         });
         let res = self
@@ -466,16 +467,12 @@ pub async fn local_llm_start_plain(
         logs.push(format!("Model {model} already pulled"));
     }
 
-    if !client.is_loaded(&model).await.unwrap_or(false) {
-        logs.push(format!("Preloading {model} into memory…"));
-        client.preload_generate(&model).await?;
-        if client.is_loaded(&model).await.unwrap_or(false) {
-            logs.push(format!("{model} loaded"));
-        } else {
-            logs.push(format!("{model} preload requested (not listed in /api/ps yet)"));
-        }
+    logs.push(format!("Keeping {model} loaded (keep_alive=-1, no Ollama TTL)…"));
+    client.preload_generate(&model).await?;
+    if client.is_loaded(&model).await.unwrap_or(false) {
+        logs.push(format!("{model} in /api/ps (persistent load)"));
     } else {
-        logs.push(format!("Model {model} already loaded"));
+        logs.push(format!("{model} preload sent (may appear in /api/ps shortly)"));
     }
 
     logs.push("Local LLM ready".to_string());
@@ -603,6 +600,24 @@ pub async fn llm_ping(
         error,
         logs,
     })
+}
+
+/// Re-apply `keep_alive: -1` without pull/spawn (fixes `ollama ps` TTL expiry).
+pub async fn local_llm_refresh_keep_alive(
+    ollama_host: &str,
+    model_tag: &str,
+) -> Result<Vec<String>, String> {
+    let host = normalize_ollama_host(ollama_host);
+    let model = model_tag.trim().to_string();
+    if model.is_empty() {
+        return Err("model tag is empty".into());
+    }
+    let client = OllamaClient::new(&host)?;
+    if !client.is_running().await {
+        return Err("Ollama is not running".into());
+    }
+    client.preload_generate(&model).await?;
+    Ok(vec![format!("{model}: keep_alive=-1 refreshed")])
 }
 
 pub async fn local_llm_stop_plain(

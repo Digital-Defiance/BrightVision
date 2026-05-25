@@ -869,7 +869,7 @@
               desktop app built with <strong>Tauri</strong> and
               <strong>React</strong>. <strong>Privacy-first:</strong> run
               frontier models locally via
-              <a href="#local-llm">Ollama + local-llm</a>, not rented cloud
+              <a href="#local-llm">Ollama + built-in Local LLM</a>, not rented cloud
               inference. Cursor-like AI coding through a clean, focused workspace — powered by
               <a
                 href="https://aider-vision-core.digitaldefiance.org"
@@ -974,14 +974,8 @@
                   rel="noopener noreferrer"
                   >Ollama</a
                 >
-                with our
-                <a
-                  href="https://github.com/Digital-Defiance/local-llm"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  >local-llm</a
-                >
-                helper to preload models on Apple Silicon. Your prompts,
+                with built-in <strong>Local LLM</strong> controls to pull and preload
+                models on your hardware. Your prompts,
                 architecture, and proprietary code stay on your machine — not a
                 rented cloud autocomplete bill.
               </p>
@@ -1402,43 +1396,37 @@ brew install aider-vision</code></pre>
             <p class="install-path-label">Local LLM (recommended)</p>
             <h3>Privacy-first: Ollama + built-in Local LLM</h3>
             <p>
-              The <strong>desktop app</strong> embeds the plain local-llm flow (start
-              Ollama, pull, preload) — use <strong>Terminal → Local LLM</strong> or
-              auto-start before session. You still need
+              The <strong>desktop app</strong> starts Ollama, pulls your model, and
+              preloads it — use <strong>Terminal → Local LLM</strong> or
+              <strong>Auto before session</strong>. Install
               <a
                 href="https://ollama.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Ollama</a
               >
-              (download from ollama.com) and
-              <a
-                href="https://github.com/Digital-Defiance/local-llm"
-                target="_blank"
-                rel="noopener noreferrer"
-                >local-llm</a
-              >
-              (our shell helper to pull and preload models). Vision does not
-              bundle weights or the Ollama runtime.
+              from ollama.com. Vision does not bundle weights or the Ollama runtime.
             </p>
             <pre><code># Install Ollama from https://ollama.com/
-ln -s ~/Code/local-llm local-llm          # optional symlink (gitignored)
-cp local-llm/local-llm.env.example local-llm/local-llm.env
 
-# Desktop: Terminal → Local LLM → Start (built-in)
-# Or: ./local-llm/local-llm.sh start aider-vision  # same plain profile via shell</code></pre>
+mkdir -p local-llm
+cat &gt; local-llm/local-llm.env &lt;&lt;'EOF'
+OLLAMA_HOST=http://127.0.0.1:11434
+DATA_MODEL=qwen3.6:27b-q4_K_M
+EOF
+
+# Aider Vision → Settings: ollama_chat/qwen3.6:27b-q4_K_M
+# Terminal → Local LLM → Start → Terminal → Start (session)</code></pre>
             <p>
-              Edit <code>local-llm.env</code> once (<code>DATA_MODEL</code>,
-              <code>OLLAMA_HOST</code>). Aider Vision reads the same files and maps
-              them to <strong>LLM model</strong> and <strong>Ollama API base</strong>
-              (auto on launch or <strong>Sync from local-llm</strong> in Settings).
-              Save, then <strong>Terminal → Start</strong>.
+              Edit <code>local-llm.env</code> (<code>DATA_MODEL</code>,
+              <code>OLLAMA_HOST</code>). Vision maps them to <strong>LLM model</strong>
+              and <strong>Ollama API base</strong> (auto on launch or
+              <strong>Sync settings from .env</strong> in Settings). Save, then
+              <strong>Terminal → Start</strong>.
             </p>
             <p class="install-note">
-              Dev setup: symlink your clone —
-              <code>ln -s ~/Code/local-llm local-llm</code> (gitignored). Vision
-              reads <code>local-llm/local-llm.env</code> through the link. Or set
-              <code>LOCAL_LLM_DIR</code> / Settings → local-llm directory.
+              Optional: <code>LOCAL_LLM_DIR</code> or Settings → local-llm directory for
+              a custom <code>local-llm.env</code> path.
               <a
                 href="https://github.com/Digital-Defiance/aider-vision/blob/main/docs/LOCAL_LLM.md"
                 target="_blank"
@@ -1479,12 +1467,13 @@ source activate.sh</code></pre>
             </li>
             <li>
               <div>
-                <h3>Start local LLM (macOS)</h3>
+                <h3>Configure local LLM</h3>
                 <p>
-                  In another terminal, preload Ollama before you chat (plain
-                  profile).
+                  Create <code>local-llm/local-llm.env</code> (see Local LLM section
+                  above). In the app: <strong>Terminal → Local LLM → Start</strong>, or
+                  enable <strong>Auto before session</strong>.
                 </p>
-                <pre><code>./local-llm.sh start aider-vision</code></pre>
+                <pre><code># Or Settings → Sync settings from .env after editing local-llm.env</code></pre>
               </div>
             </li>
             <li>
@@ -1524,16 +1513,7 @@ source activate.sh</code></pre>
               rel="noopener noreferrer"
             >
               <strong>Local LLM</strong>
-              <span>Ollama, local-llm helper, model names, cloud providers</span>
-            </a>
-            <a
-              class="doc-link"
-              href="https://github.com/Digital-Defiance/local-llm"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <strong>local-llm (repo)</strong>
-              <span>Start/stop Ollama profiles — aider-vision alias</span>
+              <span>Ollama, built-in Local LLM, local-llm.env, cloud providers</span>
             </a>
             <a
               class="doc-link"
@@ -1641,10 +1621,10 @@ source activate.sh</code></pre>
             >Repository</a
           >
           <a
-            href="https://github.com/Digital-Defiance/local-llm"
+            href="https://github.com/Digital-Defiance/aider-vision/blob/main/docs/LOCAL_LLM.md"
             target="_blank"
             rel="noopener noreferrer"
-            >local-llm</a
+            >Local LLM guide</a
           >
           <a
             href="https://aider-vision-core.digitaldefiance.org"

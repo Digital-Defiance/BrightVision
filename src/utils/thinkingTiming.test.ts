@@ -1,19 +1,33 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildLiveThinkingState,
+  computeLiveThoughtMs,
   createTurnTimingTracker,
   finalizeTurnTiming,
   formatDurationMs,
   sectionDurationByIndex,
-  sumThoughtMs,
   syncTurnTimingFromContent,
 } from './thinkingTiming'
 import { splitAssistantSections } from './chatStream'
-import { recordThinkingSample, summarizeModelThinking } from './thinkingStats'
 
 describe('thinkingTiming', () => {
   it('formats durations', () => {
     expect(formatDurationMs(450)).toBe('450ms')
     expect(formatDurationMs(2500)).toBe('2.5s')
+  })
+
+  it('response time runs from turn start; think time only in thought sections', () => {
+    let t = createTurnTimingTracker(100, 1000)
+    expect(buildLiveThinkingState(t, 6000).responseElapsedMs).toBe(5000)
+    expect(computeLiveThoughtMs(t, 6000)).toBe(0)
+    t = syncTurnTimingFromContent(t, '► **THINKING**\nplan\n', 3000)
+    expect(computeLiveThoughtMs(t, 6000)).toBe(3000)
+    t = syncTurnTimingFromContent(t, '► **THINKING**\nplan\n► **ANSWER**\nok\n', 7000)
+    expect(computeLiveThoughtMs(t, 9000)).toBe(4000)
+    const waiting = buildLiveThinkingState(createTurnTimingTracker(50, 2000), 5500)
+    expect(waiting.responseElapsedMs).toBe(3500)
+    expect(waiting.thoughtElapsedMs).toBe(0)
+    expect(waiting.phaseLabel).toBe('Waiting for model')
   })
 
   it('tracks section transitions', () => {
@@ -39,24 +53,5 @@ describe('thinkingTiming', () => {
     const map = sectionDurationByIndex(sections, durations)
     expect(map.get(0)).toBe(1000)
     expect(map.get(1)).toBe(500)
-  })
-})
-
-describe('thinkingStats', () => {
-  it('accumulates per model', () => {
-    let store = recordThinkingSample(
-      { version: 1, byModel: {} },
-      'test/model',
-      { thoughtMs: 2000, promptChars: 1000, turnMs: 3000 }
-    )
-    store = recordThinkingSample(store, 'test/model', {
-      thoughtMs: 4000,
-      promptChars: 2000,
-      turnMs: 5000,
-    })
-    const summary = summarizeModelThinking(store.byModel['test/model'], 'test/model')
-    expect(summary?.sampleCount).toBe(2)
-    expect(summary?.avgThoughtMs).toBe(3000)
-    expect(sumThoughtMs([])).toBe(0)
   })
 })

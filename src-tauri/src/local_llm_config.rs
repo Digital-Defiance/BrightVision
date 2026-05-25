@@ -1,4 +1,4 @@
-//! Read local-llm env files with the same file order as `local-llm.sh` (later files win).
+//! Read `local-llm.env` from standard paths (later files win). See docs/LOCAL_LLM.md.
 
 use serde::Serialize;
 use std::collections::HashMap;

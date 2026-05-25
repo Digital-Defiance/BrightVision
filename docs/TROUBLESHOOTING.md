@@ -2,7 +2,7 @@
 
 ## Local LLM / Ollama
 
-See **[LOCAL_LLM.md](./LOCAL_LLM.md)** for the full setup (Ollama + [local-llm](https://github.com/Digital-Defiance/local-llm)).
+See **[LOCAL_LLM.md](./LOCAL_LLM.md)** for the full setup (Ollama + built-in Local LLM in the desktop app).
 
 **Quick checks:**
 
@@ -15,6 +15,16 @@ curl -s http://127.0.0.1:11434/api/tags   # Ollama up?
 - **Settings → LLM model** must use the LiteLLM form `ollama_chat/<tag>` where `<tag>` matches `ollama list` / `DATA_MODEL` in local-llm.
 - **Settings → Ollama API base** — leave empty for default; set if Ollama is not on the default host (same URL as `OLLAMA_HOST` in local-llm).
 - Cloud models: use `openai/…` / `anthropic/…` and set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` in the environment **before** launching the app.
+
+## Stuck on “Sending” / no assistant reply
+
+The header can show **Sending** while the turn timer runs (**Waiting for model** above the chat input). That usually means Vision core is waiting on Ollama, not that the UI is frozen.
+
+1. In a terminal: `ollama ps` — if **UNTIL** is a few minutes (not indefinite), the model will unload and the next turn can hang. Run **Terminal → Local LLM → Start** (preload with `keep_alive: -1`) or **Refresh** (re-applies `-1` without a full restart). For all Ollama clients, you can also set `OLLAMA_KEEP_ALIVE=-1` before starting `ollama serve`.
+2. **Settings → Ping LLM** — must succeed before chatting.
+3. **Stop** the turn, fix Ollama, send again.
+
+**Thinking timer:** **Settings → Thinking timers → Live Response / Think timer** must be on. Timers appear in the **top activity bar** (next to **Sending** / **Thinking**): **Response** from **Send** until done; **Think** for Thinking/Reasoning sections only.
 
 ## Answer shown but “Thinking” / queued `/add` never runs
 

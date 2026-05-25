@@ -79,8 +79,8 @@ export function AssistantMessageBody({
           data-testid="message-turn-timing"
           sx={{ fontFamily: 'var(--vision-font-chat, monospace)', fontSize: '0.7rem' }}
         >
-          Turn {formatDurationMs(turnTiming.turnDurationMs)}
-          {turnTiming.thoughtMs > 0 && ` · thought ${formatDurationMs(turnTiming.thoughtMs)}`}
+          Response {formatDurationMs(turnTiming.turnDurationMs)}
+          {turnTiming.thoughtMs > 0 && ` · Think ${formatDurationMs(turnTiming.thoughtMs)}`}
         </Typography>
       )}
       {sections.map((sec, si) => (

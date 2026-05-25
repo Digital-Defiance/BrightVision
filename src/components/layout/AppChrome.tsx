@@ -2,6 +2,7 @@ import { Box, IconButton, Paper, Stack, Toolbar, Tooltip, Typography } from '@mu
 import type { ReactNode } from 'react'
 import { BrandLogo } from '../brand/BrandLogo'
 import type { ProcessSnapshot } from '../../progress/types'
+import type { LiveThinkingState } from '../../utils/thinkingTiming'
 import { VisionActivityBar } from '../progress/VisionActivityBar'
 
 export interface NavItem {
@@ -16,9 +17,11 @@ interface AppChromeProps {
   onTabChange: (id: string) => void
   process: ProcessSnapshot
   isRunning: boolean
+  liveTiming?: LiveThinkingState | null
   headerExtra?: ReactNode
   children: ReactNode
-  footerOverlay?: ReactNode
+  /** CPU/RAM/GPU strip anchored in the left nav rail (not over main content). */
+  railFooter?: ReactNode
 }
 
 export const VISION_SIDEBAR_W = 92
@@ -29,9 +32,10 @@ export function AppChrome({
   onTabChange,
   process,
   isRunning,
+  liveTiming = null,
   headerExtra,
   children,
-  footerOverlay,
+  railFooter,
 }: AppChromeProps) {
   return (
     <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'background.default' }}>
@@ -42,6 +46,7 @@ export function AppChrome({
         sx={{
           width: VISION_SIDEBAR_W,
           flexShrink: 0,
+          alignSelf: 'stretch',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
@@ -54,7 +59,8 @@ export function AppChrome({
         }}
       >
         <BrandLogo variant="rail" />
-        {nav.map((item) => {
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.5, minHeight: 0 }}>
+          {nav.map((item) => {
           const selected = activeTab === item.id
           return (
             <Tooltip key={item.id} title={item.label} placement="right">
@@ -94,7 +100,11 @@ export function AppChrome({
               </Stack>
             </Tooltip>
           )
-        })}
+          })}
+          {railFooter ? (
+            <Box sx={{ flexShrink: 0, mt: 'auto', width: '100%', pt: 0.5 }}>{railFooter}</Box>
+          ) : null}
+        </Box>
       </Paper>
 
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -124,13 +134,12 @@ export function AppChrome({
             />
             {headerExtra}
           </Toolbar>
-          <VisionActivityBar process={process} />
+          <VisionActivityBar process={process} liveTiming={liveTiming} />
         </Paper>
 
-        <Box sx={{ flex: 1, overflow: 'auto', p: 3, position: 'relative' }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
           {children}
         </Box>
-        {footerOverlay}
       </Box>
     </Box>
   )

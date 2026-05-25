@@ -58,6 +58,7 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
     stop_core_api: async () => null,
     /** Match {@link E2E_CONFIG.coreApiUrl} so Playwright routes in mockCoreApi intercept fetches. */
     start_core_api: async () => '/api/core',
+    local_llm_refresh_keep_alive: async () => ['test/model: keep_alive=-1 refreshed'],
     local_llm_status: async () => ({
       ollamaRunning: true,
       modelPulled: true,
@@ -89,6 +90,7 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
       memTotalMb: 16384,
       memPct: 50,
       gpuPct: 8,
+      gpuSource: 'nvidia-smi',
       scope: 'system',
     }),
     llm_ping: async () => ({

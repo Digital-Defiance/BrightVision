@@ -8,18 +8,22 @@ import { isTauriRuntime } from '../ipc/isTauri'
 
 export function useResourceOverlay(prefs: ResourceOverlayPrefs) {
   const [snapshot, setSnapshot] = useState<ResourceSnapshot | null>(null)
+  const [ready, setReady] = useState(false)
   const enabled = isTauriRuntime() && prefs.showOverlay
 
   useEffect(() => {
     if (!enabled) {
       setSnapshot(null)
+      setReady(false)
       return
     }
 
     let cancelled = false
     const poll = async () => {
       const s = await fetchResourceSnapshot()
-      if (!cancelled && s) setSnapshot(s)
+      if (cancelled) return
+      setReady(true)
+      if (s) setSnapshot(s)
     }
 
     void poll()
@@ -31,5 +35,5 @@ export function useResourceOverlay(prefs: ResourceOverlayPrefs) {
     }
   }, [enabled, prefs.pollIntervalSec])
 
-  return { snapshot, enabled }
+  return { snapshot, enabled, ready }
 }

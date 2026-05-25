@@ -24,7 +24,7 @@ import { ResourceOverlaySection } from './ResourceOverlaySection'
 import type { ResourceOverlayPrefs } from '../../theme/resourceOverlayPrefs'
 import { LocalLlmPanel } from '../local-llm/LocalLlmPanel'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
-import type { ModelThinkingSummary } from '../../utils/thinkingStats'
+import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 
 interface SettingsPanelProps {
   config: AiderConfig
@@ -35,8 +35,9 @@ interface SettingsPanelProps {
   onAppearanceChange: (appearance: AppearanceConfig) => void
   thinkingTimingPrefs: ThinkingTimingPrefs
   onThinkingTimingPrefsChange: (prefs: ThinkingTimingPrefs) => void
-  thinkingModelSummary: ModelThinkingSummary | null
+  thinkingStatsStore: ThinkingStatsStore
   onClearThinkingStatsForModel: () => void
+  onClearAllThinkingStats: () => void
   resourceOverlayPrefs: ResourceOverlayPrefs
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
   onSave: () => void
@@ -52,8 +53,9 @@ export function SettingsPanel({
   onAppearanceChange,
   thinkingTimingPrefs,
   onThinkingTimingPrefsChange,
-  thinkingModelSummary,
+  thinkingStatsStore,
   onClearThinkingStatsForModel,
+  onClearAllThinkingStats,
   resourceOverlayPrefs,
   onResourceOverlayPrefsChange,
   onSave,
@@ -145,8 +147,8 @@ export function SettingsPanel({
                 slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.8rem' } } }}
                 helperText={
                   localLlmSnap?.repoLocalLlmRoot
-                    ? `Symlink: ${localLlmSnap.repoLocalLlmRoot}`
-                    : 'Symlink: ln -s ~/Code/local-llm local-llm'
+                    ? `Env: ${localLlmSnap.repoLocalLlmRoot}/local-llm.env`
+                    : 'Optional: local-llm/local-llm.env in repo (gitignored)'
                 }
                 onBlur={refreshLocalLlm}
               />
@@ -305,10 +307,11 @@ export function SettingsPanel({
 
       <ThinkingTimingSection
         prefs={thinkingTimingPrefs}
-        modelSummary={thinkingModelSummary}
+        statsStore={thinkingStatsStore}
         currentModel={config.model}
         onChange={onThinkingTimingPrefsChange}
         onClearModelStats={onClearThinkingStatsForModel}
+        onClearAllStats={onClearAllThinkingStats}
       />
 
       <ResourceOverlaySection

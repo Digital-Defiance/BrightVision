@@ -12,9 +12,14 @@
   &__meta {
     display: flex;
     align-items: baseline;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 6px;
     min-height: 18px;
+  }
+
+  &__timing {
+    flex-shrink: 0;
   }
 
   &__label {

@@ -7,7 +7,16 @@ export interface ResourceSnapshot {
   memTotalMb: number
   memPct: number
   gpuPct: number | null
+  /** `nvidia-smi` | `macos-ioreg` when GPU % is available */
+  gpuSource?: string | null
   scope: string
+}
+
+export interface ResourceOverlayRow {
+  id: 'cpu' | 'ram' | 'gpu'
+  label: string
+  value: string
+  title?: string
 }
 
 export async function fetchResourceSnapshot(): Promise<ResourceSnapshot | null> {
@@ -19,13 +28,49 @@ export async function fetchResourceSnapshot(): Promise<ResourceSnapshot | null> 
   }
 }
 
+/** One-line summary (tests / wide layouts). */
 export function formatResourceOverlayLine(s: ResourceSnapshot, showGpu: boolean): string {
-  const cpu = `${s.cpuPct.toFixed(0)}% CPU`
-  const mem = `${s.memPct.toFixed(0)}% RAM`
+  return resourceOverlayRows(s, showGpu)
+    .map((r) => `${r.value} ${r.label}`.trim())
+    .join(' · ')
+}
+
+/** Stacked rows for the narrow nav rail — avoids awkward mid-string wraps. */
+export function resourceOverlayRows(
+  s: ResourceSnapshot,
+  showGpu: boolean
+): ResourceOverlayRow[] {
+  const rows: ResourceOverlayRow[] = [
+    { id: 'cpu', label: 'CPU', value: `${s.cpuPct.toFixed(0)}%` },
+    {
+      id: 'ram',
+      label: 'RAM',
+      value: `${s.memPct.toFixed(0)}%`,
+      title: `${s.memUsedMb} / ${s.memTotalMb} MB system memory`,
+    },
+  ]
   if (showGpu) {
-    const gpu =
-      s.gpuPct != null ? `${s.gpuPct.toFixed(0)}% GPU` : 'GPU —'
-    return `${cpu} · ${mem} · ${gpu}`
+    rows.push(
+      s.gpuPct != null
+        ? {
+            id: 'gpu',
+            label: 'GPU',
+            value: `${s.gpuPct.toFixed(0)}%`,
+            title:
+              s.gpuSource === 'macos-ioreg'
+                ? 'Apple GPU (Device Utilization from IOKit)'
+                : s.gpuSource === 'nvidia-smi'
+                  ? 'NVIDIA GPU (nvidia-smi)'
+                  : undefined,
+          }
+        : {
+            id: 'gpu',
+            label: 'GPU',
+            value: '—',
+            title:
+              'GPU % unavailable (needs NVIDIA nvidia-smi or Apple Silicon IOKit)',
+          }
+    )
   }
-  return `${cpu} · ${mem}`
+  return rows
 }
