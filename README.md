@@ -1,4 +1,4 @@
-<img width="1392" height="832" alt="Screenshot 2026-05-24 at 10 04 45 PM" src="https://github.com/user-attachments/assets/6e3ed3b8-4d44-48f0-a428-02d47f0a4e6d" /># Aider Vision
+# Aider Vision
 
 **Website:** [aider-vision.digitaldefiance.org](https://aider-vision.digitaldefiance.org)
 
