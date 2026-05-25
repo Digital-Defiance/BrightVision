@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from './config'
 import {
   applyLocalLlmToConfig,
+  formatLlmPingHint,
   formatLlmPingSummary,
   isOllamaVisionModel,
   ollamaChatModelFromTag,
@@ -62,5 +63,22 @@ describe('localLlm', () => {
         logs: [],
       })
     ).toBe('LLM OK (120ms) · Core OK (8ms)')
+  })
+
+  it('hints when Ollama ok but core is down', () => {
+    const r = {
+      ollamaReachable: true,
+      modelPulled: true,
+      modelLoaded: false,
+      generateOk: true,
+      latencyMs: 545,
+      responsePreview: '',
+      coreReachable: false,
+      coreLatencyMs: null,
+      error: null,
+      logs: [],
+    }
+    expect(formatLlmPingSummary(r)).toBe('LLM OK (545ms) · Core not running')
+    expect(formatLlmPingHint(r)).toContain('Terminal → Start')
   })
 })

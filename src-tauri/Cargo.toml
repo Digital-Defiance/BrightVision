@@ -1,7 +1,7 @@
 [package]
-name = "aider-vision"
+name = "bright-vision"
 version = "0.1.0"
-description = "A cross-platform GUI for Aider"
+description = "Bright Vision — local LLM desktop IDE (Tauri + cecli)"
 authors = ["Digital Defiance"]
 edition = "2021"
 

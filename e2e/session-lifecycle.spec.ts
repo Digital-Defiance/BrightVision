@@ -60,7 +60,9 @@ test.describe('Core API session lifecycle (mocked /api/core)', () => {
 
     await page.getByTestId('terminal-start').click()
 
-    await expect(page.getByRole('alert')).toContainText(/Could not start/i, { timeout: 25_000 })
+    await expect(page.getByRole('alert').filter({ hasText: /Could not start/i })).toBeVisible({
+      timeout: 25_000,
+    })
     await expect(page.getByTestId('vision-activity')).toHaveAttribute('data-phase', 'error', {
       timeout: 5_000,
     })

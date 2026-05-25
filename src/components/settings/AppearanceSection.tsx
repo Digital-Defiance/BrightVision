@@ -106,7 +106,7 @@ export function AppearanceSection({ appearance, onChange }: AppearanceSectionPro
           customKey="uiFontCustom"
           appearance={appearance}
           onChange={onChange}
-          sample="Aider Vision — workspace navigation and labels"
+          sample="Bright Vision — workspace navigation and labels"
         />
         <FontRow
           label="Chat font (messages & input)"
@@ -122,7 +122,7 @@ export function AppearanceSection({ appearance, onChange }: AppearanceSectionPro
           customKey="terminalFontCustom"
           appearance={appearance}
           onChange={onChange}
-          sample={'[Aider Vision Core] Tokens: 120 sent, 45 received\nEdited: src/App.tsx'}
+          sample={'[Bright Vision Core] Tokens: 120 sent, 45 received\nEdited: src/App.tsx'}
         />
       </Stack>
     </Paper>

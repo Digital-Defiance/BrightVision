@@ -4,11 +4,12 @@ import SyncIcon from '@mui/icons-material/Sync'
 import { useCallback, useEffect, useState } from 'react'
 import { Box, Button, Paper, Stack, TextField, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
+import { DISPLAY_VISION } from '../../brand'
 import {
   CORE_ENGINE_DIR,
   formatContextFilesInput,
   parseContextFilesInput,
-  type AiderConfig,
+  type VisionConfig,
 } from '../../ipc/config'
 import { isTauriRuntime } from '../../ipc/isTauri'
 import {
@@ -27,11 +28,11 @@ import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 
 interface SettingsPanelProps {
-  config: AiderConfig
+  config: VisionConfig
   appearance: AppearanceConfig
   apiPreview: string
   sessionFiles?: string[]
-  onChange: (config: AiderConfig) => void
+  onChange: (config: VisionConfig) => void
   onAppearanceChange: (appearance: AppearanceConfig) => void
   thinkingTimingPrefs: ThinkingTimingPrefs
   onThinkingTimingPrefsChange: (prefs: ThinkingTimingPrefs) => void
@@ -143,12 +144,12 @@ export function SettingsPanel({
                 size="small"
                 value={config.localLlmRoot}
                 onChange={(e) => onChange({ ...config, localLlmRoot: e.target.value })}
-                placeholder="local-llm"
+                placeholder="optional override directory"
                 slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.8rem' } } }}
                 helperText={
                   localLlmSnap?.repoLocalLlmRoot
-                    ? `Env: ${localLlmSnap.repoLocalLlmRoot}/local-llm.env`
-                    : 'Optional: local-llm/local-llm.env in repo (gitignored)'
+                    ? `Found ${localLlmSnap.repoLocalLlmRoot}/local-llm.env`
+                    : 'Default: ./local-llm.env at repo root (gitignored), or ~/.config/local-llm/env'
                 }
                 onBlur={refreshLocalLlm}
               />
@@ -235,7 +236,7 @@ export function SettingsPanel({
             size="small"
             value={config.coreEnginePath}
             onChange={(e) => onChange({ ...config, coreEnginePath: e.target.value })}
-            helperText={`Relative to the ${CORE_ENGINE_DIR} install inside the Aider Vision app.`}
+            helperText={`Relative to the ${CORE_ENGINE_DIR} install inside the ${DISPLAY_VISION} app.`}
           />
           <TextField
             label="Python (spawn API on desktop)"

@@ -1,6 +1,8 @@
 import { msPer1kPromptChars } from './thinkingTiming'
 
-export const THINKING_STATS_STORAGE_KEY = 'aider-vision-thinking-stats'
+import { THINKING_STATS_STORAGE_KEY } from '../storageKeys'
+
+export { THINKING_STATS_STORAGE_KEY }
 export const MAX_TIMING_HISTORY = 300
 
 /** @deprecated v1 aggregate — used only for migration */

@@ -15,8 +15,9 @@ import {
 } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useState } from 'react'
-import type { AiderConfig } from '../../ipc/config'
+import type { VisionConfig } from '../../ipc/config'
 import {
+  formatLlmPingHint,
   formatLlmPingSummary,
   isOllamaVisionModel,
   resolveLocalLlmForConfig,
@@ -27,7 +28,7 @@ import {
 import { isTauriRuntime } from '../../ipc/isTauri'
 
 interface LocalLlmPanelProps {
-  config: AiderConfig
+  config: VisionConfig
   onManageChange: (manage: boolean) => void
   onLogLines?: (lines: string[]) => void
   compact?: boolean
@@ -190,8 +191,8 @@ export function LocalLlmPanel({
         </Stack>
         <Typography variant="caption" color="text.secondary">
           Starts Ollama if needed, pulls your tag, and preloads with{' '}
-          <code>keep_alive: -1</code>. Host and model tag come from <code>local-llm.env</code> and
-          Settings.
+          <code>keep_alive: -1</code> only when the model is not already in{' '}
+          <code>/api/ps</code>. Host and model tag come from <code>local-llm.env</code> and Settings.
         </Typography>
         <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
           {statusChip(status?.ollamaRunning ?? false, 'Ollama up', 'Ollama down')}
@@ -288,6 +289,11 @@ export function LocalLlmPanel({
             onClose={() => setPingResult(null)}
           >
             {formatLlmPingSummary(pingResult)}
+            {formatLlmPingHint(pingResult) && (
+              <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                {formatLlmPingHint(pingResult)}
+              </Typography>
+            )}
             {pingResult.responsePreview && (
               <Typography
                 component="span"

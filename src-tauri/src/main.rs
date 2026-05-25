@@ -70,11 +70,13 @@ fn vision_serve_script(engine_root: &Path) -> PathBuf {
 fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
     let mut tried: Vec<String> = Vec::new();
 
-    if let Ok(env) = std::env::var("AIDER_VISION_ENGINE") {
-        let p = PathBuf::from(&env);
-        tried.push(p.display().to_string());
-        if vision_serve_script(&p).is_file() {
-            return Ok(p);
+    for key in ["BRIGHT_VISION_ENGINE", "AIDER_VISION_ENGINE"] {
+        if let Ok(env) = std::env::var(key) {
+            let p = PathBuf::from(&env);
+            tried.push(p.display().to_string());
+            if vision_serve_script(&p).is_file() {
+                return Ok(p);
+            }
         }
     }
 
@@ -85,7 +87,7 @@ fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
     }
 
     Err(format!(
-        "Vision API server not found. Tried:\n  {}\n\nFrom the aider-vision repo run: git submodule update --init && source activate.sh",
+        "Vision API server not found. Tried:\n  {}\n\nFrom the Bright Vision repo run: git submodule update --init && source activate.sh",
         tried.join("\n  ")
     ))
 }
@@ -127,7 +129,7 @@ fn spawn_stderr_reader(
                     guard.drain(0..excess);
                 }
             }
-            let _ = app.emit("aider-error", line);
+            let _ = app.emit("vision-error", line);
         }
     });
 }
@@ -278,6 +280,7 @@ async fn start_core_api(
             ),
         )
         .env("NO_COLOR", "1")
+        .env("BRIGHT_VISION_HEADLESS", "1")
         .env("AIDER_VISION_HEADLESS", "1")
         .env("TQDM_DISABLE", "1");
     if !extra_params.trim().is_empty() {

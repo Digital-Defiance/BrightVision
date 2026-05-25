@@ -1,6 +1,6 @@
 import { Box } from '@mui/material'
-import headerSvg from '../../assets/brand/aider-vision.svg?raw'
-import railSvg from '../../assets/brand/av.svg?raw'
+import headerSvg from '../../assets/brand/bright-vision-horiz-white.svg?raw'
+import railSvg from '../../assets/brand/bright-vision-logo.svg?raw'
 import {
   BRAND_HEADER_LOGO_PNG,
   BRAND_LOGO_MODE,
@@ -36,7 +36,7 @@ export function BrandLogo({ variant }: BrandLogoProps) {
             ? {
                 height: 28,
                 width: 'auto',
-                maxWidth: 240,
+                maxWidth: 320,
                 objectFit: 'contain',
                 objectPosition: 'left',
               }

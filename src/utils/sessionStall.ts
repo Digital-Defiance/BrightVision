@@ -18,8 +18,12 @@ export interface TurnActivitySnapshot {
   lastProgressDetail: string
 }
 
-const STALL_WARN_MS = 45_000
+/** UI hint only — does not abort the turn (SSE idle timeout is separate). */
+const STALL_WARN_MS = 300_000
 const STREAMING_RECENT_MS = 8_000
+
+const PROGRESS_WORKING_RE =
+  /waiting for|preparing|ollama|slash command|repo|scanning|vision|llm|working/i
 
 export function buildTurnActivity(
   isBusy: boolean,
@@ -45,12 +49,12 @@ export function buildTurnActivity(
   if (sinceLastTokenMs !== null && sinceLastTokenMs < STREAMING_RECENT_MS) {
     kind = 'streaming'
   } else if (
-    /waiting for/.test(hay) &&
+    PROGRESS_WORKING_RE.test(hay) &&
     sinceLastTokenMs !== null &&
     sinceLastTokenMs >= STREAMING_RECENT_MS
   ) {
     kind = 'post_answer_wait'
-  } else if (/waiting for/.test(hay)) {
+  } else if (PROGRESS_WORKING_RE.test(hay)) {
     kind = 'waiting_model'
   } else if (/tool|confirm/.test(hay)) {
     kind = /confirm/.test(hay) ? 'confirm' : 'tool'
@@ -61,6 +65,15 @@ export function buildTurnActivity(
 
 export function isLikelyStalled(activity: TurnActivitySnapshot): boolean {
   if (activity.kind === 'idle') return false
+  if (
+    activity.kind === 'streaming' ||
+    activity.kind === 'waiting_model' ||
+    activity.kind === 'post_answer_wait' ||
+    activity.kind === 'tool' ||
+    activity.kind === 'confirm'
+  ) {
+    return false
+  }
   return activity.sinceLastEventMs >= STALL_WARN_MS
 }
 
@@ -98,7 +111,7 @@ export function turnActivityHint(
     if (queuedCount > 0) {
       return `${base} Use Add all on suggested files while busy, Clear queue, or Stop — then Ping LLM and retry.`
     }
-    return `${base} If this persists, Stop the turn or wait for the 90s stall timeout.`
+    return `${base} If this persists, Stop the turn or wait for the long SSE timeout.`
   }
 
   if (isLikelyStalled(activity)) {

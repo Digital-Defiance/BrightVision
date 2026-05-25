@@ -30,8 +30,11 @@ Thumbs.db
 # Aider
 .aider*
 
-# Optional local-llm.env directory at repo root (see docs/LOCAL_LLM.md)
-/local-llm
+# LLM e2e (playwright globalSetup)
+.e2e-llm-core.pid
+
+# Local Ollama defaults for Bright Vision (see docs/LOCAL_LLM.md)
+local-llm.env
 
 
 #Ignore cursor AI rules

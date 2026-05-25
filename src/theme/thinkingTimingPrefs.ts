@@ -1,4 +1,6 @@
-export const THINKING_TIMING_STORAGE_KEY = 'aider-vision-thinking-timing'
+import { THINKING_TIMING_STORAGE_KEY } from '../storageKeys'
+
+export { THINKING_TIMING_STORAGE_KEY }
 
 export interface ThinkingTimingPrefs {
   showLiveTimer: boolean

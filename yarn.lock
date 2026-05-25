@@ -1408,29 +1408,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"aider-vision@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "aider-vision@workspace:."
-  dependencies:
-    "@emotion/react": "npm:^11.14.0"
-    "@emotion/styled": "npm:^11.14.0"
-    "@mui/icons-material": "npm:^6.4.0"
-    "@mui/material": "npm:^6.4.0"
-    "@playwright/test": "npm:^1.49.0"
-    "@tauri-apps/api": "npm:^2.0.0"
-    "@tauri-apps/cli": "npm:^2.0.0"
-    "@types/react": "npm:^18.3.4"
-    "@types/react-dom": "npm:^18.3.0"
-    "@vitejs/plugin-react": "npm:^4.3.1"
-    react: "npm:^18.3.1"
-    react-dom: "npm:^18.3.1"
-    sass: "npm:^1.83.0"
-    typescript: "npm:^5.5.4"
-    vite: "npm:^5.4.2"
-    vitest: "npm:^2.1.0"
-  languageName: unknown
-  linkType: soft
-
 "assertion-error@npm:^2.0.1":
   version: 2.0.1
   resolution: "assertion-error@npm:2.0.1"
@@ -1457,6 +1434,29 @@ __metadata:
   checksum: 10c0/408c93245bdf1e92ab0f891ebf9283ec60dbabfaac81bdc9a20d371565a2a496b0fb8028f7d628c3f66f90ee142670a81575cf1cbd5229f7b4b0d350db911085
   languageName: node
   linkType: hard
+
+"bright-vision@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "bright-vision@workspace:."
+  dependencies:
+    "@emotion/react": "npm:^11.14.0"
+    "@emotion/styled": "npm:^11.14.0"
+    "@mui/icons-material": "npm:^6.4.0"
+    "@mui/material": "npm:^6.4.0"
+    "@playwright/test": "npm:^1.49.0"
+    "@tauri-apps/api": "npm:^2.0.0"
+    "@tauri-apps/cli": "npm:^2.0.0"
+    "@types/react": "npm:^18.3.4"
+    "@types/react-dom": "npm:^18.3.0"
+    "@vitejs/plugin-react": "npm:^4.3.1"
+    react: "npm:^18.3.1"
+    react-dom: "npm:^18.3.1"
+    sass: "npm:^1.83.0"
+    typescript: "npm:^5.5.4"
+    vite: "npm:^5.4.2"
+    vitest: "npm:^2.1.0"
+  languageName: unknown
+  linkType: soft
 
 "browserslist@npm:^4.24.0":
   version: 4.28.2

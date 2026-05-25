@@ -27,10 +27,12 @@ git add bright-vision-core   # submodule pointer at tag
 # commit parent app UI + docs + Tauri
 ```
 
-Legacy `aider-vision-core` sync script (pre-cecli) remains only if you still ship the old engine:
+Pin parent app after a core PyPI release:
 
 ```bash
-cd aider-vision-core && ./scripts/sync_aider_vision.sh <version> --commit
+cd bright-vision-core
+./build.sh v0.1.0 --sync-vision          # or sync only if tag exists:
+./scripts/sync_bright_vision.sh v0.1.0 --commit
 ```
 
 ## 3. Verify

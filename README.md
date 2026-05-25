@@ -1,103 +1,66 @@
-# Aider Vision
+# Bright Vision
 
-**Website:** [aider-vision.digitaldefiance.org](https://aider-vision.digitaldefiance.org)
+**Website:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org)
 
-<img width="231" height="87" alt="Aider Vision" title="Aider Vision" src="https://aider-vision.digitaldefiance.org/aider-vision-black.svg" />
+<img alt="Bright Vision" title="Bright Vision" src="https://bright-vision.digitaldefiance.org/bright-vision.svg" />
 
-A lightweight, cross-platform desktop application built with **Tauri** and **React** that provides a graphical interface to manage, configure, and interact with the [Aider Vision Core](https://github.com/Digital-Defiance/aider-vision-core) AI coding assistant which is a headless version of [Aider](https://github.com/paul-gauthier/aider) with some improvements.
+A lightweight, cross-platform desktop IDE built with **Tauri** and **React** — **local LLM first**, spec-driven tasks, and superproject/submodule git — powered by **[Bright Vision Core](https://github.com/Digital-Defiance/bright-vision-core)** (a **fork²** on [cecli](https://github.com/dwash96/cecli): bundled cecli + ported headless HTTP API from our earlier `aider-vision-core` — see [lineage](https://github.com/Digital-Defiance/bright-vision-core/blob/main/docs/LINEAGE.md)).
 
 <img width="1392" height="832" alt="Screenshot 2026-05-25 at 1 46 13 PM" src="https://github.com/user-attachments/assets/646e3140-72c5-4760-84ae-24b4b9015434" />
 
 ## 🚀 Features
 
-- **Vision API**: All prompting goes through the HTTP API (React is the head; core is headless under `aider-vision-core/`).
-- **Chat UX**: Streaming replies with Thinking/Answer sections, proposed-edit accordions, confirm flow, queue/stop, `/add` path completion (desktop), image/PDF attach, Glass TTY–style chat font (configurable).
-- **Tasks & specs**: Spec-driven workflow (`.aider-vision/todos.json`, generate/refine spec, steered **Implement** steps) — see [docs/SPEC_DRIVEN_DEV.md](docs/SPEC_DRIVEN_DEV.md).
+- **Vision API**: All prompting goes through the HTTP API (React is the head; core is headless under `bright-vision-core/`).
+- **Local LLM**: Ollama + built-in Local LLM panel; defaults to on-device models — see [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md).
+- **Chat UX**: Streaming replies, Thinking/Answer sections, proposed-edit accordions, confirm flow, queue/stop, `/add` path completion (desktop), image/PDF attach.
+- **Tasks & specs**: EARS/spec-driven workflow (`.bright-vision/todos.json`, generate/refine spec, steered **Implement** steps) — [docs/SPEC_DRIVEN_DEV.md](docs/SPEC_DRIVEN_DEV.md).
 - **Git tab**: Working tree, diffs, commit graph, stage/undo, auto-stage after turns (desktop).
-- **Process management**: Reliable core start/stop, activity-bar progress for repo scan, Technical terminal for engine output.
-- **Superproject + submodule**: Hack on Aider Vision itself with `aider-vision-core` as a submodule ([SUBMODULE_VERIFICATION.md](docs/SUBMODULE_VERIFICATION.md)).
+- **Superproject + submodules**: Multi-repo workspace via `RepoSet` — [docs/SUBMODULE_VERIFICATION.md](docs/SUBMODULE_VERIFICATION.md).
 - **Native performance**: Rust + Tauri v2 on macOS, Linux, and Windows.
 
 ## 🗺 Roadmap status
 
-Living backlog: **[docs/ROADMAP.md](docs/ROADMAP.md)** (also on the [project site](https://aider-vision.digitaldefiance.org/#roadmap)). Summary as of the current tree:
+Living backlog: **[docs/ROADMAP.md](docs/ROADMAP.md)** · [project site](https://bright-vision.digitaldefiance.org/#roadmap).
 
-| Status | Meaning |
-|--------|---------|
-| **Done** | Shipped in the app and/or `aider-vision-core` |
-| **Partial** | Works in part; gaps documented in the roadmap |
-| **Open** | Not started or in progress |
-| **Longer-term** | Strategic; design before build |
+**Current focus:** [cecli engine migration](docs/CECLI_MIGRATION_ROADMAP.md) (default engine `bright-vision-core`) then **dogfooding** on real repos (`yarn tauri dev`).
 
-**Current focus:** [dogfooding](docs/ROADMAP.md#current-focus--dogfooding) — daily use on real repos (`yarn tauri dev`), especially the superproject root, not expanding CI/e2e alone. Quick checks: `yarn test:local`; before larger changes: `yarn test:full`.
-
-### Shipped (high level)
-
-| Area | Highlights |
-|------|------------|
-| **Chat & session** | Stream dedupe, optimistic send + timeline tool order, multiline input, queue, stop, token stats, dismiss bubbles |
-| **Engine** | Core API lifecycle, confirm API, optional manual commit, terminate `:8741` on quit |
-| **Spec-driven (#18)** | Tasks tab v1–v5: workspace todos, three-layer specs, generate-spec jobs, Implement steps |
-| **Charter §3 Git** | Git visualization tab (#27) |
-| **Charter §23–24** | Process integration + LLM chat interface |
-
-### In progress & next
-
-| # | Status | Item |
-|---|--------|------|
-| **19** | Partial | Submodule/multi-repo — automated verify green; manual A–D dogfood sign-off pending |
-| **26** | Partial | File awareness via git poll (8s); native FS watcher still open |
-| **28** | Partial | Context: images, `/add`, folder attach; file-tree picker open |
-| **32** | Partial | Suggested files tray — parse Answer paths; Add all / queue `/add` (#4) |
-| **33** | Longer-term | Optional CPU/RAM (GPU best-effort) overlay — bottom-left HUD, Tauri + Settings |
-| **34** | Partial | Thinking timers — live + per-section durations; per-model stats in Settings |
-| **30** | Partial | Web dev via Vite proxy; full desktop parity for `/add` Tab + generate-spec |
-| **31** | Open | Release hygiene (tag core, bump submodule) — when sharing builds |
-| **20–22** | Open | Kiro-depth spec UX (dedicated spec agent, EARS linter, repo-wide spec index) |
-| **29** | Longer-term | Plugin / extension system |
-
-**Suggested order while dogfooding:** submodule verification → friction from real use → context picker if needed → release tagging → spec-depth features. Details in [ROADMAP.md § Suggested fix order](docs/ROADMAP.md#suggested-fix-order).
+Quick checks: `yarn test:local` · core: `yarn test:bright-core`
 
 ## 🛠 Tech Stack
 
 - **Backend**: Rust + Tauri v2
 - **Frontend**: React + TypeScript + Vite
-- **Styling**: MUI v6 + Emotion (`src/theme.ts`); global SCSS in `src/styles/`
-- **Package Manager**: Yarn (Plug'n'Play)
+- **Engine**: Python — `bright_vision_core` (HTTP/SSE) on **cecli** (coders, agents, commands)
+- **Styling**: MUI v6 + Emotion; global SCSS in `src/styles/`
+- **Package Manager**: Yarn
 
 ## 🔒 Local LLM first (privacy-first)
 
-Aider Vision is aimed at **local inference** on your own hardware — not at sending proprietary code through rented cloud IDEs. The happy path:
+Bright Vision targets **local inference** on your hardware:
 
-1. Install **[Ollama](https://ollama.com/)** (model runtime).
-2. Configure **`local-llm/local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`) — see **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)**.
-3. **Desktop:** **Terminal → Local LLM → Start**, or leave **Auto before session** on and press **Terminal → Start**.
-4. Chat once the session is live.
+1. Install **[Ollama](https://ollama.com/)**.
+2. Copy **`local-llm.env.example`** → **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`) — **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)**. Local LLM is built into the app (Rust + Python); no `local-llm.sh` required.
+3. **Desktop:** **Terminal → Local LLM → Start**, or **Auto before session** + **Terminal → Start**.
+4. Chat when the session is live.
 
-Full options (cloud providers, Ping LLM, env file paths): **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)**.
+Cloud providers still work via LiteLLM model strings and API keys in the environment.
 
-**Cloud / other providers** still work: change the model string to any LiteLLM id (`openai/…`, `anthropic/…`, etc.) and set the usual API keys in your environment before launching the app. Defaults favor Ollama; they do not remove other providers.
+## Note
 
-Full guide: **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)**.
-
-## Note:
-
-The plan is to let Aider Vision develop itself. I am using Qwen Coder 3.6 27b q4_K_M on an Apple Mac Pro M4 Max with 64GB RAM with 16 cores (12 Performance and 4 Efficiency).
+Dogfooding target: Bright Vision builds itself. Primary local setup: **Qwen Coder 3.6 27b q4_K_M** on Apple Silicon (64GB RAM).
 
 ## 📦 Getting Started
 
 ### macOS (Homebrew)
 
-The fastest way to install on macOS is via our Homebrew tap. The cask ships a **signed and notarized** universal DMG — Gatekeeper-ready, no security warnings.
-
 ```bash
 brew tap digital-defiance/tap
-brew install aider-vision
+brew install bright-vision
 ```
 
-This installs `Aider Vision.app` to `/Applications/`.
+Installs `Bright Vision.app` to `/Applications/`. Tap: [digital-defiance/homebrew-tap](https://github.com/Digital-Defiance/homebrew-tap)
 
-Tap repository: [digital-defiance/homebrew-tap](https://github.com/Digital-Defiance/homebrew-tap)
+Legacy cask name `aider-vision` may still exist during transition.
 
 ### From source
 
@@ -106,61 +69,52 @@ Tap repository: [digital-defiance/homebrew-tap](https://github.com/Digital-Defia
 - Node.js (v18+)
 - Rust (latest stable)
 - Yarn (v3+)
-- Aider CLI installed and accessible in your PATH
+- Python 3.10+ (for the engine submodule)
 
 #### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Digital-Defiance/aider-vision.git
-   cd aider-vision
-   ```
+```bash
+git clone https://github.com/Digital-Defiance/bright-vision.git
+cd bright-vision
+git submodule update --init --recursive
+yarn install
+source activate.sh    # editable bright-vision-core + uvicorn
+yarn tauri dev
+```
 
-2. Install dependencies:
-   ```bash
-   yarn install
-   ```
+Production build: `yarn tauri build`
 
-3. Start the development server:
-   ```bash
-   yarn tauri dev
-   ```
-
-4. Build for production:
-   ```bash
-   yarn tauri build
-   ```
+Legacy engine: `BRIGHT_VISION_ENGINE=bright-vision-core source activate.sh`
 
 ## ⚙️ Configuration
 
-**Settings → Model & system:** LLM model (default `ollama_chat/qwen3.6:27b-q4_K_M` for local Ollama), LiteLLM extra params (JSON), project workspace, context files, auto-approve limit, prompt-before-commit, auto-stage on done, engine path (desktop).
+**Settings → Model & system:** LLM model (default `ollama_chat/qwen3.6:27b-q4_K_M`), LiteLLM extra params, project workspace, context files, engine path (`bright-vision-core`).
 
-See **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)** for Ollama setup, `local-llm.env`, and provider env vars.
+**Settings → Appearance:** UI / chat / terminal fonts (default chat: Glass TTY VT220).
 
-**Settings → Appearance:** UI font, chat font (default [Glass TTY VT220](src/assets/fonts/Glass_TTY_VT220.woff2)), terminal font.
-
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and [docs/USER_WORKFLOW.md](docs/USER_WORKFLOW.md) for defaults and day-to-day use.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md), [docs/USER_WORKFLOW.md](docs/USER_WORKFLOW.md), [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md).
 
 ## 📚 Documentation
 
 | Doc | Topic |
 |-----|--------|
-| [LOCAL_LLM.md](docs/LOCAL_LLM.md) | Ollama, built-in Local LLM panel, `local-llm.env`, cloud providers |
-| [ROADMAP.md](docs/ROADMAP.md) | Status, dogfooding focus, fix order |
-| [TESTING.md](docs/TESTING.md) | Local-first tests (`yarn test:local` / `test:full`) |
+| [CECLI_MIGRATION_ROADMAP.md](docs/CECLI_MIGRATION_ROADMAP.md) | Engine port status (cecli + bright_vision_core) |
+| [LOCAL_LLM.md](docs/LOCAL_LLM.md) | Ollama, Local LLM panel, `local-llm.env` |
+| [ROADMAP.md](docs/ROADMAP.md) | Product backlog |
+| [TESTING.md](docs/TESTING.md) | `yarn test:local` / `test:full` |
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setup and conventions |
 | [IPC.md](docs/IPC.md) | HTTP API and SSE events |
-| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Connecting, orphaned `:8741`, common failures |
-| [SUBMODULE_VERIFICATION.md](docs/SUBMODULE_VERIFICATION.md) | Superproject + `aider-vision-core` |
+| [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Connecting, orphaned `:8741` |
+| [SUBMODULE_VERIFICATION.md](docs/SUBMODULE_VERIFICATION.md) | Superproject + submodules |
 | [SPEC_DRIVEN_DEV.md](docs/SPEC_DRIVEN_DEV.md) | Tasks / spec-driven workflow |
 | [RELEASE.md](docs/RELEASE.md) | Tag core and bump submodule |
 
 ## 📜 License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+MIT — see `LICENSE`.
 
 Copyright (c) 2026 Digital Defiance, Jessica Mulein
 
 ## 🤝 Contributing
 
-Contributions are welcome! Check **[docs/ROADMAP.md](docs/ROADMAP.md)** before substantive work; update roadmap statuses in the same PR when you ship or learn something new. Open an issue for dogfooding friction with repro (workspace path, file path, expected vs actual commit repo).
+Read **[docs/ROADMAP.md](docs/ROADMAP.md)** and **[docs/CECLI_MIGRATION_ROADMAP.md](docs/CECLI_MIGRATION_ROADMAP.md)** before substantive work. Open issues with repro (workspace path, expected vs actual).

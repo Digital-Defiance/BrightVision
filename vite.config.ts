@@ -33,15 +33,16 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
-  preview: process.env.E2E
-    ? {}
-    : {
-        proxy: {
-          "/api/core": {
-            target: "http://127.0.0.1:8741",
-            changeOrigin: true,
-            rewrite: (path) => path.replace(/^\/api\/core/, ""),
+  preview:
+    process.env.E2E && process.env.E2E_LLM !== "1"
+      ? {}
+      : {
+          proxy: {
+            "/api/core": {
+              target: "http://127.0.0.1:8741",
+              changeOrigin: true,
+              rewrite: (path) => path.replace(/^\/api\/core/, ""),
+            },
           },
         },
-      },
 }));

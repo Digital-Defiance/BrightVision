@@ -94,6 +94,36 @@ yarn playwright test --ui                        # debug interactively
 
 Preview reuses an existing server when not in CI (`reuseExistingServer` in `playwright.config.ts`), so a second run can be faster after the first build.
 
+### Real LLM e2e (Ollama + Vision core)
+
+Exercises a **live** `bright-vision-core` on `:8741` and your **Ollama** model (not mocked SSE). Use this to catch “hello” stalls and SSE timeouts.
+
+**Prerequisites**
+
+1. [Ollama](https://ollama.com/) running (`ollama serve` or the desktop app).
+2. A pulled model, e.g. `ollama pull llama3.2:3b` (or set `DATA_MODEL` in `./local-llm.env`).
+3. Python env: `source activate.sh` (installs `bright-vision-core` + uvicorn).
+
+**Run**
+
+```bash
+# Core-only (fastest feedback on SSE + Ollama)
+E2E_LLM=1 yarn test:llm:core
+
+# Full UI path: Terminal Start → Chat → hello
+E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:e2e:llm
+```
+
+Optional env:
+
+| Variable | Purpose |
+|----------|---------|
+| `E2E_OLLAMA_MODEL` | LiteLLM id or bare tag (default `llama3.2:3b` or `DATA_MODEL` from `local-llm.env`) |
+| `E2E_OLLAMA_HOST` | Ollama base URL (default `http://127.0.0.1:11434`) |
+| `E2E_PYTHON` | Python binary for spawning core (default `.venv/bin/python`) |
+
+Default `yarn test:e2e` **does not** run `hello-llm.spec.ts`.
+
 ## Manual smoke (not Playwright)
 
 After `yarn test:full`, when you change engine or desktop integration:

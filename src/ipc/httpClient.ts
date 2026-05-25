@@ -1,12 +1,15 @@
 /**
- * Browser / web-IDE client for aider-vision-core-serve (SSE).
+ * Browser / web-IDE client for bright-vision-core-serve (SSE).
  * Use when not running inside Tauri (e.g. Vite-only dev against core on :8741).
  */
 
 import type { PatchTodoResult, TodoItem, TodoStore } from '../todos/types'
 import { normalizeStore, normalizeTodo } from '../todos/storage'
 import type { CoreEventBase } from './events'
-import { readStreamChunkWithIdleTimeout } from './sseIdle'
+import {
+  readStreamChunkWithIdleTimeout,
+  sseEventResetsIdleTimer,
+} from './sseIdle'
 
 export interface SendMessageOptions {
   activeTodoId?: string
@@ -524,21 +527,27 @@ export class CoreHttpClient {
       }
     }
 
-    let gotEvent = false
+    let streamActivity = false
     try {
       while (true) {
-        const { done, value } = await readStreamChunkWithIdleTimeout(reader, gotEvent)
+        const { done, value } = await readStreamChunkWithIdleTimeout(
+          reader,
+          streamActivity
+        )
         if (value) {
           buffer += decoder.decode(value, { stream: true })
         }
         const parts = buffer.split('\n\n')
         if (done) {
-          yield* emitParts(parts)
+          for (const event of emitParts(parts)) {
+            if (sseEventResetsIdleTimer(event)) streamActivity = true
+            yield event
+          }
           break
         }
         buffer = parts.pop() ?? ''
         for (const event of emitParts(parts)) {
-          gotEvent = true
+          if (sseEventResetsIdleTimer(event)) streamActivity = true
           yield event
         }
       }

@@ -1,7 +1,7 @@
 {
-  "productName": "Aider Vision",
+  "productName": "Bright Vision",
   "version": "0.1.0",
-  "identifier": "com.digitaldefiance.aider-vision",
+  "identifier": "com.digitaldefiance.bright-vision",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Aider Vision",
+        "title": "Bright Vision",
         "width": 1280,
         "height": 720,
         "resizable": true,

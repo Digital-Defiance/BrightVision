@@ -874,13 +874,23 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 >Bright Vision Core</a
-              >, a headless evolution of
+              > — a <strong>fork²</strong> (“biforkation”):
               <a
-                href="https://github.com/cecli-dev/cecli"
+                href="https://github.com/Aider-AI/aider"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Aider</a
+              >
+              →
+              <a
+                href="https://github.com/dwash96/cecli"
                 target="_blank"
                 rel="noopener noreferrer"
                 >Cecli</a
-              >.
+              >
+              → Bright Vision Core, with the Vision HTTP layer ported from our earlier
+              <code>aider-vision-core</code> engine (Aider→Bright docs, not replayed git history).
+              <a href="#lineage">Lineage ↓</a>
             </p>
             <div class="hero-actions">
               <a class="btn btn-primary" href="#install-mac"
@@ -1151,6 +1161,48 @@
               </p>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section id="lineage">
+        <div class="wrap">
+          <p class="section-label">Lineage</p>
+          <h2 class="section-title">Fork² — Aider, Cecli, Bright Vision Core</h2>
+          <p class="section-desc">
+            <strong>Bright Vision Core</strong> is a <em>biforkation</em>: the coding
+            agent stack comes from <strong>Cecli</strong> (itself a fork of
+            <strong>Aider</strong>). The headless API in
+            <code>bright_vision_core/</code> was copied and rewired from our prior
+            <code>aider-vision-core</code> product — file-by-file, with Aider→Bright
+            naming on docs and the site — not cherry-picked commits.
+          </p>
+          <div class="arch-flow" role="img" aria-label="Aider forks to Cecli, Cecli forks to bright-vision-core bundling cecli and bright_vision_core">
+            <div class="arch-node">
+              <strong>Aider</strong>pair programming<br />upstream
+            </div>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <div class="arch-node">
+              <strong>Cecli</strong>terminal agent<br /><code>cecli/</code>
+            </div>
+            <div class="arch-arrow" aria-hidden="true">→</div>
+            <div class="arch-node">
+              <strong>Bright Vision Core</strong>cecli + API<br /><code>bright_vision_core/</code>
+            </div>
+          </div>
+          <p class="section-desc" style="margin-top: 1.25rem">
+            Product pages:
+            <a href="https://bright-vision.digitaldefiance.org">Bright Vision</a>
+            (this site) ·
+            <a
+              href="https://bright-vision-core.digitaldefiance.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Bright Vision Core</a
+            >
+            (engine) · core docs site:
+            <code>bright_vision_core/website/</code> (Jekyll). Upstream Cecli docs remain in
+            <code>cecli/website/</code> (untouched).
+          </p>
         </div>
       </section>
 
@@ -1624,11 +1676,18 @@ source activate.sh</code></pre>
             rel="noopener noreferrer"
             >Local LLM guide</a
           >
+          <a href="#lineage">Lineage</a>
           <a
             href="https://bright-vision-core.digitaldefiance.org"
             target="_blank"
             rel="noopener noreferrer"
             >Vision Core</a
+          >
+          <a
+            href="https://github.com/Digital-Defiance/bright-vision-core/blob/main/docs/LINEAGE.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Fork² docs</a
           >
           <a
             href="https://github.com/cecli-dev/cecli"

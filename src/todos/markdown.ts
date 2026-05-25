@@ -52,7 +52,7 @@ export function exportTodoStore(store: TodoStore): string {
   })
   const active = store.activeId ? `activeId: ${store.activeId}\n\n` : ''
   const body = blocks.join('\n---\n\n')
-  return body ? `# Aider Vision Tasks\n\n${active}${body}\n` : '# Aider Vision Tasks\n\n'
+  return body ? `# Bright Vision Tasks\n\n${active}${body}\n` : '# Bright Vision Tasks\n\n'
 }
 
 function parseChecklistLine(line: string): ChecklistItem | null {

@@ -83,6 +83,15 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
       configuredInPs: true,
       tagsText: '  • test/model (4.0 GB)',
       psText: '  • test/model [VRAM 2.0 GB]',
+      psRows: [
+        {
+          name: 'test/model',
+          size: null,
+          vram: 'VRAM 2.0 GB',
+          expiresAt: '2026-05-25T20:00:00Z',
+        },
+      ],
+      tagsRows: [{ name: 'test/model', size: '4.0 GB', vram: null, expiresAt: null }],
     }),
     get_resource_snapshot: async () => ({
       cpuPct: 12.5,

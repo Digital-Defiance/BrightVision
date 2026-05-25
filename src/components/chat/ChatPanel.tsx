@@ -25,6 +25,9 @@ import { ChatImageAttach } from './ChatImageAttach'
 import { CommandAssist } from './CommandAssist'
 import { SuggestedFilesTray } from './SuggestedFilesTray'
 import { TokenStatsBar } from './TokenStatsBar'
+import { OllamaStatusMessage } from './OllamaStatusMessage'
+import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
+import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
 import type { TurnThinkingTiming } from '../../utils/thinkingTiming'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 
@@ -36,6 +39,11 @@ export interface ChatMessage {
   appliedFiles?: string[]
   /** Section + turn durations captured when the turn completes. */
   turnTiming?: TurnThinkingTiming
+  /** Client `/ps`, `/tags`, `/models` — rendered as tables, not sent to core. */
+  ollamaStatus?: {
+    command: VisionClientCommandId
+    snapshot: OllamaModelsSnapshot
+  }
 }
 
 export interface ToolEvent {
@@ -205,7 +213,12 @@ export function ChatPanel({
                   >
                     <CloseIcon fontSize="inherit" />
                   </IconButton>
-                  {entry.item.role === 'assistant' ? (
+                  {entry.item.role === 'assistant' && entry.item.ollamaStatus ? (
+                    <OllamaStatusMessage
+                      command={entry.item.ollamaStatus.command}
+                      snapshot={entry.item.ollamaStatus.snapshot}
+                    />
+                  ) : entry.item.role === 'assistant' ? (
                     <AssistantMessageBody
                       content={entry.item.content}
                       appliedFiles={entry.item.appliedFiles}

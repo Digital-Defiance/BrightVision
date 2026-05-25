@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installMockCoreApi } from './helpers/mockCoreApi'
 import { gotoVision, openSettings } from './helpers/session'
-import { E2E_CONFIG } from './helpers/testConfig'
+import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY } from './helpers/testConfig'
 
 test.describe('Settings (roadmap #17, #28 persistence)', () => {
   test.beforeEach(async ({ page }) => {
@@ -12,14 +12,14 @@ test.describe('Settings (roadmap #17, #28 persistence)', () => {
   test('prompt before commit persists in localStorage', async ({ page }) => {
     await page.getByLabel('Prompt before commit').selectOption('yes')
     await page.getByRole('button', { name: 'Save' }).click()
-    const stored = await page.evaluate(() => localStorage.getItem('aider-vision-config'))
+    const stored = await page.evaluate((key) => localStorage.getItem(key), E2E_CONFIG_STORAGE_KEY)
     expect(stored).toContain('"promptBeforeCommit":true')
   })
 
   test('auto-stage toggle persists', async ({ page }) => {
     await page.getByLabel('Auto-stage edits after turn').selectOption('no')
     await page.getByRole('button', { name: 'Save' }).click()
-    const stored = await page.evaluate(() => localStorage.getItem('aider-vision-config'))
+    const stored = await page.evaluate((key) => localStorage.getItem(key), E2E_CONFIG_STORAGE_KEY)
     expect(stored).toContain('"autoStageOnDone":false')
   })
 
@@ -28,7 +28,7 @@ test.describe('Settings (roadmap #17, #28 persistence)', () => {
     await page.addInitScript((cfg) => {
       localStorage.setItem('vision-welcome-dismissed', '1')
       localStorage.setItem(
-        'aider-vision-config',
+        'bright-vision-config',
         JSON.stringify({ ...cfg, promptBeforeCommit: true })
       )
     }, E2E_CONFIG)

@@ -3,7 +3,7 @@ import { startMockSession } from './helpers/session'
 
 test.describe('Local LLM ping (#36)', () => {
   test('shows Ollama tags and ps snapshot in Settings', async ({ page }) => {
-    await startMockSession(page)
+    await startMockSession(page, { tauri: true })
     await page.getByTestId('nav-settings').click()
     const snap = page.getByTestId('ollama-models-snapshot')
     await expect(snap).toBeVisible({ timeout: 10_000 })
@@ -13,7 +13,7 @@ test.describe('Local LLM ping (#36)', () => {
   })
 
   test('Ping LLM shows success in Settings', async ({ page }) => {
-    await startMockSession(page)
+    await startMockSession(page, { tauri: true })
     await page.getByTestId('nav-settings').click()
     await page.getByTestId('local-llm-ping').click()
     const result = page.getByTestId('local-llm-ping-result')

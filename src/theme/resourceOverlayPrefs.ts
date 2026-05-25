@@ -1,4 +1,6 @@
-export const RESOURCE_OVERLAY_STORAGE_KEY = 'aider-vision-resource-overlay'
+import { RESOURCE_OVERLAY_STORAGE_KEY } from '../storageKeys'
+
+export { RESOURCE_OVERLAY_STORAGE_KEY }
 
 export interface ResourceOverlayPrefs {
   showOverlay: boolean

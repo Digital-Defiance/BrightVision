@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DEFAULT_CONFIG, type AiderConfig } from '../ipc/config'
+import { DEFAULT_CONFIG, type VisionConfig } from '../ipc/config'
 import type { CoreHttpClient, CoreSessionInfo, SendMessageOptions } from '../ipc/httpClient'
 import type { CoreEventBase } from '../ipc/events'
 import { isTauriRuntime } from '../ipc/isTauri'
@@ -9,7 +9,7 @@ import { createVisionApiSession, type VisionApiSession } from '../ipc/visionApi'
 import { parseAddCommandPath } from '../utils/suggestedFiles'
 import { useProcess } from '../progress/processStore'
 
-export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
+export function useVisionSession(onCoreEvent: (event: CoreEventBase) => void) {
   const process = useProcess()
   const [isRunning, setIsRunning] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
@@ -40,7 +40,7 @@ export function useAiderSession(onCoreEvent: (event: CoreEventBase) => void) {
   const startGenerationRef = useRef(0)
 
   const start = useCallback(
-    async (config: AiderConfig) => {
+    async (config: VisionConfig) => {
       const generation = ++startGenerationRef.current
       setIsStarting(true)
       const session = createVisionApiSession(onCoreEvent, (update) => process.apply(update))

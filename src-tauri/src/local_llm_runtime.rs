@@ -33,6 +33,44 @@ pub struct LocalLlmRuntimeStatus {
     pub logs: Vec<String>,
 }
 
+/// One model row from Ollama `/api/tags` or `/api/ps`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaModelRow {
+    pub name: String,
+    pub size: Option<String>,
+    pub vram: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+fn entry_to_row(entry: &serde_json::Value) -> Option<OllamaModelRow> {
+    let name = model_label(entry)?;
+    let size_raw = entry.get("size").and_then(|v| v.as_u64());
+    let size = size_raw.filter(|&n| n > 0).map(format_bytes);
+    let vram = entry
+        .get("size_vram")
+        .and_then(|v| v.as_u64())
+        .filter(|&n| n > 0)
+        .map(|n| format!("VRAM {}", format_bytes(n)));
+    let expires_at = entry
+        .get("expires_at")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    Some(OllamaModelRow {
+        name,
+        size,
+        vram,
+        expires_at,
+    })
+}
+
+fn rows_from_models(models: &[serde_json::Value]) -> Vec<OllamaModelRow> {
+    let mut rows: Vec<OllamaModelRow> = models.iter().filter_map(entry_to_row).collect();
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+    rows
+}
+
 /// Human-readable `/api/tags` and `/api/ps` listings for Settings / Local LLM panel.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +81,8 @@ pub struct OllamaModelsSnapshot {
     pub configured_in_ps: bool,
     pub tags_text: String,
     pub ps_text: String,
+    pub ps_rows: Vec<OllamaModelRow>,
+    pub tags_rows: Vec<OllamaModelRow>,
 }
 
 fn format_bytes(n: u64) -> String {
@@ -118,24 +158,9 @@ impl OllamaClient {
             .unwrap_or(false)
     }
 
-    async fn is_pulled(&self, model: &str) -> Result<bool, String> {
-        let res = self
-            .http
-            .get(format!("{}/api/tags", self.base))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        if !res.status().is_success() {
-            return Err(format!("tags: HTTP {}", res.status()));
-        }
-        let body: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    fn model_in_tags(models: &[serde_json::Value], model: &str) -> bool {
         let name = model.trim();
-        let models = body
-            .get("models")
-            .and_then(|m| m.as_array())
-            .cloned()
-            .unwrap_or_default();
-        Ok(models.iter().any(|entry| {
+        models.iter().any(|entry| {
             entry
                 .get("name")
                 .and_then(|n| n.as_str())
@@ -145,16 +170,29 @@ impl OllamaClient {
                     .get("model")
                     .and_then(|n| n.as_str())
                     .is_some_and(|n| n == name)
-        }))
+        })
+    }
+
+    fn model_in_ps(models: &[serde_json::Value], model: &str) -> bool {
+        let name = model.trim();
+        models.iter().any(|entry| {
+            model_label(entry).is_some_and(|n| name_matches_tag(&n, name))
+        })
+    }
+
+    async fn fetch_tags_and_ps(&self) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), String> {
+        let (tags, ps) = tokio::join!(self.fetch_tags_models(), self.fetch_ps_models());
+        Ok((tags?, ps?))
+    }
+
+    async fn is_pulled(&self, model: &str) -> Result<bool, String> {
+        let models = self.fetch_tags_models().await?;
+        Ok(Self::model_in_tags(&models, model))
     }
 
     async fn is_loaded(&self, model: &str) -> Result<bool, String> {
         let models = self.fetch_ps_models().await?;
-        let name = model.trim();
-        Ok(models.iter().any(|entry| {
-            model_label(entry)
-                .is_some_and(|n| name_matches_tag(&n, name))
-        }))
+        Ok(Self::model_in_ps(&models, model))
     }
 
     async fn fetch_tags_models(&self) -> Result<Vec<serde_json::Value>, String> {
@@ -285,6 +323,7 @@ impl OllamaClient {
             .http
             .post(format!("{}/api/generate", self.base))
             .json(&payload)
+            .timeout(Duration::from_secs(600))
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -292,6 +331,31 @@ impl OllamaClient {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
             return Err(format!("preload generate: HTTP {status} {text}"));
+        }
+        Ok(())
+    }
+
+    /// Extend `keep_alive: -1` without a full generate when the model is already in `/api/ps`.
+    async fn touch_keep_alive(&self, model: &str) -> Result<(), String> {
+        let payload = serde_json::json!({
+            "model": model,
+            "keep_alive": -1,
+            "prompt": "",
+            "stream": false,
+            "options": { "num_predict": 0 }
+        });
+        let res = self
+            .http
+            .post(format!("{}/api/generate", self.base))
+            .json(&payload)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            let status = res.status();
+            let text = res.text().await.unwrap_or_default();
+            return Err(format!("keep_alive touch: HTTP {status} {text}"));
         }
         Ok(())
     }
@@ -328,6 +392,7 @@ async fn spawn_ollama_serve(logs: &mut Vec<String>) -> Result<(), String> {
 
     let mut cmd = Command::new("ollama");
     cmd.arg("serve")
+        .env("OLLAMA_KEEP_ALIVE", "-1")
         .env("OLLAMA_MAX_LOADED_MODELS", "1")
         .env("OLLAMA_CONTEXT_LENGTH", "32768")
         .stdout(Stdio::null())
@@ -383,9 +448,6 @@ pub async fn ollama_models_snapshot(
 ) -> Result<OllamaModelsSnapshot, String> {
     let host = normalize_ollama_host(ollama_host);
     let tag = model_tag.trim().to_string();
-    if tag.is_empty() {
-        return Err("model tag is empty".into());
-    }
     let client = OllamaClient::new(&host)?;
     let reachable = client.is_running().await;
     if !reachable {
@@ -396,13 +458,16 @@ pub async fn ollama_models_snapshot(
             configured_in_ps: false,
             tags_text: "(Ollama not reachable — check host or run ollama serve)".to_string(),
             ps_text: "(Ollama not reachable)".to_string(),
+            ps_rows: vec![],
+            tags_rows: vec![],
         });
     }
     let tags_models = client.fetch_tags_models().await.unwrap_or_default();
     let ps_models = client.fetch_ps_models().await.unwrap_or_default();
-    let configured_in_ps = ps_models.iter().any(|entry| {
-        model_label(entry).is_some_and(|n| name_matches_tag(&n, &tag))
-    });
+    let tags_rows = rows_from_models(&tags_models);
+    let ps_rows = rows_from_models(&ps_models);
+    let configured_in_ps = !tag.is_empty()
+        && ps_rows.iter().any(|row| name_matches_tag(&row.name, &tag));
     Ok(OllamaModelsSnapshot {
         ollama_host: host.clone(),
         reachable: true,
@@ -410,6 +475,8 @@ pub async fn ollama_models_snapshot(
         configured_in_ps,
         tags_text: OllamaClient::format_tags_list(&tags_models),
         ps_text: OllamaClient::format_ps_list(&ps_models),
+        ps_rows,
+        tags_rows,
     })
 }
 
@@ -461,25 +528,42 @@ pub async fn local_llm_start_plain(
         logs.push("Ollama already running".to_string());
     }
 
-    if !client.is_pulled(&model).await.unwrap_or(false) {
+    let (tags_models, ps_models) = client.fetch_tags_and_ps().await?;
+    let mut pulled = OllamaClient::model_in_tags(&tags_models, &model);
+    let mut loaded = OllamaClient::model_in_ps(&ps_models, &model);
+
+    if !pulled {
         pull_model(&model, &mut logs).await?;
+        pulled = true;
     } else {
         logs.push(format!("Model {model} already pulled"));
     }
 
-    logs.push(format!("Keeping {model} loaded (keep_alive=-1, no Ollama TTL)…"));
-    client.preload_generate(&model).await?;
-    if client.is_loaded(&model).await.unwrap_or(false) {
-        logs.push(format!("{model} in /api/ps (persistent load)"));
+    if loaded {
+        logs.push(format!(
+            "{model} already in /api/ps — skipping full preload (fast path)"
+        ));
+        logs.push(format!("Refreshing {model} keep_alive=-1…"));
+        client.touch_keep_alive(&model).await?;
     } else {
-        logs.push(format!("{model} preload sent (may appear in /api/ps shortly)"));
+        logs.push(format!("Loading {model} into RAM (keep_alive=-1)…"));
+        client.preload_generate(&model).await?;
+        loaded = client.is_loaded(&model).await.unwrap_or(true);
+        if loaded {
+            logs.push(format!("{model} in /api/ps (persistent load)"));
+        } else {
+            logs.push(format!("{model} preload sent (may appear in /api/ps shortly)"));
+        }
     }
 
     logs.push("Local LLM ready".to_string());
-    let status = local_llm_status(&host, &model).await?;
     Ok(LocalLlmRuntimeStatus {
+        ollama_running: true,
+        model_pulled: pulled,
+        model_loaded: loaded,
+        ollama_host: host,
+        model_tag: model,
         logs,
-        ..status
     })
 }
 
@@ -616,8 +700,14 @@ pub async fn local_llm_refresh_keep_alive(
     if !client.is_running().await {
         return Err("Ollama is not running".into());
     }
-    client.preload_generate(&model).await?;
-    Ok(vec![format!("{model}: keep_alive=-1 refreshed")])
+    let loaded = client.is_loaded(&model).await.unwrap_or(false);
+    if loaded {
+        client.touch_keep_alive(&model).await?;
+        Ok(vec![format!("{model}: keep_alive=-1 refreshed (already in /api/ps)")])
+    } else {
+        client.preload_generate(&model).await?;
+        Ok(vec![format!("{model}: loaded with keep_alive=-1")])
+    }
 }
 
 pub async fn local_llm_stop_plain(

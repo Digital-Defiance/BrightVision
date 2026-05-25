@@ -13,7 +13,7 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { DISPLAY_CORE, ErrorSource, prefixForTechnicalLog, prefixForUserFacing } from './brand'
 import { AppChrome } from './components/layout/AppChrome'
 import { ResourceOverlay } from './components/layout/ResourceOverlay'
-import { DEFAULT_CONFIG, defaultCoreApiUrl, type AiderConfig } from './ipc/config'
+import { DEFAULT_CONFIG, defaultCoreApiUrl, type VisionConfig } from './ipc/config'
 import {
   applyLocalLlmToConfig,
   isOllamaVisionModel,
@@ -38,13 +38,17 @@ import {
 } from './utils/chatStream'
 import { isTauriRuntime } from './ipc/isTauri'
 import { CoreHttpClient } from './ipc/httpClient'
-import { useAiderSession } from './hooks/useAiderSession'
+import { useVisionSession } from './hooks/useVisionSession'
 import { usePathCompletion } from './hooks/usePathCompletion'
 import { filesToUploadParts } from './utils/imageUpload'
 import { buildImplementStepMessage, buildStartWorkMessage } from './todos/formatContext'
 import type { ImplementationStep } from './todos/tasksMd'
 import type { TodoItem } from './todos/types'
 import { useCommandCatalog } from './hooks/useCommandCatalog'
+import { parseVisionClientCommand } from './ipc/visionClientCommands'
+import { fetchOllamaModelsSnapshot } from './utils/ollamaModelRows'
+import type { VisionClientCommandId } from './ipc/visionClientCommands'
+import type { OllamaModelsSnapshot } from './ipc/localLlm'
 import { useGitStatus } from './hooks/useGitStatus'
 import { autoStageEditedFiles } from './ipc/gitStatus'
 import { useSessionActivity } from './hooks/useSessionActivity'
@@ -103,13 +107,22 @@ import {
   type SessionContextUsage,
 } from './utils/contextUsage'
 import { createVisionTheme } from './theme'
+import {
+  APPEARANCE_STORAGE_KEY,
+  CONFIG_STORAGE_KEY,
+  RESOURCE_OVERLAY_STORAGE_KEY,
+  THINKING_TIMING_STORAGE_KEY,
+  migrateLegacyStorageKeys,
+  readStorageItem,
+  removeStorageKeys,
+} from './storageKeys'
 
 const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
 type TabId = 'chat' | 'terminal' | 'git' | 'settings' | 'tasks'
 
-function migrateConfig(raw: Partial<AiderConfig> & Record<string, unknown>): AiderConfig {
-  const merged: AiderConfig = { ...DEFAULT_CONFIG, ...raw }
+function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): VisionConfig {
+  const merged: VisionConfig = { ...DEFAULT_CONFIG, ...raw }
   if (raw.coreRepoPath && typeof raw.coreRepoPath === 'string') {
     merged.coreEnginePath = raw.coreRepoPath
   }
@@ -130,6 +143,9 @@ function migrateConfig(raw: Partial<AiderConfig> & Record<string, unknown>): Aid
   }
   if (typeof merged.manageLocalLlm !== 'boolean') {
     merged.manageLocalLlm = true
+  }
+  if (merged.coreEnginePath === 'aider-vision-core') {
+    merged.coreEnginePath = 'bright-vision-core'
   }
   if (!merged.coreApiUrl || merged.coreApiUrl === DEFAULT_CONFIG.coreApiUrl) {
     if (!isTauriRuntime()) merged.coreApiUrl = defaultCoreApiUrl()
@@ -173,8 +189,8 @@ function AppShell({
   setResourceOverlayPrefs: React.Dispatch<React.SetStateAction<ResourceOverlayPrefs>>
 }) {
   const [activeTab, setActiveTab] = useState<TabId>('chat')
-  const [config, setConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
-  const [savedConfig, setSavedConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
+  const [config, setConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
+  const [savedConfig, setSavedConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([])
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
@@ -211,6 +227,7 @@ function AppShell({
   const chatMessagesRef = useRef(chatMessages)
   chatMessagesRef.current = chatMessages
   const ingestSuggestionsRef = useRef<(content: string) => void>(() => {})
+  const lastAssistantStreamRef = useRef('')
   const lastUserPromptCharsRef = useRef(0)
   const turnTimingActiveRef = useRef(false)
   const refreshSessionInfoRef = useRef<() => Promise<import('./ipc/httpClient').CoreSessionInfo | null>>(
@@ -236,17 +253,18 @@ function AppShell({
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
-    const stored = localStorage.getItem('aider-vision-config')
+    migrateLegacyStorageKeys()
+    const stored = readStorageItem(CONFIG_STORAGE_KEY, 'aider-vision-config')
     let merged = DEFAULT_CONFIG
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Partial<AiderConfig> & Record<string, unknown>
+        const parsed = JSON.parse(stored) as Partial<VisionConfig> & Record<string, unknown>
         merged = migrateConfig(parsed)
       } catch (e) {
         console.error('Failed to parse stored config', e)
       }
     }
-    const apply = (cfg: AiderConfig) => {
+    const apply = (cfg: VisionConfig) => {
       setConfig(cfg)
       setSavedConfig(cfg)
     }
@@ -266,9 +284,6 @@ function AppShell({
             workingDir: dir,
             pythonPath: merged.pythonPath.trim() || pythonPath,
           }
-          if (!next.localLlmRoot.trim() && localLlm.repoLocalLlmRoot) {
-            next = { ...next, localLlmRoot: 'local-llm' }
-          }
           next = applyLocalLlmToConfig(next, localLlm, true)
           if (
             dir !== merged.workingDir ||
@@ -278,7 +293,7 @@ function AppShell({
             next.model !== merged.model
           ) {
             setSavedConfig(next)
-            localStorage.setItem('aider-vision-config', JSON.stringify(next))
+            localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
           }
           apply(next)
         })
@@ -316,7 +331,7 @@ function AppShell({
       const next = { ...config, workingDir: selected }
       setConfig(next)
       setSavedConfig(next)
-      localStorage.setItem('aider-vision-config', JSON.stringify(next))
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
       setSnackbar({ message: 'Project folder updated', severity: 'info' })
     } catch (err) {
       setSnackbar({
@@ -386,6 +401,29 @@ function AppShell({
     [nextChatMessageId]
   )
 
+  const appendOllamaStatusToChat = useCallback(
+    (command: VisionClientCommandId, snapshot: OllamaModelsSnapshot, userLabel: string) => {
+      const userId = nextChatMessageId()
+      const assistantId = nextChatMessageId()
+      setChatMessages((prev) =>
+        capList(
+          [
+            ...prev,
+            { id: userId, role: 'user' as const, content: userLabel },
+            {
+              id: assistantId,
+              role: 'assistant' as const,
+              content: '',
+              ollamaStatus: { command, snapshot },
+            },
+          ],
+          MAX_CHAT_MESSAGES
+        )
+      )
+    },
+    [nextChatMessageId]
+  )
+
   const removeLastPendingUserMessage = useCallback(() => {
     const id = popPendingUserMessageId(pendingUserMessageIdsRef.current)
     setChatMessages((prev) => removeChatMessageById(prev, id))
@@ -406,6 +444,7 @@ function AppShell({
     switch (ev.type) {
       case 'user_message': {
         streamingAssistantId.current = null
+        lastAssistantStreamRef.current = ''
         const serverText = String(ev.text ?? '')
         const pendingId = shiftPendingUserMessageId(pendingUserMessageIdsRef.current)
         setChatMessages((prev) =>
@@ -425,6 +464,10 @@ function AppShell({
       case 'token': {
         const chunk = String(ev.text ?? '')
         if (!chunk) break
+        lastAssistantStreamRef.current = appendStreamingToken(
+          lastAssistantStreamRef.current,
+          chunk
+        )
         let sid = streamingAssistantId.current
         if (sid === null) {
           if (!turnTimingActiveRef.current) {
@@ -638,14 +681,11 @@ function AppShell({
             })
         }
         {
-          const prev = chatMessagesRef.current
-          for (let i = prev.length - 1; i >= 0; i--) {
-            const m = prev[i]
-            if (m.role === 'assistant' && m.content.trim()) {
-              ingestSuggestionsRef.current(m.content)
-              break
-            }
+          const assistantText = lastAssistantStreamRef.current
+          if (assistantText.trim()) {
+            ingestSuggestionsRef.current(assistantText)
           }
+          lastAssistantStreamRef.current = ''
         }
         void refreshSessionInfoRef.current().then((info) => {
           if (info?.files_in_chat) syncSessionFilesRef.current(info.files_in_chat)
@@ -712,7 +752,7 @@ function AppShell({
     undo,
     refreshSessionInfo,
     patchSessionFiles,
-  } = useAiderSession(wrapHandler(handleCoreEvent))
+  } = useVisionSession(wrapHandler(handleCoreEvent))
 
   refreshSessionInfoRef.current = refreshSessionInfo
 
@@ -725,6 +765,12 @@ function AppShell({
   )
 
   syncSessionFilesRef.current = syncSessionFiles
+
+  useEffect(() => {
+    const files = sessionInfo?.files_in_chat
+    if (!isRunning || !files) return
+    syncSessionFiles(files)
+  }, [sessionInfo?.files_in_chat, isRunning, syncSessionFiles])
 
   const recordAddedContextEstimate = useCallback(async (paths: string[]) => {
     if (!paths.length) return
@@ -848,7 +894,7 @@ function AppShell({
     if (!isTauriRuntime()) return
     const setup = async () => {
       unlistenersRef.current.push(
-        await listen<string>('aider-error', (event) => appendStderr(event.payload))
+        await listen<string>('vision-error', (event) => appendStderr(event.payload))
       )
     }
     setup()
@@ -868,7 +914,7 @@ function AppShell({
 
   const handleSave = () => {
     setSavedConfig(config)
-    localStorage.setItem('aider-vision-config', JSON.stringify(config))
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
     saveAppearance(appearance)
     saveThinkingTimingPrefs(thinkingTimingPrefs)
     saveResourceOverlayPrefs(resourceOverlayPrefs)
@@ -878,14 +924,16 @@ function AppShell({
   const handleReset = () => {
     setConfig(DEFAULT_CONFIG)
     setSavedConfig(DEFAULT_CONFIG)
-    localStorage.removeItem('aider-vision-config')
+    removeStorageKeys([
+      CONFIG_STORAGE_KEY,
+      APPEARANCE_STORAGE_KEY,
+      THINKING_TIMING_STORAGE_KEY,
+      RESOURCE_OVERLAY_STORAGE_KEY,
+    ])
     setAppearance({ ...DEFAULT_APPEARANCE })
-    localStorage.removeItem('aider-vision-appearance')
     applyAppearanceCssVars(DEFAULT_APPEARANCE)
     setThinkingTimingPrefs({ ...DEFAULT_THINKING_TIMING_PREFS })
-    localStorage.removeItem('aider-vision-thinking-timing')
     setResourceOverlayPrefs({ ...DEFAULT_RESOURCE_OVERLAY_PREFS })
-    localStorage.removeItem('aider-vision-resource-overlay')
   }
 
   const handleClearThinkingStatsForModel = useCallback(() => {
@@ -946,7 +994,7 @@ function AppShell({
         const next = { ...savedConfig, workingDir }
         setSavedConfig(next)
         setConfig(next)
-        localStorage.setItem('aider-vision-config', JSON.stringify(next))
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
       }
       syncSessionFiles(info.files_in_chat ?? [])
       setContextUsage(EMPTY_CONTEXT_USAGE)
@@ -1299,8 +1347,24 @@ function AppShell({
   const handleSend = async () => {
     if (!inputValue.trim() || !isRunning) return
     const text = inputValue.trim()
+    const clientCmd = parseVisionClientCommand(text)
+    if (clientCmd) {
+      setInputValue('')
+      try {
+        const snapshot = await fetchOllamaModelsSnapshot(savedConfig)
+        appendOllamaStatusToChat(clientCmd.id, snapshot, text)
+      } catch (err) {
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+      return
+    }
+
     setInputValue('')
     lastUserPromptCharsRef.current = text.length
+    lastAssistantStreamRef.current = ''
     stallWatch.touchEvent('user_send')
 
     appendUserMessageToChat(text, true)

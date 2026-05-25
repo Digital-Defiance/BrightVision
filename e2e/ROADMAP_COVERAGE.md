@@ -23,6 +23,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. CI is optional.
 | **#34** Thinking timers | Partial | `thinkingTiming.test.ts`, `data-testid=thinking-timer`, Settings section |
 | **#35** Context / file counter | Partial | `contextUsage.test.ts`, `session-context.spec.ts`, `session-context-chip` |
 | **#36** LLM ping | Partial | `local-llm-ping.spec.ts`, `llm_ping` Tauri command |
+| **Real LLM hello** | Opt-in | `hello-llm.spec.ts` (`yarn test:e2e:llm`), `test_hello_llm.py` (`yarn test:llm:core`) |
 | **#33** Resource overlay | Partial | `resource-overlay.spec.ts`, `resource-overlay` test id |
 | **#30** Web parity | Partial | context + settings + path-completion (web branch) |
 | **#31** Release hygiene | Operator | `release-hygiene.spec.ts` (docs, submodule, optional verify) |

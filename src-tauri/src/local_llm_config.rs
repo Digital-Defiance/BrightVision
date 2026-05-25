@@ -21,7 +21,7 @@ pub struct LocalLlmSnapshot {
     pub ollama_host: Option<String>,
     pub data_model: Option<String>,
     pub llm_mode: Option<String>,
-    /// Resolved path when `{app_root}/local-llm` exists (symlink or directory).
+    /// App path when `local-llm.env` or `local-llm/local-llm.env` exists under the install root.
     pub repo_local_llm_root: Option<String>,
 }
 
@@ -104,7 +104,15 @@ fn config_file_paths(hint_root: Option<&str>) -> Vec<PathBuf> {
             paths.push(resolve_path(Path::new(dir.trim()), &root).join("local-llm.env"));
         }
     }
-    paths.push(root.join("local-llm/local-llm.env"));
+    if let Ok(bv) = std::env::var("BRIGHT_VISION_ROOT") {
+        if !bv.trim().is_empty() {
+            let bv_root = resolve_path(Path::new(bv.trim()), &root);
+            paths.push(bv_root.join("local-llm.env"));
+            paths.push(bv_root.join("local-llm").join("local-llm.env"));
+        }
+    }
+    paths.push(root.join("local-llm.env"));
+    paths.push(root.join("local-llm").join("local-llm.env"));
     if let Some(home) = home_dir() {
         paths.push(home.join("local-llm/local-llm.env"));
     }
@@ -118,12 +126,15 @@ fn config_file_paths(hint_root: Option<&str>) -> Vec<PathBuf> {
 }
 
 fn repo_local_llm_root() -> Option<String> {
-    let p = app_root().join("local-llm");
-    if p.is_dir() || p.is_symlink() {
-        Some(display_path(&p))
-    } else {
-        None
+    let root = app_root();
+    if root.join("local-llm.env").is_file() {
+        return Some(display_path(&root));
     }
+    let nested = root.join("local-llm").join("local-llm.env");
+    if nested.is_file() {
+        return Some(display_path(&root.join("local-llm")));
+    }
+    None
 }
 
 pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {

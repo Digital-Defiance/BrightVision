@@ -1,17 +1,17 @@
 /**
- * Product identity — keep in sync with aider-vision-core/aider_vision_core/brand.py
+ * Product identity — keep in sync with bright-vision-core/bright_vision_core/brand.py
  */
 
-import headerLogoPng from './assets/brand/aider-vision.png'
-import railLogoPng from './assets/brand/av.png'
+import headerLogoPng from './assets/brand/bright-vision-horiz-white.png'
+import railLogoPng from './assets/brand/aider-vision-square-logo.png'
 
-export const PRODUCT_VISION = 'aider-vision'
-export const PRODUCT_CORE = 'aider-vision-core'
+export const PRODUCT_VISION = 'bright-vision'
+export const PRODUCT_CORE = 'bright-vision-core'
 
-export const DISPLAY_VISION = 'Aider Vision'
-export const DISPLAY_CORE = 'Aider Vision Core'
-/** Sidebar rail monogram (fallback if logo fails to load) */
-export const DISPLAY_MONOGRAM = 'AV'
+export const DISPLAY_VISION = 'Bright Vision'
+export const DISPLAY_CORE = 'Bright Vision Core'
+/** Sidebar rail fallback if logo fails to load */
+export const DISPLAY_MONOGRAM = 'BV'
 
 /**
  * `vector` — inline SVG + Glass TTY VT220 from `src/assets/fonts/Glass_TTY_VT220.woff2`.
@@ -35,7 +35,7 @@ export type ErrorSource = 'vision' | 'core'
 
 /**
  * Prefix for errors shown in the main UI (chat, toasts).
- * Agent stderr is shown as Aider Vision — users opened the app, not pip.
+ * Agent stderr is shown as Bright Vision — users opened the app, not pip.
  */
 export function prefixForUserFacing(_source: ErrorSource): string {
   return `[${DISPLAY_VISION}]`

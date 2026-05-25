@@ -1,4 +1,5 @@
 import type { CoreHttpClient } from './httpClient'
+import { mergeCommandCatalog } from './visionClientCommands'
 
 export interface VisionCommand {
   name: string
@@ -20,11 +21,23 @@ export const DEFAULT_COMMANDS: VisionCommand[] = [
 ]
 
 /** One-click shortcuts above the chat input (full list still appears when you type `/`). */
-export const QUICK_COMMANDS = ['/help', '/add', '/drop', '/diff', '/commit', '/undo', '/ls']
+export const QUICK_COMMANDS = [
+  '/help',
+  '/ps',
+  '/add',
+  '/drop',
+  '/diff',
+  '/commit',
+  '/undo',
+  '/ls',
+]
 
 export async function fetchSessionCommands(
   client: CoreHttpClient,
   sessionId: string
 ): Promise<VisionCommand[]> {
-  return client.listCommands(sessionId)
+  const core = await client.listCommands(sessionId)
+  return mergeCommandCatalog(core.length > 0 ? core : DEFAULT_COMMANDS)
 }
+
+export { mergeCommandCatalog, VISION_CLIENT_COMMANDS } from './visionClientCommands'

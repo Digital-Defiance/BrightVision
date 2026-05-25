@@ -62,7 +62,7 @@ export function extractAnswerSection(text: string): string | null {
   return tail
 }
 
-/** One queued user message per file — uses existing `useAiderSession` send queue (#4). */
+/** One queued user message per file — uses existing `useVisionSession` send queue (#4). */
 export function buildQueuedAddMessages(paths: string[]): string[] {
   return paths.map((p) => `/add ${p.trim()}`)
 }

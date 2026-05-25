@@ -19,28 +19,19 @@ source activate.sh   # venv + pip install -e bright-vision-core + uvicorn
 yarn install
 ```
 
-**Optional `local-llm.env`:** create `local-llm/local-llm.env` in the repo (gitignored dir) with `DATA_MODEL` and `OLLAMA_HOST`. At runtime use **Terminal → Local LLM → Start** or **Auto before session**. See [LOCAL_LLM.md](./LOCAL_LLM.md).
+**Optional `local-llm.env`:** `cp local-llm.env.example local-llm.env` at repo root (`DATA_MODEL`, `OLLAMA_HOST`). In-app **Local LLM** uses Rust; sessions use Python core — not `local-llm.sh`. See [LOCAL_LLM.md](./LOCAL_LLM.md). Core PyPI release: [bright-vision-core/docs/PUBLISHING.md](../bright-vision-core/docs/PUBLISHING.md).
 
 ## After a core PyPI release
 
-Pin the parent app to the published wheel and install into **aider-vision** `.venv` (not `aider-vision-core/.venv`):
+See [bright-vision-core/docs/PUBLISHING.md](../bright-vision-core/docs/PUBLISHING.md). Pin the parent Bright Vision app:
 
 ```bash
-cd aider-vision-core
-./build.sh v0.90.10.dev0 --sync-vision          # full release + sync
-./build.sh --sync-vision v0.90.10.dev0          # sync only (tag already exists)
-./scripts/sync_aider_vision.sh 0.90.10.dev0     # same, from core repo
+cd bright-vision-core
+./build.sh v0.100.1 --sync-vision
+./scripts/sync_bright_vision.sh v0.100.1 --commit
 ```
 
-From the parent repo:
-
-```bash
-yarn sync:core 0.90.10.dev0
-```
-
-This updates `requirements-core.txt`, checks out the submodule tag, and runs `pip install` in the parent venv. Optional: add `--commit` on the sync script to commit the pin in aider-vision.
-
-Use PyPI mode in activate: `AIDER_VISION_CORE_INSTALL=pypi source activate.sh`
+Updates `requirements-core.txt`, checks out the submodule tag, and installs into the parent `.venv`. PyPI mode: `AIDER_VISION_CORE_INSTALL=pypi source activate.sh`
 
 ## Run the desktop app
 

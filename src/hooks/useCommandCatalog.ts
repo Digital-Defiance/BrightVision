@@ -1,23 +1,30 @@
 import { useCallback, useEffect, useState } from 'react'
-import { DEFAULT_COMMANDS, fetchSessionCommands, type VisionCommand } from '../ipc/commands'
+import {
+  DEFAULT_COMMANDS,
+  fetchSessionCommands,
+  mergeCommandCatalog,
+  type VisionCommand,
+} from '../ipc/commands'
 import type { CoreHttpClient } from '../ipc/httpClient'
 
 export function useCommandCatalog(
   client: CoreHttpClient | null,
   sessionId: string | null
 ) {
-  const [commands, setCommands] = useState<VisionCommand[]>(DEFAULT_COMMANDS)
+  const [commands, setCommands] = useState<VisionCommand[]>(
+    mergeCommandCatalog(DEFAULT_COMMANDS)
+  )
 
   const reload = useCallback(async () => {
     if (!client || !sessionId) {
-      setCommands(DEFAULT_COMMANDS)
+      setCommands(mergeCommandCatalog(DEFAULT_COMMANDS))
       return
     }
     try {
       const list = await fetchSessionCommands(client, sessionId)
-      if (list.length > 0) setCommands(list)
+      setCommands(list)
     } catch {
-      setCommands(DEFAULT_COMMANDS)
+      setCommands(mergeCommandCatalog(DEFAULT_COMMANDS))
     }
   }, [client, sessionId])
 

@@ -12,10 +12,10 @@ const KIRO_SPEC_ANSWER = `Answer
 Based on your goal to deepen Kiro/EARS spec-driven development support, the following files are the most critical and will likely need modifications to handle spec generation, parsing, storage, and UI integration:
 
 **Backend (Python)**
-- \`aider-vision-core/aider_vision_core/todo_spec_generate.py\` (LLM prompt building & spec layer parsing)
-- \`aider-vision-core/aider_vision_core/workspace_todos.py\` (Todo store, spec file syncing, markdown import/export)
-- \`aider-vision-core/aider_vision_core/session.py\` (\`generate_todo_layers\` execution & session integration)
-- \`aider-vision-core/aider_vision_core/todo_markdown.py\` (EARS/spec markdown serialization & merging)
+- \`bright-vision-core/bright_vision_core/todo_spec_generate.py\` (LLM prompt building & spec layer parsing)
+- \`bright-vision-core/bright_vision_core/workspace_todos.py\` (Todo store, spec file syncing, markdown import/export)
+- \`bright-vision-core/bright_vision_core/session.py\` (\`generate_todo_layers\` execution & session integration)
+- \`bright-vision-core/bright_vision_core/todo_markdown.py\` (EARS/spec markdown serialization & merging)
 
 **Frontend (TypeScript/React)**
 - \`src/todos/types.ts\` (Type definitions for specs, requirements, design, tasks)
@@ -34,10 +34,10 @@ describe('suggestedFiles', () => {
   it('extracts backtick paths from spec-driven file list', () => {
     const paths = extractSuggestedFilePaths(KIRO_SPEC_ANSWER)
     expect(paths).toEqual([
-      'aider-vision-core/aider_vision_core/session.py',
-      'aider-vision-core/aider_vision_core/todo_markdown.py',
-      'aider-vision-core/aider_vision_core/todo_spec_generate.py',
-      'aider-vision-core/aider_vision_core/workspace_todos.py',
+      'bright-vision-core/bright_vision_core/session.py',
+      'bright-vision-core/bright_vision_core/todo_markdown.py',
+      'bright-vision-core/bright_vision_core/todo_spec_generate.py',
+      'bright-vision-core/bright_vision_core/workspace_todos.py',
       'src/hooks/useWorkspaceTodos.ts',
       'src/todos/templates.ts',
       'src/todos/types.ts',
@@ -47,10 +47,10 @@ describe('suggestedFiles', () => {
   it('builds separate /add messages for the queue', () => {
     const paths = extractSuggestedFilePaths(KIRO_SPEC_ANSWER)
     expect(buildQueuedAddMessages(paths)).toEqual([
-      '/add aider-vision-core/aider_vision_core/session.py',
-      '/add aider-vision-core/aider_vision_core/todo_markdown.py',
-      '/add aider-vision-core/aider_vision_core/todo_spec_generate.py',
-      '/add aider-vision-core/aider_vision_core/workspace_todos.py',
+      '/add bright-vision-core/bright_vision_core/session.py',
+      '/add bright-vision-core/bright_vision_core/todo_markdown.py',
+      '/add bright-vision-core/bright_vision_core/todo_spec_generate.py',
+      '/add bright-vision-core/bright_vision_core/workspace_todos.py',
       '/add src/hooks/useWorkspaceTodos.ts',
       '/add src/todos/templates.ts',
       '/add src/todos/types.ts',

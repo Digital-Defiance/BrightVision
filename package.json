@@ -1,5 +1,5 @@
 {
-  "name": "aider-vision",
+  "name": "bright-vision",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,19 +9,22 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:mac": "tauri build --target universal-apple-darwin --bundles dmg",
-    "audit:core": "python aider-vision-core/scripts/audit_rename_compat.py",
+    "audit:core": "test -f aider-vision-core/scripts/audit_rename_compat.py && python aider-vision-core/scripts/audit_rename_compat.py || echo 'skip audit:core (legacy submodule absent)'",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rust": "cd src-tauri && cargo test",
     "test:fast": "yarn tsc --noEmit && yarn test",
     "test:local": "yarn tsc --noEmit && yarn test && yarn test:rust",
     "test:e2e": "playwright test",
+    "test:e2e:llm": "E2E_LLM=1 playwright test -c playwright.llm.config.ts",
+    "test:llm:core": "cd bright-vision-core && E2E_LLM=1 python -m pytest tests/basic/test_hello_llm.py -q",
     "test:full": "yarn tsc --noEmit && yarn test && yarn test:rust && yarn test:e2e",
     "test:all": "yarn test:full",
     "test:local:sh": "sh scripts/test-local.sh",
-    "test:git-workspace": "cd aider-vision-core && python -m pytest tests/basic/test_git_workspace.py -q",
+    "test:git-workspace": "cd bright-vision-core && python -m pytest tests/basic/test_git_workspace.py tests/basic/test_http_api.py -q",
+    "test:bright-core": "cd bright-vision-core && python -m pytest tests/basic/test_git_workspace.py tests/basic/test_workspace_todos.py tests/basic/test_http_api.py tests/basic/test_http_session_todos.py tests/basic/test_superproject_integration.py -q",
     "verify:submodule": "sh scripts/verify_submodule.sh",
-    "sync:core": "bash aider-vision-core/scripts/sync_aider_vision.sh"
+    "sync:core": "bash bright-vision-core/scripts/sync_bright_vision.sh"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

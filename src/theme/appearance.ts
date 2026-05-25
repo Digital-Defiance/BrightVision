@@ -18,7 +18,9 @@ export interface AppearanceConfig {
   terminalFontCustom: string
 }
 
-export const APPEARANCE_STORAGE_KEY = 'aider-vision-appearance'
+import { APPEARANCE_STORAGE_KEY } from '../storageKeys'
+
+export { APPEARANCE_STORAGE_KEY }
 
 export const DEFAULT_APPEARANCE: AppearanceConfig = {
   uiFont: 'inter',

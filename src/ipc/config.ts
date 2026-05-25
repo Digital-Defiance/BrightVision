@@ -3,9 +3,13 @@
 import { isTauriRuntime } from './isTauri'
 
 /** Embedded engine tree relative to workspace (submodule / translocated body). */
-export const CORE_ENGINE_DIR = 'aider-vision-core'
+/** Default engine submodule; override via Settings or `VITE_CORE_ENGINE_DIR`. */
+export const CORE_ENGINE_DIR =
+  (typeof import.meta !== 'undefined' &&
+    import.meta.env?.VITE_CORE_ENGINE_DIR) ||
+  'bright-vision-core'
 
-export interface AiderConfig {
+export interface VisionConfig {
   model: string
   /**
    * Ollama API URL for LiteLLM (`OLLAMA_API_BASE`). Empty = do not inject; use shell / LiteLLM default.
@@ -16,7 +20,7 @@ export interface AiderConfig {
   /** Desktop: built-in Local LLM (Ollama + preload) before Vision session. */
   manageLocalLlm: boolean
   extraParams: string
-  /** Git project the agent edits (any repo; does not need aider-vision-core inside it). */
+  /** Git project the agent edits (any repo; does not need bright-vision-core inside it). */
   workingDir: string
   /** Auto-answer up to N confirmations per session (0 = always prompt). */
   autoApproveLimit: number
@@ -29,7 +33,7 @@ export interface AiderConfig {
   pythonPath: string
   /**
    * Core HTTP API. Desktop: filled by Tauri after `start_core_api`.
-   * Web: `aider-vision-core-serve` or Vite proxy `/api/core`.
+   * Web: `bright-vision-core-serve` or Vite proxy `/api/core`.
    */
   coreApiUrl: string
   coreApiToken: string
@@ -37,7 +41,7 @@ export interface AiderConfig {
   contextFiles: string[]
 }
 
-export const DEFAULT_CONFIG: AiderConfig = {
+export const DEFAULT_CONFIG: VisionConfig = {
   model: 'ollama_chat/qwen3.6:27b-q4_K_M',
   ollamaApiBase: '',
   localLlmRoot: '',

@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
 """
-Roadmap #19: verify superproject workspace + aider-vision-core submodule.
+Roadmap #19: verify superproject workspace + engine submodule (bright-vision-core default).
 
-Run from aider-vision repo root (after activate.sh):
+Run from repo root (after activate.sh):
 
     python scripts/verify_submodule_workspace.py
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CORE = ROOT / "aider-vision-core"
-SUB_REL = "aider-vision-core/aider_vision_core/session.py"
-VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
+
+ENGINE_NAME = os.environ.get("BRIGHT_VISION_ENGINE", "bright-vision-core")
+CORE = ROOT / ENGINE_NAME
+
+if ENGINE_NAME == "bright-vision-core":
+    SUB_REL = "bright-vision-core/bright_vision_core/session.py"
+    PKG = "bright_vision_core"
+else:
+    SUB_REL = "aider-vision-core/aider_vision_core/session.py"
+    PKG = "aider_vision_core"
 
 
 def _python_hint() -> str:
     return (
-        "Install deps: source activate.sh (or: python3 -m venv .venv && "
-        ".venv/bin/pip install -e aider-vision-core)"
+        f"Install deps: source activate.sh (installs editable {ENGINE_NAME})"
     )
 
 
@@ -32,15 +39,16 @@ def main() -> int:
     sys.path.insert(0, str(CORE))
 
     try:
-        from aider_vision_core.event_io import EventIO
-        from aider_vision_core.git_workspace import (
-            RepoSet,
-            create_git_workspace,
-            discover_submodule_paths,
-        )
-        from aider_vision_core.session import Session
+        event_io = __import__(f"{PKG}.event_io", fromlist=["EventIO"])
+        git_ws = __import__(f"{PKG}.git_workspace", fromlist=["RepoSet", "create_git_workspace", "discover_submodule_paths"])
+        session_mod = __import__(f"{PKG}.session", fromlist=["Session"])
+        EventIO = event_io.EventIO
+        RepoSet = git_ws.RepoSet
+        create_git_workspace = git_ws.create_git_workspace
+        discover_submodule_paths = git_ws.discover_submodule_paths
+        Session = session_mod.Session
     except ModuleNotFoundError as err:
-        print(f"FAIL: cannot import aider_vision_core ({err})")
+        print(f"FAIL: cannot import {PKG} ({err})")
         print(_python_hint())
         return 1
 
@@ -49,8 +57,8 @@ def main() -> int:
     paths = discover_submodule_paths(str(ROOT))
     checks.append(
         (
-            "git discovers aider-vision-core submodule",
-            "aider-vision-core" in paths,
+            f"git discovers {ENGINE_NAME} submodule",
+            ENGINE_NAME in paths,
         )
     )
 
@@ -67,8 +75,8 @@ def main() -> int:
     sub_root = ws.repo_for_rel_path(SUB_REL).root if isinstance(ws, RepoSet) else ""
     checks.append(
         (
-            "submodule repo root is aider-vision-core",
-            sub_root.endswith("aider-vision-core"),
+            f"submodule repo root is {ENGINE_NAME}",
+            sub_root.endswith(ENGINE_NAME),
         )
     )
 
@@ -98,7 +106,7 @@ def main() -> int:
     if failed:
         print(f"\n{failed} check(s) failed.")
         return 1
-    print("\nAll submodule workspace checks passed.")
+    print(f"\nAll submodule workspace checks passed ({ENGINE_NAME}).")
     return 0
 
 

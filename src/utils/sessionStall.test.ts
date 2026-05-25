@@ -16,11 +16,33 @@ describe('sessionStall', () => {
     expect(turnActivityHint(a, 9)).toContain('Answer is visible')
   })
 
-  it('flags stall when no events for a long time', () => {
+  it('treats preparing workspace progress as waiting_model', () => {
+    const now = 100_000
+    const a = buildTurnActivity(true, now - 120_000, null, 'Preparing workspace (24s)', now)
+    expect(a.kind).toBe('waiting_model')
+    expect(isLikelyStalled(a)).toBe(false)
+  })
+
+  it('does not flag stall while waiting for the model with recent progress', () => {
+    const now = 100_000
+    const a = buildTurnActivity(
+      true,
+      now - 60_000,
+      null,
+      'Waiting for Ollama (16s)',
+      now
+    )
+    expect(a.kind).toBe('waiting_model')
+    expect(isLikelyStalled(a)).toBe(false)
+  })
+
+  it('flags stall only after several minutes without progress', () => {
     const now = 100_000
     const a = buildTurnActivity(true, now - 60_000, now - 55_000, 'Scanning repo map', now)
-    expect(isLikelyStalled(a)).toBe(true)
-    expect(turnActivityHint(a, 9)).toContain('Clear the queue')
-    expect(turnActivityHint(a, 9)).toContain('stuck')
+    expect(isLikelyStalled(a)).toBe(false)
+    const stalled = buildTurnActivity(true, now - 400_000, now - 395_000, '', now)
+    expect(isLikelyStalled(stalled)).toBe(true)
+    expect(turnActivityHint(stalled, 9)).toContain('Clear the queue')
+    expect(turnActivityHint(stalled, 9)).toContain('stuck')
   })
 })

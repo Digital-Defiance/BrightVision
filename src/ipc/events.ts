@@ -1,6 +1,6 @@
 /**
- * Event shapes from aider-vision-core Session / EventIO / vision_jsonl worker.
- * Keep aligned with aider-vision-core/aider_vision_core/event_io.py and session.py.
+ * Event shapes from bright-vision-core Session / EventIO / vision_jsonl worker.
+ * Keep aligned with bright-vision-core/bright_vision_core/event_io.py and session.py.
  */
 
 export type CoreEventType =

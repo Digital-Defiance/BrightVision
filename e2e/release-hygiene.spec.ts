@@ -13,13 +13,13 @@ test.describe('Release & submodule hygiene (#19, #31)', () => {
     expect(md).toMatch(/yarn test:(full|all)/)
   })
 
-  test('.gitmodules references aider-vision-core', () => {
+  test('.gitmodules references bright-vision-core', () => {
     const modules = readFileSync(join(ROOT, '.gitmodules'), 'utf8')
-    expect(modules).toContain('aider-vision-core')
+    expect(modules).toContain('bright-vision-core')
   })
 
-  test('core submodule directory is present', () => {
-    expect(existsSync(join(ROOT, 'aider-vision-core'))).toBe(true)
+  test('bright-vision-core submodule directory is present', () => {
+    expect(existsSync(join(ROOT, 'bright-vision-core'))).toBe(true)
   })
 
   test('verify_submodule script exists and is executable', () => {

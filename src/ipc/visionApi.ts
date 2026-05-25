@@ -4,7 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { invokeWithTimeout } from './tauriInvoke'
-import type { AiderConfig } from './config'
+import type { VisionConfig } from './config'
 import type { CoreEventBase } from './events'
 import type { CoreSessionInfo, SendMessageOptions } from './httpClient'
 import { CoreHttpClient } from './httpClient'
@@ -16,7 +16,7 @@ export type CoreEventHandler = (event: CoreEventBase) => void
 export type ProcessPhaseHandler = (update: ProcessUpdate) => void
 
 export interface VisionApiSession {
-  start(config: AiderConfig): Promise<CoreSessionInfo>
+  start(config: VisionConfig): Promise<CoreSessionInfo>
   stop(): Promise<void>
   send(content: string, options?: SendMessageOptions): Promise<void>
   addFiles(paths: string[]): Promise<{ info: CoreSessionInfo; events: CoreEventBase[] }>

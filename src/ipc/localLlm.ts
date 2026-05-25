@@ -1,4 +1,11 @@
-import { DEFAULT_CONFIG, type AiderConfig } from './config'
+import { DEFAULT_CONFIG, type VisionConfig } from './config'
+
+export interface OllamaModelRow {
+  name: string
+  size?: string | null
+  vram?: string | null
+  expiresAt?: string | null
+}
 
 export interface OllamaModelsSnapshot {
   ollamaHost: string
@@ -7,6 +14,8 @@ export interface OllamaModelsSnapshot {
   configuredInPs: boolean
   tagsText: string
   psText: string
+  psRows?: OllamaModelRow[]
+  tagsRows?: OllamaModelRow[]
 }
 
 export interface LocalLlmRuntimeStatus {
@@ -46,10 +55,16 @@ export function formatLlmPingSummary(r: LlmPingResult): string {
     parts.push(
       r.coreReachable
         ? `Core OK${r.coreLatencyMs != null ? ` (${r.coreLatencyMs}ms)` : ''}`
-        : 'Core unreachable'
+        : 'Core not running'
     )
   }
   return parts.join(' · ')
+}
+
+/** Hint when ping succeeds against Ollama but Vision Core HTTP is down. */
+export function formatLlmPingHint(r: LlmPingResult): string | null {
+  if (!r.generateOk || r.coreReachable !== false) return null
+  return 'Ollama inference works. Start the coding session (Terminal → Start) to run Vision Core on :8741.'
 }
 
 export interface LocalLlmSnapshot {
@@ -57,7 +72,7 @@ export interface LocalLlmSnapshot {
   ollamaHost: string | null
   dataModel: string | null
   llmMode: string | null
-  /** Resolved `{app}/local-llm` when present (optional env directory). */
+  /** App path when `local-llm.env` exists at repo root or under `local-llm/`. */
   repoLocalLlmRoot?: string | null
 }
 
@@ -74,7 +89,7 @@ export function ollamaTagFromVisionModel(model: string): string | null {
   return null
 }
 
-export function resolveLocalLlmForConfig(cfg: AiderConfig): {
+export function resolveLocalLlmForConfig(cfg: VisionConfig): {
   ollamaHost: string
   modelTag: string | null
 } {
@@ -99,10 +114,10 @@ function isDefaultOllamaModel(model: string): boolean {
  * `fillEmpty` — only set fields the user has not configured (recommended on startup).
  */
 export function applyLocalLlmToConfig(
-  cfg: AiderConfig,
+  cfg: VisionConfig,
   snap: LocalLlmSnapshot,
   fillEmpty: boolean
-): AiderConfig {
+): VisionConfig {
   let next = cfg
   const host = snap.ollamaHost?.trim()
   if (host && (!fillEmpty || !cfg.ollamaApiBase.trim())) {
