@@ -55,7 +55,8 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
     pick_context_directory: async () => null,
     detect_workspace: async () => '.',
     stop_core_api: async () => null,
-    start_core_api: async () => 'http://127.0.0.1:8741',
+    /** Match {@link E2E_CONFIG.coreApiUrl} so Playwright routes in mockCoreApi intercept fetches. */
+    start_core_api: async () => '/api/core',
   }
 }
 

@@ -101,13 +101,16 @@ const NAV: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
 ]
 
-function App() {
+function AppShell({
+  appearance,
+  setAppearance,
+}: {
+  appearance: AppearanceConfig
+  setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
+}) {
   const [activeTab, setActiveTab] = useState<TabId>('chat')
   const [config, setConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState<AiderConfig>(DEFAULT_CONFIG)
-  const [appearance, setAppearance] = useState<AppearanceConfig>(() => loadAppearance())
-  const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
-  const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([])
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
@@ -142,10 +145,6 @@ function App() {
   const savedConfigRef = useRef(savedConfig)
   savedConfigRef.current = savedConfig
   const unlistenersRef = useRef<UnlistenFn[]>([])
-
-  useEffect(() => {
-    applyAppearanceCssVars(appearance)
-  }, [appearance])
 
   useEffect(() => {
     const stored = localStorage.getItem('aider-vision-config')
@@ -1042,9 +1041,7 @@ function App() {
   )
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <ProcessProvider>
+    <>
       <AppChrome
         nav={NAV}
         activeTab={activeTab}
@@ -1255,9 +1252,25 @@ function App() {
           </Alert>
         ) : undefined}
       </Snackbar>
+    </>
+  )
+}
+
+export default function App() {
+  const [appearance, setAppearance] = useState<AppearanceConfig>(() => loadAppearance())
+  const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
+  const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
+
+  useEffect(() => {
+    applyAppearanceCssVars(appearance)
+  }, [appearance])
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ProcessProvider>
+        <AppShell appearance={appearance} setAppearance={setAppearance} />
       </ProcessProvider>
     </ThemeProvider>
   )
 }
-
-export default App

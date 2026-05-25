@@ -382,6 +382,73 @@
         line-height: 1.55;
       }
 
+      .vision-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+        gap: 1rem;
+      }
+
+      .vision-card {
+        padding: 1.4rem 1.35rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        transition: border-color 0.15s;
+      }
+
+      .vision-card:hover {
+        border-color: rgba(20, 176, 20, 0.35);
+      }
+
+      .vision-card-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.5rem 0.75rem;
+        margin-bottom: 0.65rem;
+      }
+
+      .vision-card-num {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--green);
+        letter-spacing: 0.06em;
+      }
+
+      .vision-card h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0;
+        flex: 1 1 12rem;
+        line-height: 1.35;
+      }
+
+      .vision-card-angle {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted-dim);
+        margin: 0 0 0.75rem;
+      }
+
+      .vision-card-lead {
+        font-size: 0.9rem;
+        color: var(--white);
+        font-weight: 500;
+        margin: 0 0 0.55rem;
+        line-height: 1.5;
+      }
+
+      .vision-card p {
+        font-size: 0.875rem;
+        color: var(--muted);
+        margin: 0;
+        line-height: 1.58;
+      }
+
       .arch-flow {
         display: flex;
         flex-wrap: wrap;
@@ -773,6 +840,7 @@
         </a>
         <nav aria-label="Primary">
           <a class="nav-docs" href="#install-mac">Install</a>
+          <a class="nav-docs" href="#why-vision">Why Vision</a>
           <a class="nav-docs" href="#features">Features</a>
           <a class="nav-docs" href="#architecture">Architecture</a>
           <a class="nav-docs" href="#start">Get started</a>
@@ -849,6 +917,164 @@
               Chat, terminal, and settings in one native shell
             </figcaption>
           </figure>
+        </div>
+      </section>
+
+      <section id="why-vision">
+        <div class="wrap">
+          <p class="section-label">Why “Vision”</p>
+          <h2 class="section-title">Eight meanings behind the name</h2>
+          <p class="section-desc">
+            <strong>Aider Vision</strong> is not a rebranded terminal wrapper.
+            The name encodes how we think about AI-assisted engineering: spatial
+            clarity, sovereign infrastructure, and supervision over typing.
+          </p>
+          <div class="vision-grid">
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">01</span>
+                <h3>Vision as the visual IDE</h3>
+              </div>
+              <p class="vision-card-angle">The spatial interface angle</p>
+              <p class="vision-card-lead">
+                The command line is powerful, but it lacks spatial context.
+                Traditional IDEs have context, but they are bogged down by
+                corporate bloat and plugin fatigue.
+              </p>
+              <p>
+                Aider Vision is the bridge. It extracts the raw, terminal-native
+                power of an agentic core and wraps it in a focused,
+                high-telemetry visual command center — inline diffs, token stats,
+                and multi-repo file trees on a lean, memory-efficient Tauri stack.
+                A visual workbench for the systems architect, without heavyweight
+                telemetry tracking every keystroke.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">02</span>
+                <h3>Vision of the future</h3>
+              </div>
+              <p class="vision-card-angle">The sovereign stack angle</p>
+              <p class="vision-card-lead">
+                The industry’s default future is rented: you rent the AI, you rent
+                the compute, and you surrender your IP to the cloud for
+                autocomplete.
+              </p>
+              <p>
+                Aider Vision is a declaration of independence — a future where
+                developers own their infrastructure. Built to leverage Apple
+                Silicon unified memory, you can run frontier-class models locally.
+                Your prompts, architecture, and proprietary code stay on your
+                machine. Not just an editor; the warp engine for a sovereign
+                digital stack.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">03</span>
+                <h3>Vision as literal sight</h3>
+              </div>
+              <p class="vision-card-angle">The multi-modal angle</p>
+              <p class="vision-card-lead">
+                Systems engineering is visual — whiteboards, UI layouts,
+                schematics — yet most AI pair programmers have been completely
+                blind.
+              </p>
+              <p>
+                Aider Vision gives your agent eyes. Image and PDF context flow
+                into your local workflow so you stop translating diagrams into
+                prose. Drop in a system diagram, a UI mockup, or a failing
+                terminal snapshot and let the agent see the problem. It closes the
+                loop between the design in your head and the code on disk.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">04</span>
+                <h3>Vision as absolute transparency</h3>
+              </div>
+              <p class="vision-card-angle">The unclouded angle</p>
+              <p class="vision-card-lead">
+                Most modern AI IDEs are black boxes: you send code into the void
+                and an answer comes back.
+              </p>
+              <p>
+                Aider Vision offers clarity end to end. Running on your own
+                silicon means no opaque cloud endpoint and no hidden scraping of
+                your IP. You get 20/20 vision into what the agent is thinking,
+                doing, and executing — streamed events, proposed edits, and a
+                technical terminal you can audit.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">05</span>
+                <h3>Vision as systems-level oversight</h3>
+              </div>
+              <p class="vision-card-angle">The architect angle</p>
+              <p class="vision-card-lead">
+                Generic tools get lost the moment a project scales beyond a single
+                folder.
+              </p>
+              <p>
+                Aider Vision provides eagle-eye scope. Multi-repo and submodule
+                awareness are first-class: it does not just see a file, it sees
+                the architectural landscape. Macroscopic vision for safely
+                orchestrating complex, interconnected systems — from superproject
+                layouts to stacks like BrightChain.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">06</span>
+                <h3>Vision as intent</h3>
+              </div>
+              <p class="vision-card-angle">The spec-driven angle</p>
+              <p class="vision-card-lead">
+                Standard AI coding is reactive: you ask, it types.
+              </p>
+              <p>
+                Aider Vision shares your intent. Integrated, EARS-compatible
+                spec-driven tasks keep the feature vision in context — WHEN/SHALL
+                requirements, layered specs, and Implement steps — so the agent
+                steers toward your architecture instead of guessing the next line.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">07</span>
+                <h3>Vision as supervision</h3>
+              </div>
+              <p class="vision-card-angle">The director angle</p>
+              <p class="vision-card-lead">
+                Typing is the lowest-leverage activity an engineer does.
+              </p>
+              <p>
+                Aider Vision elevates you from typist to director. You supply the
+                vision; the agent supplies labor. Review proposed architectural
+                diffs, confirm risky changes, queue and stop turns — guide the
+                project from the captain’s chair instead of grinding syntax.
+              </p>
+            </article>
+            <article class="vision-card">
+              <div class="vision-card-head">
+                <span class="vision-card-num">08</span>
+                <h3>Vision as illumination</h3>
+              </div>
+              <p class="vision-card-angle">The dark code angle</p>
+              <p class="vision-card-lead">
+                Legacy codebases and undocumented modules are dark matter — known
+                to exist, expensive to map.
+              </p>
+              <p>
+                Aider Vision illuminates those corners. Repo mapping, dependency
+                context, git diffs, and structural signals surfaced in the UI cut
+                hours of mental reverse-engineering. Dark code becomes navigable
+                terrain.
+              </p>
+            </article>
+          </div>
         </div>
       </section>
 
