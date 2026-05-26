@@ -10,18 +10,22 @@ interface ThinkingTimingSectionProps {
   prefs: ThinkingTimingPrefs
   statsStore: ThinkingStatsStore
   currentModel: string
+  workingDir: string
   onChange: (next: ThinkingTimingPrefs) => void
   onClearModelStats: () => void
   onClearAllStats: () => void
+  onCsvMessage?: (message: string, severity: 'info' | 'warning') => void
 }
 
 export function ThinkingTimingSection({
   prefs,
   statsStore,
   currentModel,
+  workingDir,
   onChange,
   onClearModelStats,
   onClearAllStats,
+  onCsvMessage,
 }: ThinkingTimingSectionProps) {
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -81,8 +85,13 @@ export function ThinkingTimingSection({
         <ThinkingStatsPanel
           store={statsStore}
           currentModel={currentModel}
+          workingDir={workingDir}
+          timingPrefs={prefs}
+          onTimingPrefsChange={onChange}
           onClearModel={onClearModelStats}
           onClearAll={onClearAllStats}
+          onCsvSuccess={(msg) => onCsvMessage?.(msg, 'info')}
+          onCsvError={(msg) => onCsvMessage?.(msg, 'warning')}
         />
       )}
     </Paper>

@@ -36,7 +36,7 @@ Thumbs.db
 # LLM e2e (playwright globalSetup)
 .e2e-llm-core.pid
 
-# Local Ollama defaults for Bright Vision (see docs/LOCAL_LLM.md)
+# Local Ollama defaults for BrightVision (see docs/LOCAL_LLM.md)
 local-llm.env
 
 

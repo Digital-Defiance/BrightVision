@@ -3,8 +3,12 @@ import {
   buildModelTimingStats,
   buildTimingStatsView,
   clearModelThinkingStats,
+  computeOutputTps,
+  computeRunningAvgOutputTps,
   computeTimingDistribution,
   emptyThinkingStatsStore,
+  exportThinkingStatsCsv,
+  formatOutputTps,
   parseThinkingStatsStore,
   recordTurnTiming,
   thinkShare,
@@ -71,6 +75,58 @@ describe('thinkingStats', () => {
     store = clearModelThinkingStats(store, 'a')
     expect(store.history).toHaveLength(1)
     expect(store.history[0].model).toBe('b')
+  })
+
+  it('computes output TPS from tokens and response time', () => {
+    expect(computeOutputTps(100, 5000)).toBeCloseTo(20)
+    expect(computeOutputTps(undefined, 5000)).toBeNull()
+    expect(formatOutputTps(12.456)).toBe('12.5 tok/s')
+  })
+
+  it('running average TPS ignores turns without token reports', () => {
+    const records = [
+      {
+        id: '1',
+        at: '',
+        model: 'm',
+        responseMs: 10_000,
+        thinkMs: 0,
+        promptChars: 0,
+        tokensReceived: 100,
+      },
+      {
+        id: '2',
+        at: '',
+        model: 'm',
+        responseMs: 5000,
+        thinkMs: 0,
+        promptChars: 0,
+      },
+      {
+        id: '3',
+        at: '',
+        model: 'm',
+        responseMs: 5000,
+        thinkMs: 0,
+        promptChars: 0,
+        tokensReceived: 50,
+      },
+    ]
+    expect(computeRunningAvgOutputTps(records)).toBeCloseTo((10 + 10) / 2)
+  })
+
+  it('exports CSV with header and rows', () => {
+    let store = recordTurnTiming(emptyThinkingStatsStore(), 'm1', {
+      responseMs: 2000,
+      thinkMs: 500,
+      promptChars: 10,
+      tokensSent: 100,
+      tokensReceived: 40,
+    })
+    const csv = exportThinkingStatsCsv(store, null)
+    expect(csv).toContain('output_tps')
+    expect(csv).toContain('m1')
+    expect(csv).toContain('40')
   })
 
   it('migrates v1 JSON to v2 history', () => {

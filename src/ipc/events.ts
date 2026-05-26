@@ -12,6 +12,7 @@ export type CoreEventType =
   | 'confirm'
   | 'assistant_complete'
   | 'progress'
+  | 'model_route'
   | 'done'
   | 'error'
 

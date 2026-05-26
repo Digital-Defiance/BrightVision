@@ -1,6 +1,7 @@
 {
-  "productName": "Bright Vision",
-  "version": "0.1.0-bright6",
+  "productName": "BrightVision",
+  "mainBinaryName": "BrightVision",
+  "version": "0.1.1-bright1",
   "identifier": "com.digitaldefiance.bright-vision",
   "build": {
     "frontendDist": "../dist",
@@ -12,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Bright Vision",
+        "title": "BrightVision",
         "width": 1280,
         "height": 720,
         "resizable": true,

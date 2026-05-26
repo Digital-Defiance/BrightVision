@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod git_ops;
+mod workspace_editor;
 mod local_llm_config;
 mod local_llm_runtime;
 mod resource_monitor;
@@ -87,7 +88,7 @@ fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
     }
 
     Err(format!(
-        "Vision API server not found. Tried:\n  {}\n\nFrom the Bright Vision repo run: git submodule update --init && source activate.sh",
+        "Vision API server not found. Tried:\n  {}\n\nFrom the BrightVision repo run: git submodule update --init && source activate.sh",
         tried.join("\n  ")
     ))
 }
@@ -213,6 +214,23 @@ async fn local_llm_stop_plain(
     keep_ollama: bool,
 ) -> Result<Vec<String>, String> {
     local_llm_runtime::local_llm_stop_plain(&ollama_host, &model_tag, keep_ollama).await
+}
+
+#[tauri::command]
+async fn local_llm_prepare_hopper(
+    ollama_host: String,
+    entries: Vec<local_llm_runtime::HopperPrepareEntry>,
+) -> Result<Vec<String>, String> {
+    local_llm_runtime::local_llm_prepare_hopper(&ollama_host, entries).await
+}
+
+#[tauri::command]
+async fn ollama_ensure_model_loaded(
+    ollama_host: String,
+    model_tag: String,
+    keep_alive_secs: i64,
+) -> Result<local_llm_runtime::OllamaEnsureModelResult, String> {
+    local_llm_runtime::ollama_ensure_model_loaded(&ollama_host, &model_tag, keep_alive_secs).await
 }
 
 #[tauri::command]
@@ -797,6 +815,87 @@ fn read_workspace_todos(working_dir: String) -> Result<TodoStoreJson, String> {
 }
 
 #[tauri::command]
+fn list_workspace_files_cmd(working_dir: String) -> Result<Vec<String>, String> {
+    let workspace = normalize_project_workspace(&working_dir);
+    workspace_editor::list_workspace_files(&workspace)
+}
+
+#[tauri::command]
+fn read_workspace_text_file(working_dir: String, path: String) -> Result<String, String> {
+    let workspace = normalize_project_workspace(&working_dir);
+    workspace_editor::read_text_file(&workspace, &path)
+}
+
+#[tauri::command]
+fn write_workspace_text_file(
+    working_dir: String,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    let workspace = normalize_project_workspace(&working_dir);
+    workspace_editor::write_text_file(&workspace, &path, &content)
+}
+
+/// Write or append timing-stats CSV under the project workspace (path must stay inside workspace).
+#[tauri::command]
+fn write_timing_stats_csv(
+    working_dir: String,
+    file_path: String,
+    content: String,
+    append: bool,
+    header_line: Option<String>,
+) -> Result<(), String> {
+    let workspace = normalize_project_workspace(&working_dir);
+    if !workspace.is_dir() {
+        return Err(format!("Not a directory: {}", workspace.display()));
+    }
+    let path = PathBuf::from(&file_path);
+    let full = if path.is_absolute() {
+        path
+    } else {
+        workspace.join(path)
+    };
+    let workspace_canon = workspace.canonicalize().map_err(|e| e.to_string())?;
+    let full_canon = if full.exists() {
+        full.canonicalize().map_err(|e| e.to_string())?
+    } else {
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        full.clone()
+    };
+    if !full_canon.starts_with(&workspace_canon) {
+        return Err("CSV path must be inside the project workspace".into());
+    }
+
+    let mut body = content;
+    if append {
+        let needs_header = !full.is_file()
+            || std::fs::metadata(&full)
+                .map(|m| m.len() == 0)
+                .unwrap_or(true);
+        if needs_header {
+            if let Some(header) = header_line.filter(|h| !h.is_empty()) {
+                body = format!("{header}\n{body}");
+            }
+        }
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&full)
+            .map_err(|e| e.to_string())?;
+        file.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
+    } else {
+        if let Some(parent) = full.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&full, body).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn write_workspace_todos(working_dir: String, store: TodoStoreJson) -> Result<(), String> {
     let path = workspace_todos_path(&working_dir);
     if let Some(parent) = path.parent() {
@@ -1060,6 +1159,8 @@ fn main() {
             local_llm_start_plain,
             local_llm_refresh_keep_alive,
             local_llm_stop_plain,
+            local_llm_prepare_hopper,
+            ollama_ensure_model_loaded,
             llm_ping,
             git_workspace_status,
             git_file_diff,
@@ -1073,6 +1174,10 @@ fn main() {
             pick_and_stage_chat_images,
             read_workspace_todos,
             write_workspace_todos,
+            write_timing_stats_csv,
+            list_workspace_files_cmd,
+            read_workspace_text_file,
+            write_workspace_text_file,
             import_todo_spec_files,
             estimate_paths_context_chars,
             resource_monitor::get_resource_snapshot,

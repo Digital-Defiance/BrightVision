@@ -1,6 +1,6 @@
 # Submodule & multi-repo verification (#19)
 
-Confirm that Bright Vision can treat the **superproject root** as the workspace and correctly edit files inside the **`bright-vision-core`** submodule — not only the parent app tree.
+Confirm that BrightVision can treat the **superproject root** as the workspace and correctly edit files inside the **`bright-vision-core`** submodule — not only the parent app tree.
 
 ## Prerequisites
 
@@ -84,5 +84,5 @@ yarn audit:core   # legacy rename audit on aider-vision-core if still present
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — superproject + `RepoSet`
 - [IPC.md](./IPC.md) — workspace on `POST /sessions`
-- [USER_WORKFLOW.md](./USER_WORKFLOW.md) — “Hack on Bright Vision itself”
+- [USER_WORKFLOW.md](./USER_WORKFLOW.md) — “Hack on BrightVision itself”
 - [CECLI_MIGRATION_ROADMAP.md](./CECLI_MIGRATION_ROADMAP.md) — engine migration gates

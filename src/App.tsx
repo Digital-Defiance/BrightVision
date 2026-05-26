@@ -1,10 +1,20 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react'
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+  type ReactNode,
+} from 'react'
 import { CssBaseline, ThemeProvider } from '@mui/material'
 import ChatIcon from '@mui/icons-material/Chat'
 import ChecklistRtlIcon from '@mui/icons-material/ChecklistRtl'
 import GitHubIcon from '@mui/icons-material/GitHub'
 import SettingsIcon from '@mui/icons-material/Settings'
 import TerminalIcon from '@mui/icons-material/Terminal'
+import CodeIcon from '@mui/icons-material/Code'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import StopIcon from '@mui/icons-material/Stop'
 import { Alert, Box, Button, Chip, Container, Paper, Snackbar, Stack, Typography } from '@mui/material'
@@ -76,12 +86,17 @@ import {
   formatFilesNotAddedSnackbar,
   rewriteAddFileToolMessage,
 } from './utils/addFileMessages'
+import { appendTimingStatsCsvRow } from './ipc/timingStatsCsv'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
 import { TodoPanel } from './components/todos/TodoPanel'
 import { GitPanel } from './components/GitPanel'
 import { useWorkspaceTodos } from './hooks/useWorkspaceTodos'
 import { WelcomePanel } from './components/onboarding/WelcomePanel'
 import { SettingsPanel } from './components/settings/SettingsPanel'
+
+const EditorPanel = lazy(() =>
+  import('./components/editor/EditorPanel').then((m) => ({ default: m.EditorPanel }))
+)
 import { ProcessProvider } from './progress/processStore'
 import { useProcess } from './progress/processStore'
 import { isSessionLifecycleActive } from './utils/sessionLifecycle'
@@ -129,12 +144,37 @@ import {
   parseTokenUsageReport,
   type SessionContextUsage,
 } from './utils/contextUsage'
+import { buildGitStatusByPath } from './utils/editorGitStatus'
+import {
+  DEFAULT_MODEL_ROUTER_PREFS,
+  formatModelRouteEvent,
+  loadModelRouterPrefs,
+  modelRouterApiPayload,
+  saveModelRouterPrefs,
+  type ModelRouterPrefs,
+} from './theme/modelRouterPrefs'
+import type { ModelRouterApiConfig, SendMessageOptions } from './ipc/httpClient'
+import {
+  ensureRoutedOllamaModel,
+  prepareModelRouterHopper,
+  type ModelRouteSnapshot,
+} from './ipc/modelRouterLlm'
+import { shouldOfferRouterEscalate } from './utils/modelRouterEscalate'
+import type { RouterEscalateOffer } from './components/chat/ModelRouterBar'
+import {
+  DEFAULT_EDITOR_LANGUAGE_PREFS,
+  loadEditorLanguagePrefs,
+  saveEditorLanguagePrefs,
+  type EditorLanguagePrefs,
+} from './theme/editorLanguagePrefs'
 import { createVisionTheme } from './theme'
 import {
   APPEARANCE_STORAGE_KEY,
   CONFIG_STORAGE_KEY,
   RESOURCE_OVERLAY_STORAGE_KEY,
   THINKING_TIMING_STORAGE_KEY,
+  EDITOR_LANGUAGE_PREFS_STORAGE_KEY,
+  MODEL_ROUTER_PREFS_STORAGE_KEY,
   migrateLegacyStorageKeys,
   readStorageItem,
   removeStorageKeys,
@@ -142,7 +182,7 @@ import {
 
 const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
-type TabId = 'chat' | 'terminal' | 'git' | 'settings' | 'tasks'
+type TabId = 'chat' | 'terminal' | 'git' | 'editor' | 'settings' | 'tasks'
 
 function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): VisionConfig {
   const merged: VisionConfig = { ...DEFAULT_CONFIG, ...raw }
@@ -193,6 +233,7 @@ const NAV: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: 'tasks', label: 'Tasks', icon: <ChecklistRtlIcon /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon /> },
   { id: 'git', label: 'Git', icon: <GitHubIcon /> },
+  { id: 'editor', label: 'Editor', icon: <CodeIcon /> },
   { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
 ]
 
@@ -205,6 +246,10 @@ function AppShell({
   setSuggestedFilesPrefs,
   resourceOverlayPrefs,
   setResourceOverlayPrefs,
+  editorLanguagePrefs,
+  setEditorLanguagePrefs,
+  modelRouterPrefs,
+  setModelRouterPrefs,
 }: {
   appearance: AppearanceConfig
   setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
@@ -214,8 +259,13 @@ function AppShell({
   setSuggestedFilesPrefs: React.Dispatch<React.SetStateAction<SuggestedFilesPrefs>>
   resourceOverlayPrefs: ResourceOverlayPrefs
   setResourceOverlayPrefs: React.Dispatch<React.SetStateAction<ResourceOverlayPrefs>>
+  editorLanguagePrefs: EditorLanguagePrefs
+  setEditorLanguagePrefs: React.Dispatch<React.SetStateAction<EditorLanguagePrefs>>
+  modelRouterPrefs: ModelRouterPrefs
+  setModelRouterPrefs: React.Dispatch<React.SetStateAction<ModelRouterPrefs>>
 }) {
   const [activeTab, setActiveTab] = useState<TabId>('chat')
+  const [editorPendingPath, setEditorPendingPath] = useState<string | null>(null)
   const [config, setConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
@@ -271,6 +321,7 @@ function AppShell({
   const turnAssistantMessageIdRef = useRef<number | null>(null)
   /** True once this turn streams at least one assistant token (vs. empty queued follow-up). */
   const turnHadAssistantOutputRef = useRef(false)
+  const turnTokenUsageRef = useRef<{ tokensSent: number; tokensReceived: number } | null>(null)
   const refreshSessionInfoRef = useRef<() => Promise<import('./ipc/httpClient').CoreSessionInfo | null>>(
     async () => null
   )
@@ -286,19 +337,21 @@ function AppShell({
     reset: () => void
     recordCompletedTurn: (
       t: TurnThinkingTiming,
-      resources?: import('./ipc/resourceSnapshot').TurnResourcePeak
-    ) => void
+      resources?: import('./ipc/resourceSnapshot').TurnResourcePeak,
+      tokens?: { tokensSent: number; tokensReceived: number }
+    ) => import('./utils/thinkingStats').TurnTimingRecord | null
   }>({
     beginTurn: () => {},
     syncContent: () => {},
     finalizeTurn: () => null,
     reset: () => {},
-    recordCompletedTurn: () => {},
+    recordCompletedTurn: () => null,
   })
   const startTurnTimingRef = useRef((promptChars: number, turnStartMs: number) => {
     turnWallStartMsRef.current = turnStartMs
     turnAssistantMessageIdRef.current = null
     turnHadAssistantOutputRef.current = false
+    turnTokenUsageRef.current = null
     thinkingTimingRef.current.beginTurn(promptChars, turnStartMs)
     turnTimingActiveRef.current = true
   })
@@ -320,7 +373,12 @@ function AppShell({
   const [trackTurnResources, setTrackTurnResources] = useState(false)
   const [lastUserMessageForRetry, setLastUserMessageForRetry] = useState<string | null>(null)
   const lastUserMessageForRetryRef = useRef<string | null>(null)
+  const [lastModelRoute, setLastModelRoute] = useState<ModelRouteSnapshot | null>(null)
+  const lastModelRouteRef = useRef<ModelRouteSnapshot | null>(null)
+  const [routerEscalateOffer, setRouterEscalateOffer] = useState<RouterEscalateOffer | null>(null)
+  const turnHadToolErrorRef = useRef(false)
   const isLocalLlmModel = isOllamaVisionModel(savedConfig.model)
+  const modelRouterActive = modelRouterPrefs.enabled && isLocalLlmModel
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
@@ -594,6 +652,55 @@ function AppShell({
       }
       case 'progress':
         break
+      case 'model_route': {
+        const snapshot: ModelRouteSnapshot = {
+          tier: (ev.tier === 'heavy' ? 'heavy' : 'fast') as 'fast' | 'heavy',
+          model: String(ev.model ?? ''),
+          estimated_tokens: ev.estimated_tokens as number | undefined,
+          reasons: ev.reasons as string[] | undefined,
+          escalated: Boolean(ev.escalated),
+        }
+        lastModelRouteRef.current = snapshot
+        setLastModelRoute(snapshot)
+        const routeText = formatModelRouteEvent(snapshot)
+        setChatMessages((prev) =>
+          capList(
+            [
+              ...prev,
+              {
+                id: orderId,
+                role: 'system' as const,
+                content: `Model router: ${routeText}`,
+              },
+            ],
+            MAX_CHAT_MESSAGES
+          )
+        )
+        if (modelRouterPrefs.enabled) {
+          void ensureRoutedOllamaModel(savedConfigRef.current, modelRouterPrefs, snapshot).then(
+            (result) => {
+              if (!result) return
+              setTerminalLines((prev) => [
+                ...prev,
+                ...result.logs.map((text, i) => ({
+                  id: Date.now() + i,
+                  text: `[router] ${text}`,
+                  type: 'stdout' as const,
+                  source: 'vision' as const,
+                })),
+              ])
+              const enriched: ModelRouteSnapshot = {
+                ...snapshot,
+                load_ms: result.load_ms,
+                swapped: result.swapped,
+              }
+              lastModelRouteRef.current = enriched
+              setLastModelRoute(enriched)
+            }
+          )
+        }
+        break
+      }
       case 'tool_output': {
         const text = String(ev.text ?? '')
         const usage = parseTokenUsage(text)
@@ -602,6 +709,12 @@ function AppShell({
           const report = parseTokenUsageReport(text)
           if (report) {
             setContextUsage((prev) => ({ ...prev, lastReport: report }))
+            if (turnTimingActiveRef.current) {
+              turnTokenUsageRef.current = {
+                tokensSent: report.tokensSent,
+                tokensReceived: report.tokensReceived,
+              }
+            }
           }
           break
         }
@@ -629,6 +742,7 @@ function AppShell({
       case 'tool_error': {
         const raw = String(ev.text ?? '')
         if (!raw.trim()) break
+        turnHadToolErrorRef.current = true
         const text = rewriteAddFileToolMessage(raw, savedConfig.workingDir)
         streamingAssistantId.current = null
         setToolEvents((prev) =>
@@ -720,10 +834,28 @@ function AppShell({
                 hadExplicitAssistantTarget: turnAssistantId != null,
               })
             ) {
-              thinkingTimingRef.current.recordCompletedTurn(
+              const recorded = thinkingTimingRef.current.recordCompletedTurn(
                 turnTiming,
-                takeTurnResourcePeakRef.current()
+                takeTurnResourcePeakRef.current(),
+                turnTokenUsageRef.current ?? undefined
               )
+              turnTokenUsageRef.current = null
+              if (
+                recorded &&
+                thinkingTimingPrefs.timingStatsAutoAppendCsv &&
+                thinkingTimingPrefs.timingStatsCsvPath.trim()
+              ) {
+                void appendTimingStatsCsvRow(
+                  savedConfig.workingDir,
+                  thinkingTimingPrefs.timingStatsCsvPath,
+                  recorded
+                ).catch((err) => {
+                    setSnackbar({
+                      message: err instanceof Error ? err.message : String(err),
+                      severity: 'warning',
+                    })
+                  })
+              }
             }
           }
         }
@@ -780,6 +912,21 @@ function AppShell({
             },
           ])
         }
+        if (
+          shouldOfferRouterEscalate(lastModelRouteRef.current, {
+            editedFiles: applied,
+            userMessage: lastUserMessageForRetryRef.current,
+            hadToolError: turnHadToolErrorRef.current,
+            escalateOnFailureEnabled: modelRouterPrefs.escalateOnFailure,
+          })
+        ) {
+          setRouterEscalateOffer({
+            message: lastUserMessageForRetryRef.current ?? '',
+          })
+        } else {
+          setRouterEscalateOffer(null)
+        }
+        turnHadToolErrorRef.current = false
         if (ev.commit_hash) {
           setTerminalLines((prev) => [
             ...prev,
@@ -875,7 +1022,15 @@ function AppShell({
           { id: orderId, text: JSON.stringify(ev), type: 'stdout' },
         ])
     }
-  }, [process, bumpGitRefresh, nextChatMessageId, isLocalLlmModel, savedConfig.workingDir])
+  }, [
+    process,
+    bumpGitRefresh,
+    nextChatMessageId,
+    isLocalLlmModel,
+    savedConfig.workingDir,
+    thinkingTimingPrefs.timingStatsAutoAppendCsv,
+    thinkingTimingPrefs.timingStatsCsvPath,
+  ])
 
   const { pendingConfirm, setPendingConfirm, dismissConfirm, lastGit, filesInChat, setFilesInChat, wrapHandler } =
     useSessionActivity()
@@ -1076,7 +1231,25 @@ function AppShell({
     status: gitStatus,
     loading: gitLoading,
     refresh: refreshGit,
-  } = useGitStatus(savedConfig.workingDir, gitRefreshKey, isRunning, activeTab === 'git')
+  } = useGitStatus(
+    savedConfig.workingDir,
+    gitRefreshKey,
+    isRunning,
+    activeTab === 'git',
+    activeTab === 'editor'
+  )
+
+  const editorGitStatusByPath = useMemo(
+    () => buildGitStatusByPath(gitStatus?.files ?? []),
+    [gitStatus?.files]
+  )
+
+  const handleOpenInEditor = useCallback((path: string) => {
+    const normalized = path.replace(/\\/g, '/').trim()
+    if (!normalized) return
+    setEditorPendingPath(normalized)
+    setActiveTab('editor')
+  }, [])
 
   useEffect(() => {
     if (!isTauriRuntime()) return
@@ -1107,6 +1280,8 @@ function AppShell({
     saveAppearance(appearance)
     saveThinkingTimingPrefs(thinkingTimingPrefs)
     saveResourceOverlayPrefs(resourceOverlayPrefs)
+    saveEditorLanguagePrefs(editorLanguagePrefs)
+    saveModelRouterPrefs(modelRouterPrefs)
     setSnackbar({ message: 'Settings saved', severity: 'info' })
   }
 
@@ -1118,11 +1293,15 @@ function AppShell({
       APPEARANCE_STORAGE_KEY,
       THINKING_TIMING_STORAGE_KEY,
       RESOURCE_OVERLAY_STORAGE_KEY,
+      EDITOR_LANGUAGE_PREFS_STORAGE_KEY,
+      MODEL_ROUTER_PREFS_STORAGE_KEY,
     ])
     setAppearance({ ...DEFAULT_APPEARANCE })
     applyAppearanceCssVars(DEFAULT_APPEARANCE)
     setThinkingTimingPrefs({ ...DEFAULT_THINKING_TIMING_PREFS })
     setResourceOverlayPrefs({ ...DEFAULT_RESOURCE_OVERLAY_PREFS })
+    setEditorLanguagePrefs({ ...DEFAULT_EDITOR_LANGUAGE_PREFS })
+    setModelRouterPrefs({ ...DEFAULT_MODEL_ROUTER_PREFS })
   }
 
   const handleClearThinkingStatsForModel = useCallback(() => {
@@ -1164,6 +1343,12 @@ function AppShell({
         modelTag,
       })
       appendTerminalLog(s.logs.map((l) => `[local-llm] ${l}`))
+      if (modelRouterPrefs.enabled) {
+        const hopperLogs = await prepareModelRouterHopper(savedConfig, modelRouterPrefs)
+        if (hopperLogs.length) {
+          appendTerminalLog(hopperLogs.map((l) => `[router] ${l}`))
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       appendTerminalLog([`[local-llm] ${msg}`])
@@ -1178,7 +1363,10 @@ function AppShell({
     }
     try {
       await ensureLocalLlm()
-      const { info, workingDir } = await start(savedConfig)
+      const routerPayload = modelRouterApiPayload(modelRouterPrefs, savedConfig.model)
+      const { info, workingDir } = await start(savedConfig, {
+        modelRouter: routerPayload as ModelRouterApiConfig | undefined,
+      })
       if (workingDir !== savedConfig.workingDir) {
         const next = { ...savedConfig, workingDir }
         setSavedConfig(next)
@@ -1420,9 +1608,14 @@ function AppShell({
   }, [])
 
   const deliverUserMessage = useCallback(
-    async (text: string, todoOptions?: { activeTodoId: string; injectTodoSpec: boolean }) => {
+    async (
+      text: string,
+      todoOptions?: { activeTodoId: string; injectTodoSpec: boolean },
+      sendExtras?: SendMessageOptions
+    ) => {
       lastUserPromptCharsRef.current = text.length
       lastAssistantStreamRef.current = ''
+      setRouterEscalateOffer(null)
       stallWatch.touchEvent('user_send')
       appendUserMessageToChat(text, true)
       const turnStartMs = Date.now()
@@ -1431,10 +1624,59 @@ function AppShell({
       } else {
         startTurnTimingRef.current(text.length, turnStartMs)
       }
-      const result = await send(text, todoOptions)
+      const result = await send(text, { ...todoOptions, ...sendExtras })
       return result
     },
     [isBusy, send, appendUserMessageToChat, stallWatch]
+  )
+
+  const handleEscalateRouter = useCallback(async () => {
+    const text = routerEscalateOffer?.message?.trim() || lastUserMessageForRetryRef.current?.trim()
+    if (!text || !isRunning) return
+    setRouterEscalateOffer(null)
+    const injectSpec = Boolean(activeTodo && todoInjectedIdRef.current !== activeTodo.id)
+    const todoOptions = activeTodo
+      ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
+      : undefined
+    try {
+      await deliverUserMessage(text, todoOptions, { escalateFromLast: true })
+      setSnackbar({ message: 'Escalating to heavy model…', severity: 'info' })
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [routerEscalateOffer, isRunning, activeTodo, deliverUserMessage])
+
+  const handleForceRouterTier = useCallback(
+    async (tier: 'fast' | 'heavy') => {
+      const text = inputValue.trim() || lastUserMessageForRetryRef.current?.trim()
+      if (!text || !isRunning) {
+        setSnackbar({
+          message: 'Enter a message or complete a turn before forcing a tier',
+          severity: 'info',
+        })
+        return
+      }
+      if (inputValue.trim()) setInputValue('')
+      const injectSpec = Boolean(activeTodo && todoInjectedIdRef.current !== activeTodo.id)
+      const todoOptions = activeTodo
+        ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
+        : undefined
+      try {
+        await deliverUserMessage(text, todoOptions, { forceTier: tier })
+        setSnackbar({ message: `Forced ${tier} tier`, severity: 'info' })
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+    },
+    [inputValue, isRunning, activeTodo, deliverUserMessage]
   )
 
   const handleRetryEmptyLlm = useCallback(
@@ -1573,6 +1815,16 @@ function AppShell({
     setSuggestedFilesPrefs(prefs)
     saveSuggestedFilesPrefs(prefs)
   }, [setSuggestedFilesPrefs])
+
+  const handleEditorLanguagePrefsChange = useCallback((prefs: EditorLanguagePrefs) => {
+    setEditorLanguagePrefs(prefs)
+    saveEditorLanguagePrefs(prefs)
+  }, [setEditorLanguagePrefs])
+
+  const handleModelRouterPrefsChange = useCallback((prefs: ModelRouterPrefs) => {
+    setModelRouterPrefs(prefs)
+    saveModelRouterPrefs(prefs)
+  }, [setModelRouterPrefs])
 
   const handleStartWork = useCallback(
     async (todo: TodoItem) => {
@@ -1782,7 +2034,11 @@ function AppShell({
           (isStarting ? 'Starting…' : isRunning ? 'Session live' : 'Stopped')}
       </Typography>
       {isRunning && sessionInfo && (
-        <SessionContextChip files={sessionFiles} usage={contextUsage} />
+        <SessionContextChip
+          files={sessionFiles}
+          usage={contextUsage}
+          onOpenInEditor={isTauriRuntime() ? handleOpenInEditor : undefined}
+        />
       )}
       {remainingAutoApproves > 0 && (
         <Chip
@@ -1906,6 +2162,13 @@ function AppShell({
               onSuggestedClearAll={handleClearSuggested}
               lastUserMessageForRetry={lastUserMessageForRetry}
               onRetryEmptyLlm={(mode) => void handleRetryEmptyLlm(mode)}
+              onOpenInEditor={isTauriRuntime() ? handleOpenInEditor : undefined}
+              modelRouterEnabled={modelRouterActive}
+              lastModelRoute={lastModelRoute}
+              routerEscalateOffer={routerEscalateOffer}
+              onEscalateRouter={() => void handleEscalateRouter()}
+              onForceRouterTier={(tier) => void handleForceRouterTier(tier)}
+              onDismissRouterEscalate={() => setRouterEscalateOffer(null)}
             />
             </>
           )}
@@ -2043,6 +2306,29 @@ function AppShell({
             </Box>
           )}
 
+          {activeTab === 'editor' && (
+            <Suspense
+              fallback={
+                <Typography sx={{ p: 2 }} color="text.secondary">
+                  Loading editor…
+                </Typography>
+              }
+            >
+              <EditorPanel
+                workingDir={savedConfig.workingDir}
+                isRunning={isRunning}
+                editorLanguagePrefs={editorLanguagePrefs}
+                pendingOpenPath={editorPendingPath}
+                onPendingOpenConsumed={() => setEditorPendingPath(null)}
+                gitStatusByPath={editorGitStatusByPath}
+                onAddToContext={(paths) => {
+                  if (paths[0]) void handleAddSuggestedOne(paths[0])
+                }}
+                onNotify={(message, severity) => setSnackbar({ message, severity })}
+              />
+            </Suspense>
+          )}
+
           {activeTab === 'settings' && (
             <Container maxWidth="sm" disableGutters>
               <SettingsPanel
@@ -2057,10 +2343,18 @@ function AppShell({
                 thinkingStatsStore={thinkingTiming.statsStore}
                 onClearThinkingStatsForModel={handleClearThinkingStatsForModel}
                 onClearAllThinkingStats={handleClearAllThinkingStats}
+                onTimingStatsMessage={(message, severity) =>
+                  setSnackbar({ message, severity })
+                }
                 resourceOverlayPrefs={resourceOverlayPrefs}
                 onResourceOverlayPrefsChange={setResourceOverlayPrefs}
                 suggestedFilesPrefs={suggestedFilesPrefs}
                 onSuggestedFilesPrefsChange={handleSuggestedFilesPrefsChange}
+                editorLanguagePrefs={editorLanguagePrefs}
+                onEditorLanguagePrefsChange={handleEditorLanguagePrefsChange}
+                modelRouterPrefs={modelRouterPrefs}
+                onModelRouterPrefsChange={handleModelRouterPrefsChange}
+                sessionModel={config.model}
                 onSave={handleSave}
                 onReset={handleReset}
                 appVersions={appVersions}
@@ -2096,6 +2390,12 @@ export default function App() {
   const [resourceOverlayPrefs, setResourceOverlayPrefs] = useState<ResourceOverlayPrefs>(() =>
     loadResourceOverlayPrefs()
   )
+  const [editorLanguagePrefs, setEditorLanguagePrefs] = useState<EditorLanguagePrefs>(() =>
+    loadEditorLanguagePrefs()
+  )
+  const [modelRouterPrefs, setModelRouterPrefs] = useState<ModelRouterPrefs>(() =>
+    loadModelRouterPrefs()
+  )
   const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
   const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
 
@@ -2116,6 +2416,10 @@ export default function App() {
           setSuggestedFilesPrefs={setSuggestedFilesPrefs}
           resourceOverlayPrefs={resourceOverlayPrefs}
           setResourceOverlayPrefs={setResourceOverlayPrefs}
+          editorLanguagePrefs={editorLanguagePrefs}
+          setEditorLanguagePrefs={setEditorLanguagePrefs}
+          modelRouterPrefs={modelRouterPrefs}
+          setModelRouterPrefs={setModelRouterPrefs}
         />
       </ProcessProvider>
     </ThemeProvider>

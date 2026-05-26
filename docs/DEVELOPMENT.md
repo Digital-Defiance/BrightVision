@@ -1,4 +1,4 @@
-# Developing Bright Vision
+# Developing BrightVision
 
 Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain and follow it until the open backlog is complete.
 
@@ -23,7 +23,7 @@ yarn install
 
 ## After a core PyPI release
 
-See [bright-vision-core/docs/PUBLISHING.md](../bright-vision-core/docs/PUBLISHING.md). Pin the parent Bright Vision app:
+See [bright-vision-core/docs/PUBLISHING.md](../bright-vision-core/docs/PUBLISHING.md). Pin the parent BrightVision app:
 
 ```bash
 cd bright-vision-core

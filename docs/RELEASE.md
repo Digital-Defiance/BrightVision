@@ -1,4 +1,4 @@
-# Release checklist (Bright Vision + core submodule)
+# Release checklist (BrightVision + core submodule)
 
 Use this when cutting a release that includes Tasks / spec-driven work (roadmap #18) and Vision HTTP API changes.
 
@@ -15,7 +15,7 @@ Three-layer specs, workspace/session todo routes, RepoSet superproject
 support, and headless HTTP API on cecli.
 EOF
 )"
-git tag -a v0.1.0-bright -m "Bright Vision Core: cecli + headless API"
+git tag -a v0.1.0-bright -m "BrightVision Core: cecli + headless API"
 git push origin main --tags   # when ready
 ```
 

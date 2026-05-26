@@ -6,7 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { invokeWithTimeout } from './tauriInvoke'
 import type { VisionConfig } from './config'
 import type { CoreEventBase } from './events'
-import type { CoreSessionInfo, SendMessageOptions } from './httpClient'
+import type { CoreSessionInfo, ModelRouterApiConfig, SendMessageOptions } from './httpClient'
 import { CoreHttpClient } from './httpClient'
 import { waitForVisionApi } from './health'
 import { isTauriRuntime } from './isTauri'
@@ -16,7 +16,10 @@ export type CoreEventHandler = (event: CoreEventBase) => void
 export type ProcessPhaseHandler = (update: ProcessUpdate) => void
 
 export interface VisionApiSession {
-  start(config: VisionConfig): Promise<CoreSessionInfo>
+  start(
+    config: VisionConfig,
+    options?: { modelRouter?: ModelRouterApiConfig }
+  ): Promise<CoreSessionInfo>
   stop(): Promise<void>
   send(content: string, options?: SendMessageOptions): Promise<void>
   addFiles(paths: string[]): Promise<{ info: CoreSessionInfo; events: CoreEventBase[] }>
@@ -76,7 +79,7 @@ export function createVisionApiSession(
     getHttpClient: () => client,
     getSessionId: () => sessionId,
 
-    async start(cfg) {
+    async start(cfg, options) {
       startAbort?.abort()
       startAbort = new AbortController()
       const signal = startAbort.signal
@@ -115,6 +118,7 @@ export function createVisionApiSession(
         const session = await client.createSession({
           workspace: cfg.workingDir,
           model: cfg.model,
+          model_router: options?.modelRouter,
           files: cfg.contextFiles?.length ? cfg.contextFiles : undefined,
           auto_yes: false,
           auto_commits: !cfg.promptBeforeCommit,

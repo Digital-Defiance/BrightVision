@@ -1,28 +1,40 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined'
+import SaveAltOutlinedIcon from '@mui/icons-material/SaveAltOutlined'
 import {
   Box,
   Button,
   FormControl,
+  FormControlLabel,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from '@mui/material'
 import { useMemo, useState } from 'react'
 import { formatPeakPct } from '../../ipc/resourceSnapshot'
 import { isTauriRuntime } from '../../ipc/isTauri'
 import {
+  downloadThinkingStatsCsv,
+  writeTimingStatsCsvFile,
+} from '../../ipc/timingStatsCsv'
+import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
+import {
   buildTimingStatsView,
+  computeOutputTps,
+  computeRunningAvgOutputTps,
   exportThinkingStatsJson,
+  formatOutputTps,
   formatThinkSharePct,
   listModelsInHistory,
   thinkShare,
@@ -83,18 +95,29 @@ function DistRow({
 interface ThinkingStatsPanelProps {
   store: ThinkingStatsStore
   currentModel: string
+  workingDir: string
+  timingPrefs: ThinkingTimingPrefs
+  onTimingPrefsChange: (next: ThinkingTimingPrefs) => void
   onClearModel: () => void
   onClearAll: () => void
+  onCsvError?: (message: string) => void
+  onCsvSuccess?: (message: string) => void
 }
 
 export function ThinkingStatsPanel({
   store,
   currentModel,
+  workingDir,
+  timingPrefs,
+  onTimingPrefsChange,
   onClearModel,
   onClearAll,
+  onCsvError,
+  onCsvSuccess,
 }: ThinkingStatsPanelProps) {
   const models = useMemo(() => listModelsInHistory(store), [store])
   const [filter, setFilter] = useState<'all' | 'current'>('current')
+  const [csvBusy, setCsvBusy] = useState(false)
 
   const filterModel =
     filter === 'current' ? (currentModel.trim() || 'unknown') : null
@@ -103,7 +126,7 @@ export function ThinkingStatsPanel({
     [store, filterModel]
   )
 
-  const handleExport = () => {
+  const handleExportJson = () => {
     const json = exportThinkingStatsJson(store)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -114,16 +137,45 @@ export function ThinkingStatsPanel({
     URL.revokeObjectURL(url)
   }
 
+  const handleDownloadCsv = () => {
+    downloadThinkingStatsCsv(store, filterModel)
+    onCsvSuccess?.(`Downloaded ${store.history.length} turns as CSV`)
+  }
+
+  const handleWriteCsv = async () => {
+    const path = timingPrefs.timingStatsCsvPath.trim()
+    if (!path) {
+      onCsvError?.('Enter a CSV path (workspace-relative)')
+      return
+    }
+    setCsvBusy(true)
+    try {
+      const count = filterModel
+        ? store.history.filter((r) => r.model === filterModel).length
+        : store.history.length
+      await writeTimingStatsCsvFile(workingDir, path, store, filterModel)
+      onCsvSuccess?.(`Wrote ${count} turns to ${path}`)
+    } catch (err) {
+      onCsvError?.(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCsvBusy(false)
+    }
+  }
+
   if (store.history.length === 0) {
     return (
       <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
         <Typography variant="body2" color="text.secondary" data-testid="timing-stats-empty">
           No timing history yet. Complete a chat turn (Send → done) to record response, think time,
-          and peak CPU/RAM/GPU (desktop).
+          output tok/s (when core reports Tokens:), and peak CPU/RAM/GPU (desktop).
         </Typography>
       </Box>
     )
   }
+
+  const storedCount = filterModel
+    ? store.history.filter((r) => r.model === filterModel).length
+    : store.history.length
 
   return (
     <Box sx={{ mt: 2 }} data-testid="timing-stats-panel">
@@ -146,12 +198,17 @@ export function ThinkingStatsPanel({
           size="small"
           variant="outlined"
           startIcon={<FileDownloadOutlinedIcon />}
-          onClick={handleExport}
+          onClick={handleExportJson}
           data-testid="timing-stats-export"
         >
           Export JSON
         </Button>
-        <Button size="small" color="inherit" onClick={onClearModel} data-testid="timing-stats-clear-model">
+        <Button
+          size="small"
+          color="inherit"
+          onClick={onClearModel}
+          data-testid="timing-stats-clear-model"
+        >
           Clear model
         </Button>
         <Button
@@ -165,12 +222,74 @@ export function ThinkingStatsPanel({
         </Button>
       </Stack>
 
+      <Stack spacing={1.5} sx={{ mb: 2 }}>
+        <TextField
+          size="small"
+          label="CSV file (workspace-relative)"
+          value={timingPrefs.timingStatsCsvPath}
+          onChange={(e) =>
+            onTimingPrefsChange({ ...timingPrefs, timingStatsCsvPath: e.target.value })
+          }
+          placeholder=".bright-vision/timing-history.csv"
+          helperText={
+            isTauriRuntime()
+              ? `Export all ${storedCount} stored turns (not only the table below). Download works in browser dev too.`
+              : 'Download CSV exports full history in the browser; file path write requires the desktop app.'
+          }
+          fullWidth
+          data-testid="timing-stats-csv-path"
+        />
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<FileDownloadOutlinedIcon />}
+            onClick={handleDownloadCsv}
+            data-testid="timing-stats-csv-download"
+          >
+            Download CSV
+          </Button>
+          {isTauriRuntime() && (
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<SaveAltOutlinedIcon />}
+              disabled={csvBusy || !timingPrefs.timingStatsCsvPath.trim()}
+              onClick={() => void handleWriteCsv()}
+              data-testid="timing-stats-csv-write"
+            >
+              Write CSV to project
+            </Button>
+          )}
+          {isTauriRuntime() && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={timingPrefs.timingStatsAutoAppendCsv}
+                  disabled={!timingPrefs.timingStatsCsvPath.trim()}
+                  onChange={(_, v) =>
+                    onTimingPrefsChange({ ...timingPrefs, timingStatsAutoAppendCsv: v })
+                  }
+                />
+              }
+              label="Append row after each turn"
+            />
+          )}
+        </Stack>
+      </Stack>
+
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
         <StatCard label="Turns" value={String(view.totalTurns)} />
         <StatCard
           label="Avg response"
           value={formatDurationMs(view.response.mean)}
           sub={`median ${formatDurationMs(view.response.median)}`}
+        />
+        <StatCard
+          label="Avg output TPS"
+          value={formatOutputTps(view.avgOutputTps)}
+          sub="running avg · received ÷ response"
         />
         <StatCard
           label="Avg think"
@@ -205,22 +324,28 @@ export function ThinkingStatsPanel({
                 <TableCell>Model</TableCell>
                 <TableCell align="right">Turns</TableCell>
                 <TableCell align="right">Avg response</TableCell>
+                <TableCell align="right">Avg TPS</TableCell>
                 <TableCell align="right">Avg think</TableCell>
                 <TableCell align="right">Think %</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {view.byModel.map((m) => (
-                <TableRow key={m.model} hover>
-                  <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {m.model}
-                  </TableCell>
-                  <TableCell align="right">{m.turns}</TableCell>
-                  <TableCell align="right">{formatDurationMs(m.response.mean)}</TableCell>
-                  <TableCell align="right">{formatDurationMs(m.think.mean)}</TableCell>
-                  <TableCell align="right">{formatThinkSharePct(m.avgThinkShare)}</TableCell>
-                </TableRow>
-              ))}
+              {view.byModel.map((m) => {
+                const modelRecords = store.history.filter((r) => r.model === m.model)
+                const avgTps = computeRunningAvgOutputTps(modelRecords)
+                return (
+                  <TableRow key={m.model} hover>
+                    <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {m.model}
+                    </TableCell>
+                    <TableCell align="right">{m.turns}</TableCell>
+                    <TableCell align="right">{formatDurationMs(m.response.mean)}</TableCell>
+                    <TableCell align="right">{formatOutputTps(avgTps)}</TableCell>
+                    <TableCell align="right">{formatDurationMs(m.think.mean)}</TableCell>
+                    <TableCell align="right">{formatThinkSharePct(m.avgThinkShare)}</TableCell>
+                  </TableRow>
+                )
+              })}
             </TableBody>
           </Table>
         </TableContainer>
@@ -228,11 +353,10 @@ export function ThinkingStatsPanel({
 
       <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
         History (newest first, last {TIMING_STATS_DISPLAY_ROWS} turns
-        {store.history.length > TIMING_STATS_DISPLAY_ROWS
-          ? ` · ${store.history.length} stored`
-          : ''}
+        {storedCount > TIMING_STATS_DISPLAY_ROWS ? ` · ${storedCount} stored` : ''}
         )
         {isTauriRuntime() ? ' · peak CPU/RAM/GPU sampled while the turn runs' : ''}
+        {' · TPS when core emits Tokens: on the turn'}
       </Typography>
       <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 320 }}>
         <Table size="small" stickyHeader data-testid="timing-stats-history">
@@ -241,6 +365,7 @@ export function ThinkingStatsPanel({
               <TableCell>When</TableCell>
               {filter === 'all' && <TableCell>Model</TableCell>}
               <TableCell align="right">Response</TableCell>
+              <TableCell align="right">TPS</TableCell>
               <TableCell align="right">Think</TableCell>
               <TableCell align="right">Think %</TableCell>
               {isTauriRuntime() && (
@@ -251,6 +376,7 @@ export function ThinkingStatsPanel({
                 </>
               )}
               <TableCell align="right">Prompt</TableCell>
+              <TableCell align="right">Out tok</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -272,6 +398,9 @@ export function ThinkingStatsPanel({
                   </TableCell>
                 )}
                 <TableCell align="right">{formatDurationMs(row.responseMs)}</TableCell>
+                <TableCell align="right">
+                  {formatOutputTps(computeOutputTps(row.tokensReceived, row.responseMs))}
+                </TableCell>
                 <TableCell align="right">{formatDurationMs(row.thinkMs)}</TableCell>
                 <TableCell align="right">{formatThinkSharePct(thinkShare(row))}</TableCell>
                 {isTauriRuntime() && (
@@ -282,6 +411,9 @@ export function ThinkingStatsPanel({
                   </>
                 )}
                 <TableCell align="right">{row.promptChars.toLocaleString()}</TableCell>
+                <TableCell align="right">
+                  {row.tokensReceived != null ? row.tokensReceived.toLocaleString() : '—'}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

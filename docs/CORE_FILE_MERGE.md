@@ -64,7 +64,7 @@ No cecli counterpart. These are what the **outer repo** needs for HTTP/SSE and T
 | `git_workspace.py` | Superproject / submodule `RepoSet` |
 | `workspace_todos.py`, `todo_*.py` | Tasks tab |
 | `headless_stdio.py`, `event_io.py` | No TUI leakage into chat |
-| `brand.py` | Align with outer `src/brand.ts` → Bright Vision |
+| `brand.py` | Align with outer `src/brand.ts` → BrightVision |
 | `gui_progress.py` | Progress → activity bar (may hook cecli IO later) |
 
 After copy: rename imports `aider_vision_core` → `bright_vision_core`; wire internals to **`cecli`** for coders/llm/repo.

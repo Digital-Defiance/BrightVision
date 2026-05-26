@@ -31,10 +31,10 @@ export function AppVersionSection({ versions }: AppVersionSectionProps) {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         {versions.loading
           ? 'Loading versions…'
-          : 'App version is the installed Bright Vision build. Engine versions come from the running core API.'}
+          : 'App version is the installed BrightVision build. Engine versions come from the running core API.'}
       </Typography>
       <Stack spacing={1}>
-        <VersionRow label="Bright Vision app" value={versions.app} />
+        <VersionRow label="BrightVision app" value={versions.app} />
         <VersionRow label="bright-vision-core" value={versions.brightVisionCore} />
         <VersionRow label="cecli" value={versions.cecli} />
       </Stack>

@@ -100,7 +100,7 @@ Work on branch `port/vision-api-on-cecli` **inside** `bright-vision-core` repo.
 | A2.1 | Add `bright_vision_core/` package to `pyproject.toml` | `pip install -e .` succeeds |
 | A2.2 | Console scripts: `bright-vision-core-serve` → `bright_vision_core.cli_serve:main` (or equivalent) | `which bright-vision-core-serve` |
 | A2.3 | `scripts/vision_serve.py` wrapper in submodule root | path matches outer `main.rs` expectation |
-| A2.4 | `brand.py` strings → Bright Vision | grep package |
+| A2.4 | `brand.py` strings → BrightVision | grep package |
 
 #### A3 — Import surgery (mechanical)
 

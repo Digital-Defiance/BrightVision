@@ -28,8 +28,30 @@ const RAW_RUNTIME_STATE =
       [null, {\
         "packageLocation": "./",\
         "packageDependencies": [\
+          ["@babel/runtime", "npm:7.29.2"],\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/lang-cpp", "npm:6.0.3"],\
+          ["@codemirror/lang-css", "npm:6.3.1"],\
+          ["@codemirror/lang-go", "npm:6.0.1"],\
+          ["@codemirror/lang-java", "npm:6.0.2"],\
+          ["@codemirror/lang-javascript", "npm:6.2.5"],\
+          ["@codemirror/lang-json", "npm:6.0.2"],\
+          ["@codemirror/lang-markdown", "npm:6.5.0"],\
+          ["@codemirror/lang-php", "npm:6.0.2"],\
+          ["@codemirror/lang-python", "npm:6.2.1"],\
+          ["@codemirror/lang-rust", "npm:6.0.2"],\
+          ["@codemirror/lang-sass", "npm:6.0.2"],\
+          ["@codemirror/lang-sql", "npm:6.10.0"],\
+          ["@codemirror/lang-vue", "npm:0.1.3"],\
+          ["@codemirror/lang-xml", "npm:6.1.0"],\
+          ["@codemirror/lang-yaml", "npm:6.1.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/legacy-modes", "npm:6.5.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
           ["@emotion/react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.0"],\
           ["@emotion/styled", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.1"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
           ["@mui/icons-material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
           ["@mui/material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
           ["@playwright/test", "npm:1.60.0"],\
@@ -37,10 +59,13 @@ const RAW_RUNTIME_STATE =
           ["@tauri-apps/cli", "npm:2.11.2"],\
           ["@types/react", "npm:18.3.29"],\
           ["@types/react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.7"],\
+          ["@uiw/codemirror-theme-vscode", "npm:4.25.10"],\
+          ["@uiw/react-codemirror", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.25.10"],\
           ["@vitejs/plugin-react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.7.0"],\
           ["bright-vision", "workspace:."],\
           ["react", "npm:18.3.1"],\
           ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"],\
+          ["react-resizable-panels", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.11.2"],\
           ["sass", "npm:1.100.0"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["vite", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:5.4.21"],\
@@ -314,6 +339,342 @@ const RAW_RUNTIME_STATE =
           ["@babel/helper-string-parser", "npm:7.27.1"],\
           ["@babel/helper-validator-identifier", "npm:7.28.5"],\
           ["@babel/types", "npm:7.29.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/autocomplete", [\
+      ["npm:6.20.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-autocomplete-npm-6.20.2-aef79d9a93-10c0.zip/node_modules/@codemirror/autocomplete/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/commands", [\
+      ["npm:6.10.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-commands-npm-6.10.3-c9b25d17d5-10c0.zip/node_modules/@codemirror/commands/",\
+        "packageDependencies": [\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-cpp", [\
+      ["npm:6.0.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-cpp-npm-6.0.3-06fc3022e2-10c0.zip/node_modules/@codemirror/lang-cpp/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-cpp", "npm:6.0.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@lezer/cpp", "npm:1.1.5"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-css", [\
+      ["npm:6.3.1", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-css-npm-6.3.1-476c42705d-10c0.zip/node_modules/@codemirror/lang-css/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-css", "npm:6.3.1"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/css", "npm:1.3.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-go", [\
+      ["npm:6.0.1", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-go-npm-6.0.1-d74f71936b-10c0.zip/node_modules/@codemirror/lang-go/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-go", "npm:6.0.1"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/go", "npm:1.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-html", [\
+      ["npm:6.4.11", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-html-npm-6.4.11-d7975e5469-10c0.zip/node_modules/@codemirror/lang-html/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-css", "npm:6.3.1"],\
+          ["@codemirror/lang-html", "npm:6.4.11"],\
+          ["@codemirror/lang-javascript", "npm:6.2.5"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/css", "npm:1.3.3"],\
+          ["@lezer/html", "npm:1.3.13"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-java", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-java-npm-6.0.2-ae623b3ca2-10c0.zip/node_modules/@codemirror/lang-java/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-java", "npm:6.0.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@lezer/java", "npm:1.1.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-javascript", [\
+      ["npm:6.2.5", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-javascript-npm-6.2.5-ac95f32889-10c0.zip/node_modules/@codemirror/lang-javascript/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-javascript", "npm:6.2.5"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/lint", "npm:6.9.6"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/javascript", "npm:1.5.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-json", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-json-npm-6.0.2-6fd0eff7af-10c0.zip/node_modules/@codemirror/lang-json/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-json", "npm:6.0.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@lezer/json", "npm:1.0.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-markdown", [\
+      ["npm:6.5.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-markdown-npm-6.5.0-bc7200061c-10c0.zip/node_modules/@codemirror/lang-markdown/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-html", "npm:6.4.11"],\
+          ["@codemirror/lang-markdown", "npm:6.5.0"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/markdown", "npm:1.6.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-php", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-php-npm-6.0.2-5432217bec-10c0.zip/node_modules/@codemirror/lang-php/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-html", "npm:6.4.11"],\
+          ["@codemirror/lang-php", "npm:6.0.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/php", "npm:1.0.5"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-python", [\
+      ["npm:6.2.1", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-python-npm-6.2.1-2db0b439a9-10c0.zip/node_modules/@codemirror/lang-python/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-python", "npm:6.2.1"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/python", "npm:1.1.18"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-rust", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-rust-npm-6.0.2-220f7a7d49-10c0.zip/node_modules/@codemirror/lang-rust/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-rust", "npm:6.0.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@lezer/rust", "npm:1.0.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-sass", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-sass-npm-6.0.2-d0cd8cdb50-10c0.zip/node_modules/@codemirror/lang-sass/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-css", "npm:6.3.1"],\
+          ["@codemirror/lang-sass", "npm:6.0.2"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/sass", "npm:1.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-sql", [\
+      ["npm:6.10.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-sql-npm-6.10.0-78d9cda1c0-10c0.zip/node_modules/@codemirror/lang-sql/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-sql", "npm:6.10.0"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-vue", [\
+      ["npm:0.1.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-vue-npm-0.1.3-1fb22dc088-10c0.zip/node_modules/@codemirror/lang-vue/",\
+        "packageDependencies": [\
+          ["@codemirror/lang-html", "npm:6.4.11"],\
+          ["@codemirror/lang-javascript", "npm:6.2.5"],\
+          ["@codemirror/lang-vue", "npm:0.1.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-xml", [\
+      ["npm:6.1.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-xml-npm-6.1.0-7c902bd9ea-10c0.zip/node_modules/@codemirror/lang-xml/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-xml", "npm:6.1.0"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/xml", "npm:1.0.6"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lang-yaml", [\
+      ["npm:6.1.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lang-yaml-npm-6.1.3-60a9433698-10c0.zip/node_modules/@codemirror/lang-yaml/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/lang-yaml", "npm:6.1.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/yaml", "npm:1.0.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/language", [\
+      ["npm:6.12.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-language-npm-6.12.3-bb7620654e-10c0.zip/node_modules/@codemirror/language/",\
+        "packageDependencies": [\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["style-mod", "npm:4.1.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/legacy-modes", [\
+      ["npm:6.5.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-legacy-modes-npm-6.5.3-0ee4f7883a-10c0.zip/node_modules/@codemirror/legacy-modes/",\
+        "packageDependencies": [\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/legacy-modes", "npm:6.5.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/lint", [\
+      ["npm:6.9.6", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-lint-npm-6.9.6-6044d10800-10c0.zip/node_modules/@codemirror/lint/",\
+        "packageDependencies": [\
+          ["@codemirror/lint", "npm:6.9.6"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["crelt", "npm:1.0.6"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/search", [\
+      ["npm:6.7.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-search-npm-6.7.0-39423726c9-10c0.zip/node_modules/@codemirror/search/",\
+        "packageDependencies": [\
+          ["@codemirror/search", "npm:6.7.0"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["crelt", "npm:1.0.6"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/state", [\
+      ["npm:6.6.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-state-npm-6.6.0-c02fe511be-10c0.zip/node_modules/@codemirror/state/",\
+        "packageDependencies": [\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@marijn/find-cluster-break", "npm:1.0.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/theme-one-dark", [\
+      ["npm:6.1.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-theme-one-dark-npm-6.1.3-6a784764dc-10c0.zip/node_modules/@codemirror/theme-one-dark/",\
+        "packageDependencies": [\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/theme-one-dark", "npm:6.1.3"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@lezer/highlight", "npm:1.2.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@codemirror/view", [\
+      ["npm:6.43.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@codemirror-view-npm-6.43.0-7095ad0ac3-10c0.zip/node_modules/@codemirror/view/",\
+        "packageDependencies": [\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["crelt", "npm:1.0.6"],\
+          ["style-mod", "npm:4.1.3"],\
+          ["w3c-keyname", "npm:2.2.8"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -778,6 +1139,211 @@ const RAW_RUNTIME_STATE =
           ["@jridgewell/resolve-uri", "npm:3.1.2"],\
           ["@jridgewell/sourcemap-codec", "npm:1.5.5"],\
           ["@jridgewell/trace-mapping", "npm:0.3.31"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/common", [\
+      ["npm:1.5.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-common-npm-1.5.2-92d3236aa4-10c0.zip/node_modules/@lezer/common/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/cpp", [\
+      ["npm:1.1.5", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-cpp-npm-1.1.5-abe5db3f9c-10c0.zip/node_modules/@lezer/cpp/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/cpp", "npm:1.1.5"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/css", [\
+      ["npm:1.3.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-css-npm-1.3.3-c8072b64e9-10c0.zip/node_modules/@lezer/css/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/css", "npm:1.3.3"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/go", [\
+      ["npm:1.0.1", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-go-npm-1.0.1-b748b20553-10c0.zip/node_modules/@lezer/go/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/go", "npm:1.0.1"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/highlight", [\
+      ["npm:1.2.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-highlight-npm-1.2.3-e3bf6a2cc7-10c0.zip/node_modules/@lezer/highlight/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/html", [\
+      ["npm:1.3.13", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-html-npm-1.3.13-b72fb364d2-10c0.zip/node_modules/@lezer/html/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/html", "npm:1.3.13"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/java", [\
+      ["npm:1.1.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-java-npm-1.1.3-278fcac5d8-10c0.zip/node_modules/@lezer/java/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/java", "npm:1.1.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/javascript", [\
+      ["npm:1.5.4", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-javascript-npm-1.5.4-3167b92279-10c0.zip/node_modules/@lezer/javascript/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/javascript", "npm:1.5.4"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/json", [\
+      ["npm:1.0.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-json-npm-1.0.3-86eafd0906-10c0.zip/node_modules/@lezer/json/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/json", "npm:1.0.3"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/lr", [\
+      ["npm:1.4.10", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-lr-npm-1.4.10-3004228d0f-10c0.zip/node_modules/@lezer/lr/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/lr", "npm:1.4.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/markdown", [\
+      ["npm:1.6.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-markdown-npm-1.6.3-609b22d791-10c0.zip/node_modules/@lezer/markdown/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/markdown", "npm:1.6.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/php", [\
+      ["npm:1.0.5", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-php-npm-1.0.5-851a1c8a5f-10c0.zip/node_modules/@lezer/php/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/php", "npm:1.0.5"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/python", [\
+      ["npm:1.1.18", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-python-npm-1.1.18-6b397585bc-10c0.zip/node_modules/@lezer/python/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/python", "npm:1.1.18"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/rust", [\
+      ["npm:1.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-rust-npm-1.0.2-eb812ed136-10c0.zip/node_modules/@lezer/rust/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/rust", "npm:1.0.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/sass", [\
+      ["npm:1.1.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-sass-npm-1.1.0-688a3968f6-10c0.zip/node_modules/@lezer/sass/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/sass", "npm:1.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/xml", [\
+      ["npm:1.0.6", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-xml-npm-1.0.6-7c82e568c3-10c0.zip/node_modules/@lezer/xml/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/xml", "npm:1.0.6"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@lezer/yaml", [\
+      ["npm:1.0.4", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@lezer-yaml-npm-1.0.4-5ea4dabc3a-10c0.zip/node_modules/@lezer/yaml/",\
+        "packageDependencies": [\
+          ["@lezer/common", "npm:1.5.2"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
+          ["@lezer/lr", "npm:1.4.10"],\
+          ["@lezer/yaml", "npm:1.0.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@marijn/find-cluster-break", [\
+      ["npm:1.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@marijn-find-cluster-break-npm-1.0.2-1b67577854-10c0.zip/node_modules/@marijn/find-cluster-break/",\
+        "packageDependencies": [\
+          ["@marijn/find-cluster-break", "npm:1.0.2"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -1670,6 +2236,131 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@uiw/codemirror-extensions-basic-setup", [\
+      ["npm:4.25.10", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@uiw-codemirror-extensions-basic-setup-npm-4.25.10-d7e6b07e11-10c0.zip/node_modules/@uiw/codemirror-extensions-basic-setup/",\
+        "packageDependencies": [\
+          ["@uiw/codemirror-extensions-basic-setup", "npm:4.25.10"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:298476995a59f90517daada5bfa94a4f2783d278caf76fa6c5ae898bb3bd442ee25565ecf1e57c98f80b8817035b3bc6cdf9110c100923a87cf5676edf427421#npm:4.25.10", {\
+        "packageLocation": "./.yarn/__virtual__/@uiw-codemirror-extensions-basic-setup-virtual-739913528c/4/Users/jessica/.yarn/berry/cache/@uiw-codemirror-extensions-basic-setup-npm-4.25.10-d7e6b07e11-10c0.zip/node_modules/@uiw/codemirror-extensions-basic-setup/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/lint", "npm:6.9.6"],\
+          ["@codemirror/search", "npm:6.7.0"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@types/codemirror__autocomplete", null],\
+          ["@types/codemirror__commands", null],\
+          ["@types/codemirror__language", null],\
+          ["@types/codemirror__lint", null],\
+          ["@types/codemirror__search", null],\
+          ["@types/codemirror__state", null],\
+          ["@types/codemirror__view", null],\
+          ["@uiw/codemirror-extensions-basic-setup", "virtual:298476995a59f90517daada5bfa94a4f2783d278caf76fa6c5ae898bb3bd442ee25565ecf1e57c98f80b8817035b3bc6cdf9110c100923a87cf5676edf427421#npm:4.25.10"]\
+        ],\
+        "packagePeers": [\
+          "@codemirror/commands",\
+          "@codemirror/state",\
+          "@codemirror/view",\
+          "@types/codemirror__autocomplete",\
+          "@types/codemirror__commands",\
+          "@types/codemirror__language",\
+          "@types/codemirror__lint",\
+          "@types/codemirror__search",\
+          "@types/codemirror__state",\
+          "@types/codemirror__view"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@uiw/codemirror-theme-vscode", [\
+      ["npm:4.25.10", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@uiw-codemirror-theme-vscode-npm-4.25.10-b83abd0f41-10c0.zip/node_modules/@uiw/codemirror-theme-vscode/",\
+        "packageDependencies": [\
+          ["@uiw/codemirror-theme-vscode", "npm:4.25.10"],\
+          ["@uiw/codemirror-themes", "virtual:b83abd0f41349d2e285d47412fb9e9e6996aa7cc28e70f71fbf2da0fb7936e0768169ca616bfa93aeaadc5f7e3da9d09d20c5bd97be238b3573c530bf0be9049#npm:4.25.10"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@uiw/codemirror-themes", [\
+      ["npm:4.25.10", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@uiw-codemirror-themes-npm-4.25.10-a38c137899-10c0.zip/node_modules/@uiw/codemirror-themes/",\
+        "packageDependencies": [\
+          ["@uiw/codemirror-themes", "npm:4.25.10"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:b83abd0f41349d2e285d47412fb9e9e6996aa7cc28e70f71fbf2da0fb7936e0768169ca616bfa93aeaadc5f7e3da9d09d20c5bd97be238b3573c530bf0be9049#npm:4.25.10", {\
+        "packageLocation": "./.yarn/__virtual__/@uiw-codemirror-themes-virtual-9fe0dac052/4/Users/jessica/.yarn/berry/cache/@uiw-codemirror-themes-npm-4.25.10-a38c137899-10c0.zip/node_modules/@uiw/codemirror-themes/",\
+        "packageDependencies": [\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@types/codemirror__language", null],\
+          ["@types/codemirror__state", null],\
+          ["@types/codemirror__view", null],\
+          ["@uiw/codemirror-themes", "virtual:b83abd0f41349d2e285d47412fb9e9e6996aa7cc28e70f71fbf2da0fb7936e0768169ca616bfa93aeaadc5f7e3da9d09d20c5bd97be238b3573c530bf0be9049#npm:4.25.10"]\
+        ],\
+        "packagePeers": [\
+          "@types/codemirror__language",\
+          "@types/codemirror__state",\
+          "@types/codemirror__view"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@uiw/react-codemirror", [\
+      ["npm:4.25.10", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@uiw-react-codemirror-npm-4.25.10-db9ff97a0b-10c0.zip/node_modules/@uiw/react-codemirror/",\
+        "packageDependencies": [\
+          ["@uiw/react-codemirror", "npm:4.25.10"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.25.10", {\
+        "packageLocation": "./.yarn/__virtual__/@uiw-react-codemirror-virtual-298476995a/4/Users/jessica/.yarn/berry/cache/@uiw-react-codemirror-npm-4.25.10-db9ff97a0b-10c0.zip/node_modules/@uiw/react-codemirror/",\
+        "packageDependencies": [\
+          ["@babel/runtime", "npm:7.29.2"],\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/theme-one-dark", "npm:6.1.3"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["@types/babel__runtime", null],\
+          ["@types/codemirror", null],\
+          ["@types/codemirror__state", null],\
+          ["@types/codemirror__theme-one-dark", null],\
+          ["@types/codemirror__view", null],\
+          ["@types/react", "npm:18.3.29"],\
+          ["@types/react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.7"],\
+          ["@uiw/codemirror-extensions-basic-setup", "virtual:298476995a59f90517daada5bfa94a4f2783d278caf76fa6c5ae898bb3bd442ee25565ecf1e57c98f80b8817035b3bc6cdf9110c100923a87cf5676edf427421#npm:4.25.10"],\
+          ["@uiw/react-codemirror", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.25.10"],\
+          ["codemirror", "npm:6.0.2"],\
+          ["react", "npm:18.3.1"],\
+          ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"]\
+        ],\
+        "packagePeers": [\
+          "@babel/runtime",\
+          "@codemirror/state",\
+          "@codemirror/view",\
+          "@types/babel__runtime",\
+          "@types/codemirror",\
+          "@types/codemirror__state",\
+          "@types/codemirror__theme-one-dark",\
+          "@types/codemirror__view",\
+          "@types/react-dom",\
+          "@types/react",\
+          "react-dom",\
+          "react"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@vitejs/plugin-react", [\
       ["npm:4.7.0", {\
         "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@vitejs-plugin-react-npm-4.7.0-650e714693-10c0.zip/node_modules/@vitejs/plugin-react/",\
@@ -1838,8 +2529,30 @@ const RAW_RUNTIME_STATE =
       ["workspace:.", {\
         "packageLocation": "./",\
         "packageDependencies": [\
+          ["@babel/runtime", "npm:7.29.2"],\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/lang-cpp", "npm:6.0.3"],\
+          ["@codemirror/lang-css", "npm:6.3.1"],\
+          ["@codemirror/lang-go", "npm:6.0.1"],\
+          ["@codemirror/lang-java", "npm:6.0.2"],\
+          ["@codemirror/lang-javascript", "npm:6.2.5"],\
+          ["@codemirror/lang-json", "npm:6.0.2"],\
+          ["@codemirror/lang-markdown", "npm:6.5.0"],\
+          ["@codemirror/lang-php", "npm:6.0.2"],\
+          ["@codemirror/lang-python", "npm:6.2.1"],\
+          ["@codemirror/lang-rust", "npm:6.0.2"],\
+          ["@codemirror/lang-sass", "npm:6.0.2"],\
+          ["@codemirror/lang-sql", "npm:6.10.0"],\
+          ["@codemirror/lang-vue", "npm:0.1.3"],\
+          ["@codemirror/lang-xml", "npm:6.1.0"],\
+          ["@codemirror/lang-yaml", "npm:6.1.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/legacy-modes", "npm:6.5.3"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
           ["@emotion/react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.0"],\
           ["@emotion/styled", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.1"],\
+          ["@lezer/highlight", "npm:1.2.3"],\
           ["@mui/icons-material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
           ["@mui/material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
           ["@playwright/test", "npm:1.60.0"],\
@@ -1847,10 +2560,13 @@ const RAW_RUNTIME_STATE =
           ["@tauri-apps/cli", "npm:2.11.2"],\
           ["@types/react", "npm:18.3.29"],\
           ["@types/react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.7"],\
+          ["@uiw/codemirror-theme-vscode", "npm:4.25.10"],\
+          ["@uiw/react-codemirror", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.25.10"],\
           ["@vitejs/plugin-react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.7.0"],\
           ["bright-vision", "workspace:."],\
           ["react", "npm:18.3.1"],\
           ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"],\
+          ["react-resizable-panels", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.11.2"],\
           ["sass", "npm:1.100.0"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["vite", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:5.4.21"],\
@@ -1951,6 +2667,22 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["codemirror", [\
+      ["npm:6.0.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/codemirror-npm-6.0.2-e4812702c8-10c0.zip/node_modules/codemirror/",\
+        "packageDependencies": [\
+          ["@codemirror/autocomplete", "npm:6.20.2"],\
+          ["@codemirror/commands", "npm:6.10.3"],\
+          ["@codemirror/language", "npm:6.12.3"],\
+          ["@codemirror/lint", "npm:6.9.6"],\
+          ["@codemirror/search", "npm:6.7.0"],\
+          ["@codemirror/state", "npm:6.6.0"],\
+          ["@codemirror/view", "npm:6.43.0"],\
+          ["codemirror", "npm:6.0.2"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["convert-source-map", [\
       ["npm:1.9.0", {\
         "packageLocation": "../../../Users/jessica/.yarn/berry/cache/convert-source-map-npm-1.9.0-e294555f4b-10c0.zip/node_modules/convert-source-map/",\
@@ -1977,6 +2709,15 @@ const RAW_RUNTIME_STATE =
           ["parse-json", "npm:5.2.0"],\
           ["path-type", "npm:4.0.0"],\
           ["yaml", "npm:1.10.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["crelt", [\
+      ["npm:1.0.6", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/crelt-npm-1.0.6-f8981fe6a1-10c0.zip/node_modules/crelt/",\
+        "packageDependencies": [\
+          ["crelt", "npm:1.0.6"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -2696,6 +3437,32 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["react-resizable-panels", [\
+      ["npm:4.11.2", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/react-resizable-panels-npm-4.11.2-bbe9adf2ce-10c0.zip/node_modules/react-resizable-panels/",\
+        "packageDependencies": [\
+          ["react-resizable-panels", "npm:4.11.2"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.11.2", {\
+        "packageLocation": "./.yarn/__virtual__/react-resizable-panels-virtual-37150e6fee/4/Users/jessica/.yarn/berry/cache/react-resizable-panels-npm-4.11.2-bbe9adf2ce-10c0.zip/node_modules/react-resizable-panels/",\
+        "packageDependencies": [\
+          ["@types/react", "npm:18.3.29"],\
+          ["@types/react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.7"],\
+          ["react", "npm:18.3.1"],\
+          ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"],\
+          ["react-resizable-panels", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.11.2"]\
+        ],\
+        "packagePeers": [\
+          "@types/react-dom",\
+          "@types/react",\
+          "react-dom",\
+          "react"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["react-transition-group", [\
       ["npm:4.4.5", {\
         "packageLocation": "../../../Users/jessica/.yarn/berry/cache/react-transition-group-npm-4.4.5-98ea4ef96e-10c0.zip/node_modules/react-transition-group/",\
@@ -2873,6 +3640,15 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "../../../Users/jessica/.yarn/berry/cache/std-env-npm-3.10.0-30d3e2646f-10c0.zip/node_modules/std-env/",\
         "packageDependencies": [\
           ["std-env", "npm:3.10.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["style-mod", [\
+      ["npm:4.1.3", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/style-mod-npm-4.1.3-b4d688ae26-10c0.zip/node_modules/style-mod/",\
+        "packageDependencies": [\
+          ["style-mod", "npm:4.1.3"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3172,6 +3948,15 @@ const RAW_RUNTIME_STATE =
           "@vitest/ui",\
           "happy-dom",\
           "jsdom"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["w3c-keyname", [\
+      ["npm:2.2.8", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/w3c-keyname-npm-2.2.8-66d7d5317a-10c0.zip/node_modules/w3c-keyname/",\
+        "packageDependencies": [\
+          ["w3c-keyname", "npm:2.2.8"]\
         ],\
         "linkType": "HARD"\
       }]\

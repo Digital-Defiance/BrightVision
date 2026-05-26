@@ -1,12 +1,12 @@
-# Bright Vision
+# BrightVision
 
 **Website:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org)
 
 <div align="center">
-  <img width="400" alt="Bright Vision" title="Bright Vision" src="https://bright-vision.digitaldefiance.org/bright-vision-white.svg" />
+  <img width="400" alt="BrightVision" title="BrightVision" src="https://bright-vision.digitaldefiance.org/bright-vision-white.svg" />
 </div>
 
-A lightweight, cross-platform desktop IDE built with **Tauri** and **React** — **local LLM first**, spec-driven tasks, and superproject/submodule git — powered by **[Bright Vision Core](https://github.com/Digital-Defiance/bright-vision-core)** (a **fork²** on [cecli](https://github.com/dwash96/cecli): bundled cecli + ported headless HTTP API from our earlier `aider-vision-core` — see [lineage](https://github.com/Digital-Defiance/bright-vision-core/blob/main/docs/LINEAGE.md)).
+A lightweight, cross-platform desktop IDE built with **Tauri** and **React** — **local LLM first**, spec-driven tasks, and superproject/submodule git — powered by **[BrightVision Core](https://github.com/Digital-Defiance/bright-vision-core)** (a **fork²** on [cecli](https://github.com/dwash96/cecli): bundled cecli + ported headless HTTP API from our earlier `aider-vision-core` — see [lineage](https://github.com/Digital-Defiance/bright-vision-core/blob/main/docs/LINEAGE.md)).
 
 <img width="1392" height="832" alt="Screenshot 2026-05-25 at 1 46 13 PM" src="https://github.com/user-attachments/assets/646e3140-72c5-4760-84ae-24b4b9015434" />
 
@@ -38,7 +38,7 @@ Quick checks: `yarn test:local` · core: `yarn test:bright-core`
 
 ## 🔒 Local LLM first (privacy-first)
 
-Bright Vision targets **local inference** on your hardware:
+BrightVision targets **local inference** on your hardware:
 
 1. Install **[Ollama](https://ollama.com/)**.
 2. Copy **`local-llm.env.example`** → **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`) — **[docs/LOCAL_LLM.md](docs/LOCAL_LLM.md)**. Local LLM is built into the app (Rust + Python); no `local-llm.sh` required.
@@ -49,7 +49,7 @@ Cloud providers still work via LiteLLM model strings and API keys in the environ
 
 ## Note
 
-Dogfooding target: Bright Vision builds itself. Primary local setup: **Qwen Coder 3.6 27b q4_K_M** on Apple Silicon (64GB RAM).
+Dogfooding target: BrightVision builds itself. Primary local setup: **Qwen Coder 3.6 27b q4_K_M** on Apple Silicon (64GB RAM).
 
 ## 📦 Getting Started
 
@@ -60,7 +60,7 @@ brew tap digital-defiance/tap
 brew install bright-vision
 ```
 
-Installs `Bright Vision.app` to `/Applications/`. Tap: [digital-defiance/homebrew-tap](https://github.com/Digital-Defiance/homebrew-tap)
+Installs `BrightVision.app` to `/Applications/`. Tap: [digital-defiance/homebrew-tap](https://github.com/Digital-Defiance/homebrew-tap)
 
 Legacy cask name `aider-vision` may still exist during transition.
 

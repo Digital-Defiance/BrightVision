@@ -11,10 +11,31 @@ import {
   sseEventResetsIdleTimer,
 } from './sseIdle'
 
+export interface ModelRouterPoolEntryApi {
+  model: string
+  tier: 'fast' | 'heavy'
+  enabled: boolean
+  label?: string
+}
+
+export interface ModelRouterApiConfig {
+  enabled: boolean
+  fast_model: string
+  heavy_model?: string
+  model_pool?: ModelRouterPoolEntryApi[]
+  token_fast_max?: number
+  token_heavy_min?: number
+  keep_alive_fast?: number | string
+  keep_alive_heavy?: number | string
+  escalate_on_failure?: boolean
+}
+
 export interface SendMessageOptions {
   activeTodoId?: string
   injectTodoSpec?: boolean
   preproc?: boolean
+  forceTier?: 'fast' | 'heavy'
+  escalateFromLast?: boolean
 }
 
 const DEFAULT_BASE = 'http://127.0.0.1:8741'
@@ -95,6 +116,7 @@ export class CoreHttpClient {
     workspace: string
     files?: string[]
     model?: string
+    model_router?: ModelRouterApiConfig
     stream?: boolean
     auto_yes?: boolean
     auto_commits?: boolean
@@ -508,6 +530,8 @@ export class CoreHttpClient {
         preproc: options?.preproc ?? true,
         active_todo_id: options?.activeTodoId ?? null,
         inject_todo_spec: options?.injectTodoSpec ?? false,
+        force_tier: options?.forceTier ?? null,
+        escalate_from_last: options?.escalateFromLast ?? false,
       }),
       signal,
     })

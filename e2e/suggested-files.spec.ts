@@ -20,6 +20,16 @@ test.describe('Suggested files tray (roadmap #32)', () => {
     await expect(tray).toContainText('src/suggested-b.ts')
   })
 
+  test('opens suggested path in editor', async ({ page }) => {
+    await page.getByTestId('chat-input').fill('Which files should I add?')
+    await page.getByTestId('chat-send').click()
+    await expect(page.getByTestId('suggested-files-tray')).toBeVisible({ timeout: 15_000 })
+
+    await page.getByTestId('suggested-file-open-src--suggested-a.ts').click()
+    await expect(page.getByTestId('editor-panel')).toBeVisible()
+    await expect(page.getByTestId('code-editor')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId('editor-file-tabs')).toContainText('suggested-a.ts')
+  })
 })
 
 test.describe('Suggested files — add all', () => {

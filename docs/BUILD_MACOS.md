@@ -36,7 +36,7 @@ yarn build:mac --version 0.2.0
 yarn build:mac -- --skip-notarize
 ```
 
-DMG filename follows Tauri: `Bright Vision_<version>_universal.dmg` (from `productName` + `version` in `src-tauri/tauri.conf.json`). Without a version argument, the script uses `package.json` `version` (currently `0.1.0`).
+DMG filename follows Tauri: `BrightVision_<version>_universal.dmg` (from `productName` + `version` in `src-tauri/tauri.conf.json`). Without a version argument, the script uses `package.json` `version` (currently `0.1.0`).
 
 ### GitHub release + Homebrew tap
 
@@ -62,13 +62,15 @@ NONINTERACTIVE=1 yarn build:mac 0.2.0 --publish --push-tap
 | `--release-tag v0.1.0-bright2` | Git tag / release name (default `v<VERSION>`) |
 | `--no-push-tag` | Do not create/push git tag (release tag must exist) |
 
-Release asset name (no spaces): `Bright.Vision_<version>_universal.dmg` — matches the cask `url`.
+Release asset name: `BrightVision_<version>_universal.dmg` — same as the Tauri DMG and the cask `url`. Homebrew cask token stays `bright-vision`; the installed app is `BrightVision.app`.
 
 Update cask only (DMG already built):
 
 ```bash
-bash scripts/update-bright-vision-cask.sh 0.2.0 "$(shasum -a 256 'path/to/Bright.Vision_0.2.0_universal.dmg' | awk '{print $1}')"
+bash scripts/update-bright-vision-cask.sh 0.2.0 "$(shasum -a 256 'path/to/BrightVision_0.2.0_universal.dmg' | awk '{print $1}')"
 ```
+
+Reference cask: [scripts/Casks/bright-vision.rb.example](../scripts/Casks/bright-vision.rb.example)
 
 Environment: `GITHUB_REPO` (default `Digital-Defiance/bright-vision`), `HOMEBREW_TAP_DIR` (default `~/Code/homebrew-tap`).
 
@@ -123,7 +125,7 @@ security find-identity -v -p codesigning
 
 ```bash
 codesign --force --options runtime --sign "Developer ID Application: …" \
-  "src-tauri/target/universal-apple-darwin/release/bundle/macos/Aider Vision.app"
+  "src-tauri/target/universal-apple-darwin/release/bundle/macos/BrightVision.app"
 ```
 
 Then rebuild the DMG or use `create-dmg` / Tauri’s bundler after signing.
@@ -133,18 +135,18 @@ Then rebuild the DMG or use `create-dmg` / Tauri’s bundler after signing.
 Signing alone is not enough for distribution outside the Mac App Store. After signing:
 
 ```bash
-xcrun notarytool submit "path/to/Aider Vision.dmg" \
+xcrun notarytool submit "path/to/BrightVision_0.2.0_universal.dmg" \
   --apple-id "$APPLE_ID" \
   --password "$APPLE_APP_SPECIFIC_PASSWORD" \
   --team-id "$APPLE_TEAM_ID" \
   --wait
 
-xcrun stapler staple "path/to/Aider Vision.dmg"
+xcrun stapler staple "path/to/BrightVision_0.2.0_universal.dmg"
 ```
 
 `yarn build:mac` prompts for these if missing. Tauri notarizes during the build when they are set — see [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
 
-## Notes for Aider Vision
+## Notes for BrightVision
 
-- The DMG is the **Tauri shell** only. The app still expects **Python + `aider-vision-core`** on the user machine (or a future bundled runtime).
+- The DMG is the **Tauri shell** only. The app still expects **Python + `bright-vision-core`** on the user machine (or a future bundled runtime).
 - `targets: "all"` in `tauri.conf.json` also builds `.app` and other formats; use `--bundles dmg` for DMG-only.

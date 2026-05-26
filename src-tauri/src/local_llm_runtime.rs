@@ -312,10 +312,14 @@ impl OllamaClient {
         Ok((ms, preview))
     }
 
-    async fn preload_generate(&self, model: &str) -> Result<(), String> {
+    async fn preload_generate_keep_alive(
+        &self,
+        model: &str,
+        keep_alive: serde_json::Value,
+    ) -> Result<(), String> {
         let payload = serde_json::json!({
             "model": model,
-            "keep_alive": -1,
+            "keep_alive": keep_alive,
             "prompt": " ",
             "stream": false
         });
@@ -335,11 +339,27 @@ impl OllamaClient {
         Ok(())
     }
 
-    /// Extend `keep_alive: -1` without a full generate when the model is already in `/api/ps`.
-    async fn touch_keep_alive(&self, model: &str) -> Result<(), String> {
+    async fn preload_generate(&self, model: &str) -> Result<(), String> {
+        self.preload_generate_keep_alive(model, serde_json::json!(-1))
+            .await
+    }
+
+    async fn unload_all_loaded(&self, ps_models: &[serde_json::Value]) -> Result<(), String> {
+        for entry in ps_models {
+            let Some(name) = model_label(entry) else { continue };
+            let _ = self.unload_generate(&name).await;
+        }
+        Ok(())
+    }
+
+    async fn touch_keep_alive_value(
+        &self,
+        model: &str,
+        keep_alive: serde_json::Value,
+    ) -> Result<(), String> {
         let payload = serde_json::json!({
             "model": model,
-            "keep_alive": -1,
+            "keep_alive": keep_alive,
             "prompt": "",
             "stream": false,
             "options": { "num_predict": 0 }
@@ -358,6 +378,11 @@ impl OllamaClient {
             return Err(format!("keep_alive touch: HTTP {status} {text}"));
         }
         Ok(())
+    }
+
+    /// Extend keep_alive without a full generate when the model is already in `/api/ps`.
+    async fn touch_keep_alive(&self, model: &str) -> Result<(), String> {
+        self.touch_keep_alive_value(model, serde_json::json!(-1)).await
     }
 
     async fn unload_generate(&self, model: &str) -> Result<(), String> {
@@ -742,4 +767,113 @@ pub async fn local_llm_stop_plain(
     }
 
     Ok(logs)
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct HopperPrepareEntry {
+    pub model_tag: String,
+    pub keep_alive_secs: i64,
+    /// When true, load into RAM now (typically the default fast model only).
+    pub preload: bool,
+}
+
+/// Pull all hopper tags; preload the first entry marked `preload` (router warm-start).
+pub async fn local_llm_prepare_hopper(
+    ollama_host: &str,
+    entries: Vec<HopperPrepareEntry>,
+) -> Result<Vec<String>, String> {
+    let host = normalize_ollama_host(ollama_host);
+    let mut logs = vec!["Model hopper: preparing Ollama tags…".to_string()];
+    if entries.is_empty() {
+        logs.push("No hopper entries".to_string());
+        return Ok(logs);
+    }
+    let client = OllamaClient::new(&host)?;
+    if !client.is_running().await {
+        spawn_ollama_serve(&mut logs).await?;
+        wait_for_ollama(&client, 30, &mut logs).await?;
+    }
+    let mut preloaded: Option<String> = None;
+    for entry in &entries {
+        let tag = entry.model_tag.trim();
+        if tag.is_empty() {
+            continue;
+        }
+        if !OllamaClient::model_in_tags(&client.fetch_tags_models().await?, tag) {
+            pull_model(tag, &mut logs).await?;
+        } else {
+            logs.push(format!("{tag} already pulled"));
+        }
+        if entry.preload && preloaded.is_none() {
+            let ka = if entry.keep_alive_secs < 0 {
+                serde_json::json!(-1)
+            } else {
+                serde_json::json!(entry.keep_alive_secs)
+            };
+            logs.push(format!("Preloaded {tag} (keep_alive {ka:?})"));
+            client.preload_generate_keep_alive(tag, ka).await?;
+            preloaded = Some(tag.to_string());
+        }
+    }
+    if preloaded.is_none() {
+        logs.push("No preload flag set — models load on first route".to_string());
+    }
+    Ok(logs)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OllamaEnsureModelResult {
+    pub logs: Vec<String>,
+    pub load_ms: u64,
+    pub swapped: bool,
+}
+
+/// Swap the single loaded Ollama model (OLLAMA_MAX_LOADED_MODELS=1) before a routed turn.
+pub async fn ollama_ensure_model_loaded(
+    ollama_host: &str,
+    model_tag: &str,
+    keep_alive_secs: i64,
+) -> Result<OllamaEnsureModelResult, String> {
+    let started = std::time::Instant::now();
+    let host = normalize_ollama_host(ollama_host);
+    let model = model_tag.trim().to_string();
+    if model.is_empty() {
+        return Err("model tag is empty".into());
+    }
+    let mut logs = vec![format!("Ensuring Ollama model {model}…")];
+    let client = OllamaClient::new(&host)?;
+    if !client.is_running().await {
+        return Err("Ollama is not running".into());
+    }
+    let (tags, ps) = client.fetch_tags_and_ps().await?;
+    if !OllamaClient::model_in_tags(&tags, &model) {
+        pull_model(&model, &mut logs).await?;
+    }
+    let already = OllamaClient::model_in_ps(&ps, &model);
+    let mut swapped = false;
+    if !already {
+        client.unload_all_loaded(&ps).await?;
+        swapped = !ps.is_empty();
+        if swapped {
+            logs.push("Unloaded previous model from RAM".to_string());
+        }
+    }
+    let ka = if keep_alive_secs < 0 {
+        serde_json::json!(-1)
+    } else {
+        serde_json::json!(keep_alive_secs)
+    };
+    if already {
+        client.touch_keep_alive_value(&model, ka).await?;
+        logs.push(format!("{model} already loaded — refreshed keep_alive"));
+    } else {
+        client.preload_generate_keep_alive(&model, ka).await?;
+        logs.push(format!("Loaded {model} into RAM"));
+    }
+    let load_ms = started.elapsed().as_millis() as u64;
+    Ok(OllamaEnsureModelResult {
+        logs,
+        load_ms,
+        swapped,
+    })
 }

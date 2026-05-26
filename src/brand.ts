@@ -8,8 +8,8 @@ import railLogoPng from './assets/brand/bright_vision_bold_logo-tx.png'
 export const PRODUCT_VISION = 'bright-vision'
 export const PRODUCT_CORE = 'bright-vision-core'
 
-export const DISPLAY_VISION = 'Bright Vision'
-export const DISPLAY_CORE = 'Bright Vision Core'
+export const DISPLAY_VISION = 'BrightVision'
+export const DISPLAY_CORE = 'BrightVision Core'
 /** Sidebar rail fallback if logo fails to load */
 export const DISPLAY_MONOGRAM = 'BV'
 
@@ -35,7 +35,7 @@ export type ErrorSource = 'vision' | 'core'
 
 /**
  * Prefix for errors shown in the main UI (chat, toasts).
- * Agent stderr is shown as Bright Vision — users opened the app, not pip.
+ * Agent stderr is shown as BrightVision — users opened the app, not pip.
  */
 export function prefixForUserFacing(_source: ErrorSource): string {
   return `[${DISPLAY_VISION}]`

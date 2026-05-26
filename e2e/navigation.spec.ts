@@ -31,4 +31,9 @@ test.describe('Navigation', () => {
     await page.getByTestId('nav-terminal').click()
     await expect(page.getByTestId('terminal-start')).toBeVisible()
   })
+
+  test('editor tab renders', async ({ page }) => {
+    await page.getByTestId('nav-editor').click()
+    await expect(page.getByTestId('editor-panel')).toBeVisible()
+  })
 })

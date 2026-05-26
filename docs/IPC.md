@@ -98,7 +98,7 @@ Core uses `create_git_workspace()` / `RepoSet`:
 - Excludes submodule **gitlink** paths (mode `160000`) from repo-map file lists — only real files are indexed.
 - Commits run innermost repos first, then update parent gitlinks.
 
-For self-dev on Bright Vision: set working directory to the parent repo, not `bright-vision-core/` alone.
+For self-dev on BrightVision: set working directory to the parent repo, not `bright-vision-core/` alone.
 
 ## Web dev proxy
 

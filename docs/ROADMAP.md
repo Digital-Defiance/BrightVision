@@ -1,4 +1,4 @@
-# Bright Vision Roadmap
+# BrightVision Roadmap
 
 Living backlog for chat UX, engine behavior, spec-driven work, and charter-level evolution ([AGENTS.md](../AGENTS.md) § Evolution).
 
@@ -97,6 +97,8 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **35** | **Partial** | **Context window awareness** — header chip: file count + last `Tokens:` sent / ~added estimate; sync `files_in_chat` after `done` + `/add`; desktop byte estimate on `addFiles`. See [§ #35](#35-context-window--file-counter) |
 | **36** | **Partial** | **LLM ping** — Terminal/Settings **Ping LLM**: Ollama tags + 1-token generate + optional core `/health`; no repo edits. See [§ #36](#36-llm-ping) |
 | **37** | **Done** | **Empty LLM response** — rewrite legacy “provider account” copy for Ollama; **Retry** (exact resend) + **Retry with hint** (append nudge); remember last user message in `App.tsx`. `emptyLlmResponse.ts`, `EmptyLlmWarning.tsx`. **Upstream:** cecli `base_coder.py` still emits legacy text until core patch. |
+| **38** | **Done** | **Editor** — left-rail tab; file tabs + CM6 + explorer + git badges + open-from-chat; optional language packs (Settings). See [§ #38](#38--editor-rail-tab--file-tabs--explorer) |
+| **39** | **Done** | **Local model router** — hopper, Tauri preload/swap, chat escalate + force tier. See [§ #39](#39--local-model-router) |
 
 ## Spec-driven development (#18)
 
@@ -136,7 +138,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 | **25** | **Done** | (overlap) Richer chat sections | Same as chat **#25** |
 | **26** | **Partial** | File system watcher | Git status polls on **Git** tab + while session runs (8s); native FS notify still open |
 | **27** | **Done** | Git visualization (charter §3) | Working tree, inline diffs, commit graph + details, stage all/file, auto-stage on `done`, undo + refresh. **Nice-to-have:** syntax-highlighted diffs |
-| **28** | **Partial** | Context awareness (charter §5) | **Done:** images/PDF, `/add` paths, terminal tail, Tauri folder picker, **web folder path** dialog → `addFiles`, **suggested-files tray (#32)**. **Open:** file-tree picker, modified-file highlights (**#26**) |
+| **28** | **Partial** | Context awareness (charter §5) | **Done:** images/PDF, `/add` paths, terminal tail, Tauri folder picker, **web folder path** dialog → `addFiles`, **suggested-files tray (#32)**. **Open:** modified-file highlights (**#26**); full tree + open-in-editor → **#38** |
 | **29** | **Longer-term** | Plugin / extension system | Custom Rust commands, third-party LLM providers, packaged extensions |
 | **30** | **Partial** | Web / non-Tauri parity | **Done:** folder path attach, localStorage todos, Vite `/api/core` proxy; `/add` Tab on **desktop** (#12). **Open:** `/add` Tab on web-only dev; full generate-spec UX without desktop (dogfood Tasks tab on desktop first). |
 
@@ -243,13 +245,14 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 **Known context:** Response time is anchored at **Send** (`turnWallStartMsRef`); Stop no longer resets that anchor before `done`. Timing attaches only to the assistant bubble for the current turn (not an earlier message). **Queued sends** keep per-message Send time and restart the live timer after `done` when more messages are queued; `user_message` starts the timer if a turn begins without a prior `beginTurn`. **Fix:** short queued follow-ups (e.g. `proceed`, 7 chars) no longer overwrite a long reply’s bubble timing or pollute history (`resolveMessageTurnTiming`, `shouldRecordTurnInHistory`).
 
-**Shipped (Partial):** Settings timing history stores **peak** CPU/RAM/GPU per turn (polled while the turn is active on desktop); last 7 rows in the history table.
+**Shipped (Partial):** Settings timing history stores **peak** CPU/RAM/GPU per turn (polled while the turn is active on desktop); last 7 rows in the history table. **Output TPS** (running avg + per-turn column when core reports `Tokens:`); optional **CSV path** + download / write-all / append-after-turn (`write_timing_stats_csv`, up to 300 stored turns).
 
 **Open / v2:**
 
 - Burndown chart or trend line in Settings / Tasks.
 - Mean vs peak toggle; process-scoped utilization (core + Ollama PIDs).
-- Export stats JSON; sync across machines.
+- Sync stats across machines (JSON export shipped).
+- Input TPS and tokens-sent rate alongside output TPS for bottleneck splits.
 - Core SSE fields (`section_started`, `thought_ms`) instead of parser-only.
 - Include queued-wait time separately from model “thought” time.
 
@@ -280,6 +283,92 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 ---
 
+## #38 — Editor rail tab + file tabs + explorer
+
+**Problem:** The **left rail** already switches whole surfaces (Chat, Tasks, Terminal, Git, Settings) via `AppChrome` — easy to miss, but that *is* the primary navigation. There is still no **editor** surface: no file tree, no open-file tabs, no syntax-aware buffer. Charter §5 context work (**#28**, **#32**) relies on `/add` and trays, not “open and edit here.”
+
+**Goal:** Add an **Editor** (or **Files**) entry on the **same left rail** as Chat — not a second tab system that embeds Chat. When that rail tab is active:
+
+1. **Top row (editor mode only)** — MUI tab strip for **open files** (`App.tsx ×`, `foo.ts ×`, …). No Chat tab here; switching back to Chat uses the left rail. Optional diff tab v2.
+2. **Center** — Syntax-aware editor (CodeMirror 6) for the active file tab. Dirty indicator; save via Tauri (desktop).
+3. **Right column — file explorer** — Pop in/out (chevron or drawer). Tree of workspace files; respect ignore rules for display; git status badges (**#26**, **#27**). Actions: open in top tab, `addFiles`, jump to Git tab.
+
+**Chat unchanged:** `activeTab === 'chat'` continues to show `ChatPanel` full width (plus existing trays/input). Agent work and editor work are separate rail modes; user flips rail icons like today.
+
+**Non-goals (v1):** LSP / IntelliSense, multi-cursor power features, extension marketplace, duplicating Git tab graph in the tree; **no** “pinned Chat” in the editor file tab row.
+
+### Layout sketch
+
+```text
+Left rail (always):  Chat | Tasks | Terminal | Git | Editor | Settings
+                              ↑ existing pattern (App.tsx NAV)
+
+When rail = Chat:                When rail = Editor:
+┌─────────────────────────┐      ┌──────────────────────────────┬──────────┐
+│ ChatPanel (as today)    │      │ [ App.tsx × ] [ foo.ts × ]   │ Explorer │
+│                         │      ├──────────────────────────────┤  ▾ src/  │
+│                         │      │  CodeMirror (active file)    │          │
+└─────────────────────────┘      └──────────────────────────────┴──────────┘
+```
+
+Explorer width persisted; default **collapsed** on narrow windows.
+
+### Reusable components (evaluate before build)
+
+Prefer **permissive licenses** and **small bundle** ([AGENTS.md](../AGENTS.md)). Spike in a branch before committing.
+
+| Concern | Recommendation | Alternatives / notes |
+|--------|----------------|----------------------|
+| **Split layout** | [`react-resizable-panels`](https://github.com/bvaughn/react-resizable-panels) — horizontal split for editor \| explorer; persist sizes in `localStorage`. | MUI `Drawer` only (no resize); `allotment` |
+| **File tab strip** | **MUI `Tabs`** in **main content**, only when `activeTab === 'editor'`. Closable file tabs; state in React (path, dirty, order). | `react-draggable-tabs` (heavier) |
+| **Left rail** | Extend `NAV` in `App.tsx` + `TabId` union — same `AppChrome` pattern as Chat/Git | Second window / route |
+| **Syntax editor** | **CodeMirror 6** — `@codemirror/view`, `@codemirror/state`, language packs (`@codemirror/lang-javascript`, `lang-python`, …); wrapper [`@uiw/react-codemirror`](https://github.com/uiwjs/react-codemirror) or thin in-house wrapper. Theme aligned with `src/theme.ts`. | **Monaco** (`@monaco-editor/react`) if we later need LSP — much larger download; defer unless required |
+| **File tree** | [`react-arborist`](https://github.com/brimdata/react-arborist) (virtualized, MIT) **or** [`@mui/x-tree-view`](https://mui.com/x/react-tree-view/) + lazy children. Data: Tauri `read_dir` / existing `complete_workspace_path` + `get_tracked_files` / git status map. | Hand-rolled `TreeView`; VS Code webview tree (off-charter) |
+| **Explorer chrome** | MUI `IconButton` (collapse), `TextField` (filter), optional `Autocomplete` for quick-open v2 | — |
+
+**Integration points:** `files_in_chat` + `addFiles` from explorer; **#32** “open in editor” from tray; proposed edits (**#2**) as diff tab v2; new `EditorPanel` branch beside `ChatPanel` in `App.tsx` `activeTab` switch.
+
+### Phased delivery
+
+| Phase | Scope |
+|-------|--------|
+| **v1** | **Done:** Left-rail **Editor** tab; multi file tabs; CM6 + Mod-s save; explorer (resize/collapse); `addFiles` from editor; git badges on tree (**#26**); open in editor from suggested tray, context chip, applied-file chips; dirty tab close confirm. Built-in langs: py/rs/go/js/ts/json/md/yaml/toml/shell/css/html. Dogfood: `yarn tauri dev` at repo root. |
+| **v2** | Filter ignore display in explorer; web read-only API; split editor; markdown preview |
+| **v3** | **Done:** Allowlisted optional CM6 language packs (`src/editor/languageRegistry.ts` + lazy `loadLanguagePlugin.ts`); Settings → Editor languages toggles; persisted in localStorage; chunks load on first use. Packs: C/C++, Java, PHP, SQL, XML, Vue, Sass, Dockerfile, CMake. Distinct from charter **#29** (Rust/core command plugins). |
+| **v4** | Split editor; markdown preview; optional Monaco only if LSP spike wins |
+
+### Dependencies / risks
+
+- **Security:** Sanitize paths; no arbitrary file read outside workspace root (mirror core `Session.add_files` checks).
+- **Web (#30):** Explorer may be desktop-first (Tauri FS); web needs read-only or upload-only until a safe read API exists.
+- **Bundle:** Measure Vite chunk before/after CM6; lazy-load editor + tree on first open.
+
+**Related:** **#28** (context), **#32** (suggested paths), **#26** (watcher decorations), **#27** (diff tab).
+
+---
+
+## #39 — Local model router
+
+**Problem:** A 27B local model on a “rename this button” prompt can burn 15–20 minutes of inference; swapping to a 7B coder for ~30s plus a ~30s model load is a large net win on unified memory Macs.
+
+**Goal:** Pre-flight each user turn and pick **fast** (fighter pilot) vs **heavy** (engineer) Ollama models.
+
+| Signal | Route |
+|--------|--------|
+| Context ≥ `token_heavy_min` (default 12k) | Heavy |
+| Keywords: refactor, race condition, architecture, … | Heavy |
+| Keywords: rename, color, typo, … and context &lt; heavy min | Fast |
+| Context &lt; `token_fast_max` (4k) and no heavy keywords | Fast (if not a code-task verb) |
+| Fast tier, no edits, code-task verbs | Auto-escalate heavy (one retry) |
+
+**Done:** Classify prompts (tokens + keywords); **model hopper** in Settings; Tauri `local_llm_prepare_hopper` + `ollama_ensure_model_loaded` (swap unload/load, `load_ms` in UI); auto-escalate + manual **Escalate to heavy**; **Force fast/heavy** in chat; `model_pool` on session create.
+
+**Longer-term:** 1B classifier model; route timing history in Settings stats.
+
+**Env (headless):** `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_HEAVY_MODEL`.
+
+---
+
 ## Known context
 
 - **Local testing (no CI required):** `yarn test:fast` / `yarn test:local` / `yarn test:full`; see [TESTING.md](./TESTING.md). Playwright mocks `/api/core` + Tauri `invoke` — does **not** replace `yarn tauri dev` dogfooding ([e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md)).
@@ -304,6 +393,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 5. **#20–22** — Kiro-depth spec product (after dogfood stabilizes core loop).
 6. **#29, #30** — Plugins, remaining web parity (longer horizon).
 7. **#33** — Resource overlay when local LLM / long runs make CPU/GPU visibility painful (CPU/RAM first; GPU best-effort).
+8. **#38** — Editor left-rail tab + file tabs + explorer after core chat/context loop is stable; spike CodeMirror + `react-resizable-panels`; extend `TabId` / `NAV` — do not merge Chat into a top tab row.
 
 ## Related docs
 

@@ -1,12 +1,15 @@
 import { useState } from 'react'
+import EditNoteIcon from '@mui/icons-material/EditNote'
 import {
   Box,
   Chip,
   Divider,
+  IconButton,
   List,
   ListItem,
   ListItemText,
   Popover,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import {
@@ -19,9 +22,10 @@ import {
 export interface SessionContextChipProps {
   files: string[]
   usage: SessionContextUsage
+  onOpenInEditor?: (path: string) => void
 }
 
-export function SessionContextChip({ files, usage }: SessionContextChipProps) {
+export function SessionContextChip({ files, usage, onOpenInEditor }: SessionContextChipProps) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const open = Boolean(anchorEl)
   const label = formatSessionContextChip(files.length, usage)
@@ -65,7 +69,29 @@ export function SessionContextChip({ files, usage }: SessionContextChipProps) {
         ) : (
           <List dense disablePadding role="listbox" aria-label="Files in chat context">
             {files.map((path) => (
-              <ListItem key={path} disablePadding sx={{ px: 2 }}>
+              <ListItem
+                key={path}
+                disablePadding
+                sx={{ px: 2 }}
+                secondaryAction={
+                  onOpenInEditor ? (
+                    <Tooltip title="Open in editor">
+                      <IconButton
+                        edge="end"
+                        size="small"
+                        aria-label={`Open ${path} in editor`}
+                        onClick={() => {
+                          onOpenInEditor(path)
+                          setAnchorEl(null)
+                        }}
+                        data-testid={`context-open-editor-${path.replace(/\//g, '--')}`}
+                      >
+                        <EditNoteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  ) : undefined
+                }
+              >
                 <ListItemText
                   primary={path}
                   primaryTypographyProps={{

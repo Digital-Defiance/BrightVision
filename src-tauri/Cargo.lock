@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "bright-vision"
-version = "0.1.0-bright6"
+version = "0.1.1-bright1"
 dependencies = [
  "reqwest 0.12.28",
  "serde",

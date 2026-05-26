@@ -1,10 +1,10 @@
 # Local LLM setup (recommended)
 
-Bright Vision is **privacy-first**: the default path is a **local** model on your machine via [Ollama](https://ollama.com/), not rented cloud inference.
+BrightVision is **privacy-first**: the default path is a **local** model on your machine via [Ollama](https://ollama.com/), not rented cloud inference.
 
 ## Built into the desktop app (no `local-llm.sh`)
 
-Bright Vision does **not** shell out to the separate [local-llm](https://github.com/Digital-Defiance/local-llm) repo or `local-llm.sh`. Local inference is built in:
+BrightVision does **not** shell out to the separate [local-llm](https://github.com/Digital-Defiance/local-llm) repo or `local-llm.sh`. Local inference is built in:
 
 | Layer | What it does |
 |-------|----------------|
@@ -20,6 +20,10 @@ You only need **Ollama** installed plus a small env file (below). Use the in-app
 3. Preload with `keep_alive: -1` when the model is not already in `/api/ps`
 4. Refresh `keep_alive` only when the model is already loaded (fast path)
 
+### Dynamic model tiering (#39)
+
+**Settings → Local model router** (Ollama sessions only) classifies each prompt and picks from the **model hopper**: enable one or more **fast** and **heavy** models (switches per row), set tier, reorder priority. Empty heavy id uses your main LLM model. Fast tier uses `keep_alive: 5m`; heavy uses `keep_alive: 0`. Pull tags (`ollama pull …`) and enable **Auto before session** so swaps stay warm.
+
 ### What **Start session** does (Python)
 
 1. Optionally runs **Start Local LLM** first (if **Auto before session** is on)
@@ -33,7 +37,7 @@ Vision loads env keys from these paths (**later files win**). Settings → **loc
 1. `~/.config/local-llm/env`
 2. `$LOCAL_LLM_DIR/local-llm.env` (if set)
 3. `$BRIGHT_VISION_ROOT/local-llm.env` (if set)
-4. **`./local-llm.env`** at the Bright Vision repo root (recommended; copy from `local-llm.env.example`)
+4. **`./local-llm.env`** at the BrightVision repo root (recommended; copy from `local-llm.env.example`)
 5. `./local-llm/local-llm.env` (optional legacy folder layout)
 6. `~/local-llm/local-llm.env`
 7. **Settings → local-llm directory** — `local-llm.env` inside that path
@@ -52,7 +56,7 @@ OLLAMA_HOST=http://127.0.0.1:11434
 DATA_MODEL=qwen3.6:27b-q4_K_M
 ```
 
-| Variable | Bright Vision setting |
+| Variable | BrightVision setting |
 |----------|----------------------|
 | `OLLAMA_HOST` | **Ollama API base** → injected as `OLLAMA_API_BASE` when spawning the core |
 | `DATA_MODEL` / `LLM_MODEL` / `CHAT_MODEL` | **LLM model** as `ollama_chat/<tag>` |
@@ -64,11 +68,11 @@ On launch, Vision **fills empty** fields from those files. Use **Settings → Sy
 ```bash
 # 1. Install Ollama from https://ollama.com/
 
-# 2. In the Bright Vision repo
+# 2. In the BrightVision repo
 cp local-llm.env.example local-llm.env
 # edit DATA_MODEL
 
-# 3. Bright Vision → Settings: ollama_chat/<DATA_MODEL>
+# 3. BrightVision → Settings: ollama_chat/<DATA_MODEL>
 #    Terminal → Local LLM → Start
 #    Terminal → Start (session)
 ```
@@ -99,4 +103,4 @@ See previous troubleshooting themes: Ollama default TTL, **Unload** in the app, 
 
 ## Do you need `local-llm.sh`?
 
-**No**, for Bright Vision desktop use. **Yes**, only if you separately run the **local-llm** repo for indexed/Qdrant stacks (`./local-llm.sh start indexed`). That script is unrelated to the in-app **Start Local LLM** button.
+**No**, for BrightVision desktop use. **Yes**, only if you separately run the **local-llm** repo for indexed/Qdrant stacks (`./local-llm.sh start indexed`). That script is unrelated to the in-app **Start Local LLM** button.

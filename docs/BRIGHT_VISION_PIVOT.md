@@ -1,4 +1,4 @@
-# Bright Vision pivot plan
+# BrightVision pivot plan
 
 Rebrand in place in **this repo** (stay at `aider-vision` on disk until GitHub rename is convenient), and do the **giant lift-and-shift on `bright-vision-core` only** ([cecli](https://github.com/dwash96/cecli) fork + ported Vision HTTP/session layer).
 
@@ -18,7 +18,7 @@ Cherry-picking shell commits into `bright-vision-core` is wrong (UI/docs). Cherr
 
 | Piece | Today | Target |
 |-------|--------|--------|
-| Desktop shell | This repo | Bright Vision branding in place |
+| Desktop shell | This repo | BrightVision branding in place |
 | Engine submodule | `aider-vision-core` → `aider_vision_core` | **Remove** after port |
 | New engine submodule | `bright-vision-core` → raw **cecli** today | `bright_vision_core` + ported Vision API |
 | Website | `docs/index.html` | Rebuild (rewrite, not cherry-pick) |
@@ -81,8 +81,8 @@ Central constants in `src/brand.ts` (already the right pattern):
 |----------|-----------|
 | `PRODUCT_VISION` | `bright-vision` |
 | `PRODUCT_CORE` | `bright-vision-core` |
-| `DISPLAY_VISION` | `Bright Vision` |
-| `DISPLAY_CORE` | `Bright Vision Core` |
+| `DISPLAY_VISION` | `BrightVision` |
+| `DISPLAY_CORE` | `BrightVision Core` |
 | `DISPLAY_MONOGRAM` | `BV` |
 
 Then mechanical pass:
@@ -98,7 +98,7 @@ Then mechanical pass:
 
 `docs/index.html` is large and still Aider-branded. **Do not cherry-pick** shell commits into the site.
 
-1. New IA: hero (Bright Vision + cyan/magenta logo), install (Homebrew + Ollama + built-in Local LLM), docs links.
+1. New IA: hero (BrightVision + cyan/magenta logo), install (Homebrew + Ollama + built-in Local LLM), docs links.
 2. `docs/CNAME` → `bright-vision.digitaldefiance.org` (or your chosen host).
 3. Replace hero art with `assets/bright-vision.png` / logo SVG.
 4. Links to `Digital-Defiance/bright-vision`, `bright-vision-core`, homebrew-tap formula `bright-vision`.

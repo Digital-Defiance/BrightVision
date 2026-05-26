@@ -1,0 +1,20 @@
+# Example Homebrew cask for digital-defiance/homebrew-tap.
+# Copy to Casks/bright-vision.rb — token/path stay bright-vision; app/DMG use BrightVision.
+cask "bright-vision" do
+  version "0.2.0"
+  sha256 "REPLACE_WITH_SHA256"
+
+  url "https://github.com/Digital-Defiance/bright-vision/releases/download/v#{version}/BrightVision_#{version}_universal.dmg"
+  name "BrightVision"
+  desc "Local LLM-first desktop IDE (Tauri + BrightVision Core)"
+  homepage "https://bright-vision.digitaldefiance.org/"
+
+  app "BrightVision.app"
+
+  zap trash: [
+    "~/Library/Application Support/com.digitaldefiance.bright-vision",
+    "~/Library/Caches/com.digitaldefiance.bright-vision",
+    "~/Library/Preferences/com.digitaldefiance.bright-vision.plist",
+    "~/Library/Saved Application State/com.digitaldefiance.bright-vision.savedState",
+  ]
+end

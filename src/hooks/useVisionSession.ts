@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_CONFIG, type VisionConfig } from '../ipc/config'
-import type { CoreHttpClient, CoreSessionInfo, SendMessageOptions } from '../ipc/httpClient'
+import type {
+  CoreHttpClient,
+  CoreSessionInfo,
+  ModelRouterApiConfig,
+  SendMessageOptions,
+} from '../ipc/httpClient'
 import type { CoreEventBase } from '../ipc/events'
 import { isTauriRuntime } from '../ipc/isTauri'
 import { SseIdleTimeoutError } from '../ipc/sseIdle'
@@ -40,7 +45,10 @@ export function useVisionSession(onCoreEvent: (event: CoreEventBase) => void) {
   const startGenerationRef = useRef(0)
 
   const start = useCallback(
-    async (config: VisionConfig) => {
+    async (
+      config: VisionConfig,
+      startOptions?: { modelRouter?: ModelRouterApiConfig }
+    ) => {
       const generation = ++startGenerationRef.current
       setIsStarting(true)
       const session = createVisionApiSession(onCoreEvent, (update) => process.apply(update))
@@ -56,7 +64,7 @@ export function useVisionSession(onCoreEvent: (event: CoreEventBase) => void) {
           }
           resolved = { ...config, workingDir }
         }
-        const info = await session.start(resolved)
+        const info = await session.start(resolved, startOptions)
         if (generation !== startGenerationRef.current) {
           await session.stop().catch(() => {})
           throw new DOMException('Start superseded', 'AbortError')

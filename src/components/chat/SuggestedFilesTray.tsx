@@ -1,5 +1,6 @@
 import AddIcon from '@mui/icons-material/Add'
 import CloseIcon from '@mui/icons-material/Close'
+import EditNoteIcon from '@mui/icons-material/EditNote'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd'
 import {
@@ -29,6 +30,7 @@ export interface SuggestedFilesTrayProps {
   onQueueAdds: () => void
   onDismiss: (path: string) => void
   onClearAll: () => void
+  onOpenInEditor?: (path: string) => void
 }
 
 export function SuggestedFilesTray({
@@ -44,6 +46,7 @@ export function SuggestedFilesTray({
   onQueueAdds,
   onDismiss,
   onClearAll,
+  onOpenInEditor,
 }: SuggestedFilesTrayProps) {
   if (paths.length === 0) return null
 
@@ -116,26 +119,41 @@ export function SuggestedFilesTray({
       </Stack>
       <Stack direction="row" flexWrap="wrap" gap={0.5} useFlexGap sx={{ mb: 0.5 }}>
         {paths.map((path) => (
-          <Tooltip key={path} title="Click to add · × to dismiss">
-            <Chip
-              size="small"
-              label={path}
-              disabled={disabled}
-              clickable={!disabled}
-              onClick={() => onAddOne(path)}
-              data-testid={`suggested-file-chip-${path.replace(/\//g, '--')}`}
-              onDelete={disabled ? undefined : () => onDismiss(path)}
-              deleteIcon={
-                <IconButton size="small" aria-label={`Dismiss ${path}`}>
-                  <CloseIcon fontSize="inherit" />
+          <Stack key={path} direction="row" alignItems="center" spacing={0.25}>
+            <Tooltip title="Click to add to context · × to dismiss">
+              <Chip
+                size="small"
+                label={path}
+                disabled={disabled}
+                clickable={!disabled}
+                onClick={() => onAddOne(path)}
+                data-testid={`suggested-file-chip-${path.replace(/\//g, '--')}`}
+                onDelete={disabled ? undefined : () => onDismiss(path)}
+                deleteIcon={
+                  <IconButton size="small" aria-label={`Dismiss ${path}`}>
+                    <CloseIcon fontSize="inherit" />
+                  </IconButton>
+                }
+                sx={{
+                  maxWidth: '100%',
+                  '& .MuiChip-label': { fontFamily: 'monospace', fontSize: '0.75rem' },
+                }}
+              />
+            </Tooltip>
+            {onOpenInEditor && (
+              <Tooltip title="Open in editor">
+                <IconButton
+                  size="small"
+                  disabled={disabled}
+                  aria-label={`Open ${path} in editor`}
+                  onClick={() => onOpenInEditor(path)}
+                  data-testid={`suggested-file-open-${path.replace(/\//g, '--')}`}
+                >
+                  <EditNoteIcon fontSize="small" />
                 </IconButton>
-              }
-              sx={{
-                maxWidth: '100%',
-                '& .MuiChip-label': { fontFamily: 'monospace', fontSize: '0.75rem' },
-              }}
-            />
-          </Tooltip>
+              </Tooltip>
+            )}
+          </Stack>
         ))}
       </Stack>
       {prefs && onPrefsChange && (

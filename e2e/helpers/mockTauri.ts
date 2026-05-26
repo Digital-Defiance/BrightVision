@@ -55,6 +55,23 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
     pick_context_directory: async () => null,
     estimate_paths_context_chars: async () => 8000,
     detect_workspace: async () => '.',
+    write_timing_stats_csv: async () => {
+      log.commands.push('write_timing_stats_csv')
+      return null
+    },
+    list_workspace_files_cmd: async () => {
+      log.commands.push('list_workspace_files_cmd')
+      return ['src/App.tsx', 'src/components/chat/ChatPanel.tsx', 'README.md']
+    },
+    read_workspace_text_file: async (args) => {
+      log.commands.push('read_workspace_text_file')
+      const path = String((args as { path?: string }).path ?? '')
+      return `// mock content for ${path}\n`
+    },
+    write_workspace_text_file: async () => {
+      log.commands.push('write_workspace_text_file')
+      return null
+    },
     stop_core_api: async () => null,
     /** Match {@link E2E_CONFIG.coreApiUrl} so Playwright routes in mockCoreApi intercept fetches. */
     start_core_api: async () => '/api/core',
@@ -76,6 +93,12 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
       logs: ['mock start'],
     }),
     local_llm_stop_plain: async () => ['mock stop'],
+    local_llm_prepare_hopper: async () => ['mock: hopper prepared'],
+    ollama_ensure_model_loaded: async () => ({
+      logs: ['mock: model loaded'],
+      load_ms: 42,
+      swapped: false,
+    }),
     ollama_models_snapshot: async () => ({
       ollamaHost: 'http://127.0.0.1:11434',
       reachable: true,

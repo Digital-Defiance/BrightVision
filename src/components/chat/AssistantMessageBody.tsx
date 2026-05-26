@@ -52,6 +52,7 @@ function renderSegment(
 interface AssistantMessageBodyProps {
   content: string
   appliedFiles?: string[]
+  onOpenInEditor?: (path: string) => void
   turnTiming?: TurnThinkingTiming
   showSectionDurations?: boolean
   showTurnTotal?: boolean
@@ -60,6 +61,7 @@ interface AssistantMessageBodyProps {
 export function AssistantMessageBody({
   content,
   appliedFiles = [],
+  onOpenInEditor,
   turnTiming,
   showSectionDurations = true,
   showTurnTotal = true,
@@ -82,6 +84,24 @@ export function AssistantMessageBody({
           Response {formatDurationMs(turnTiming.turnDurationMs)}
           {turnTiming.thoughtMs > 0 && ` · Think ${formatDurationMs(turnTiming.thoughtMs)}`}
         </Typography>
+      )}
+      {appliedFiles.length > 0 && onOpenInEditor && (
+        <Stack direction="row" flexWrap="wrap" gap={0.5} useFlexGap alignItems="center">
+          <Typography variant="caption" color="text.secondary">
+            Edited:
+          </Typography>
+          {appliedFiles.map((path) => (
+            <Chip
+              key={path}
+              size="small"
+              label={path}
+              clickable
+              onClick={() => onOpenInEditor(path)}
+              data-testid={`applied-file-open-${path.replace(/\//g, '--')}`}
+              sx={{ '& .MuiChip-label': { fontFamily: 'monospace', fontSize: '0.7rem' } }}
+            />
+          ))}
+        </Stack>
       )}
       {sections.map((sec, si) => (
         <Box key={si}>

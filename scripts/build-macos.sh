@@ -10,8 +10,7 @@
 #   bash scripts/build-macos.sh 0.2.0 --publish --push-tap
 #   NONINTERACTIVE=1 bash scripts/build-macos.sh 0.1.0 --publish
 #
-# DMG name: Bright Vision_<version>_universal.dmg (from tauri.conf.json productName + version)
-# GitHub asset: Bright.Vision_<version>_universal.dmg (Homebrew-friendly, no spaces)
+# DMG + GitHub release asset: BrightVision_<version>_universal.dmg (tauri.conf.json productName)
 
 set -e
 
@@ -40,7 +39,7 @@ Usage: bash scripts/build-macos.sh [OPTIONS] [VERSION] [-- extra tauri build arg
   VERSION          Semver for the bundle (default: package.json "version").
                    Writes package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml.
                    Output: src-tauri/target/universal-apple-darwin/release/bundle/dmg/
-                           Bright Vision_<VERSION>_universal.dmg
+                           BrightVision_<VERSION>_universal.dmg
 
   --version VER    Same as positional VERSION (v0.1.0 accepted; leading v is stripped)
   --release-tag TAG
@@ -195,12 +194,12 @@ release_tag_name() {
 }
 
 dmg_asset_basename() {
-  printf 'Bright.Vision_%s_universal.dmg' "$APP_VERSION"
+  printf 'BrightVision_%s_universal.dmg' "$APP_VERSION"
 }
 
 find_built_dmg() {
   _dir="${ROOT}/src-tauri/target/universal-apple-darwin/release/bundle/dmg"
-  _expected="${_dir}/Bright Vision_${APP_VERSION}_universal.dmg"
+  _expected="${_dir}/BrightVision_${APP_VERSION}_universal.dmg"
   if [ -f "$_expected" ]; then
     printf '%s' "$_expected"
     return 0
@@ -251,8 +250,12 @@ publish_github_and_homebrew() {
 
   _tag="$(release_tag_name)"
   _asset_name="$(dmg_asset_basename)"
-  _staging="${ROOT}/src-tauri/target/universal-apple-darwin/release/bundle/dmg/${_asset_name}"
-  cp -f "$_src_dmg" "$_staging"
+  if [ "$(basename "$_src_dmg")" = "$_asset_name" ]; then
+    _staging="$_src_dmg"
+  else
+    _staging="${ROOT}/src-tauri/target/universal-apple-darwin/release/bundle/dmg/${_asset_name}"
+    cp -f "$_src_dmg" "$_staging"
+  fi
 
   _sha="$(sha256_file "$_staging")"
   echo "DMG: ${_staging}" >&2
@@ -265,7 +268,7 @@ publish_github_and_homebrew() {
     die "GitHub release ${_tag} missing; create tag or omit --no-push-tag"
   fi
 
-  _title="Bright Vision ${APP_VERSION}"
+  _title="BrightVision ${APP_VERSION}"
   if gh release view "$_tag" --repo "$GITHUB_REPO" >/dev/null 2>&1; then
     echo "Uploading to existing release ${_tag}..." >&2
     gh release upload "$_tag" "$_staging" --repo "$GITHUB_REPO" --clobber
@@ -523,7 +526,7 @@ print_release_env_summary() {
   echo "" >&2
   echo "Release environment:" >&2
   echo "  APP_VERSION=${APP_VERSION}" >&2
-  echo "  Expected DMG: Bright Vision_${APP_VERSION}_universal.dmg" >&2
+  echo "  Expected DMG: BrightVision_${APP_VERSION}_universal.dmg" >&2
   echo "  APPLE_SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY:-<not set>}" >&2
   if [ "$SKIP_NOTARIZE" -eq 1 ]; then
     echo "  Notarization: skipped" >&2
@@ -554,7 +557,7 @@ yarn tauri build --target universal-apple-darwin --bundles dmg ${EXTRA_TAURI_ARG
 _DMG_DIR="${ROOT}/src-tauri/target/universal-apple-darwin/release/bundle/dmg"
 echo "Done. DMG under ${_DMG_DIR}/"
 if [ -d "$_DMG_DIR" ]; then
-  _expected="Bright Vision_${APP_VERSION}_universal.dmg"
+  _expected="BrightVision_${APP_VERSION}_universal.dmg"
   if [ -f "${_DMG_DIR}/${_expected}" ]; then
     echo "  ${_DMG_DIR}/${_expected}"
   else

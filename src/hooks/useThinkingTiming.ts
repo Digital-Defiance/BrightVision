@@ -6,6 +6,7 @@ import {
   saveThinkingStats,
   type ThinkingStatsStore,
   type TimingStatsView,
+  type TurnTimingRecord,
 } from '../utils/thinkingStats'
 import type { ThinkingTimingPrefs } from '../theme/thinkingTimingPrefs'
 import {
@@ -98,13 +99,24 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
   }, [])
 
   const recordCompletedTurn = useCallback(
-    (timing: TurnThinkingTiming, resources?: TurnResourcePeak) => {
-      if (timing.turnDurationMs <= 0) return
+    (
+      timing: TurnThinkingTiming,
+      resources?: TurnResourcePeak,
+      tokens?: { tokensSent: number; tokensReceived: number }
+    ): TurnTimingRecord | null => {
+      if (timing.turnDurationMs <= 0) return null
+      let recorded: TurnTimingRecord | null = null
       setStatsStore((prev) => {
         const next = recordTurnTiming(prev, model, {
           thinkMs: timing.thoughtMs,
           promptChars: timing.userPromptChars,
           responseMs: timing.turnDurationMs,
+          ...(tokens
+            ? {
+                tokensSent: tokens.tokensSent,
+                tokensReceived: tokens.tokensReceived,
+              }
+            : {}),
           ...(resources && hasTurnResourcePeak(resources)
             ? {
                 peakCpuPct: resources.peakCpuPct,
@@ -113,9 +125,11 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
               }
             : {}),
         })
+        recorded = next.history[next.history.length - 1] ?? null
         saveThinkingStats(next)
         return next
       })
+      return recorded
     },
     [model]
   )

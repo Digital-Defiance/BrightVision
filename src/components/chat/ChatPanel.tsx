@@ -32,6 +32,8 @@ import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
 import type { TurnThinkingTiming } from '../../utils/thinkingTiming'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
+import { ModelRouterBar, type RouterEscalateOffer } from './ModelRouterBar'
+import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
 
 export interface ChatMessage {
   id: number
@@ -100,6 +102,13 @@ interface ChatPanelProps {
   turnStalled?: boolean
   lastUserMessageForRetry?: string | null
   onRetryEmptyLlm?: (mode: 'exact' | 'nudge') => void
+  onOpenInEditor?: (path: string) => void
+  modelRouterEnabled?: boolean
+  lastModelRoute?: ModelRouteSnapshot | null
+  routerEscalateOffer?: RouterEscalateOffer | null
+  onEscalateRouter?: () => void
+  onForceRouterTier?: (tier: 'fast' | 'heavy') => void
+  onDismissRouterEscalate?: () => void
 }
 
 export function ChatPanel({
@@ -144,6 +153,13 @@ export function ChatPanel({
   turnStalled = false,
   lastUserMessageForRetry = null,
   onRetryEmptyLlm,
+  onOpenInEditor,
+  modelRouterEnabled = false,
+  lastModelRoute = null,
+  routerEscalateOffer = null,
+  onEscalateRouter,
+  onForceRouterTier,
+  onDismissRouterEscalate,
 }: ChatPanelProps) {
   const pathTabIndex = useRef(0)
   const pathPrefix = parseFileCommandInput(inputValue)?.pathPrefix ?? ''
@@ -240,6 +256,7 @@ export function ChatPanel({
                     <AssistantMessageBody
                       content={entry.item.content}
                       appliedFiles={entry.item.appliedFiles}
+                      onOpenInEditor={onOpenInEditor}
                       turnTiming={entry.item.turnTiming}
                       showSectionDurations={thinkingTimingPrefs?.showSectionDurations ?? true}
                       showTurnTotal={thinkingTimingPrefs?.showMessageTurnTotal ?? true}
@@ -342,6 +359,7 @@ export function ChatPanel({
             onQueueAdds={onSuggestedQueueAdds}
             onDismiss={onSuggestedDismiss}
             onClearAll={onSuggestedClearAll}
+            onOpenInEditor={onOpenInEditor}
           />
         )}
 
@@ -354,6 +372,19 @@ export function ChatPanel({
         onPickCommand={onPickCommand}
         onPickPath={(path) => onInputChange(replaceFileCommandPath(inputValue, path))}
       />
+
+      {modelRouterEnabled && onForceRouterTier && onEscalateRouter && (
+        <ModelRouterBar
+          enabled={modelRouterEnabled}
+          lastRoute={lastModelRoute}
+          escalateOffer={routerEscalateOffer}
+          isRunning={isRunning}
+          isBusy={isBusy}
+          onEscalate={onEscalateRouter}
+          onForceTier={onForceRouterTier}
+          onDismissEscalate={onDismissRouterEscalate}
+        />
+      )}
 
       <Stack direction="row" spacing={1} sx={{ p: 1 }} alignItems="flex-end">
         {onAttachFiles && (

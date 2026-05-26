@@ -2,7 +2,7 @@
 
 ## What you install
 
-**Bright Vision** is the desktop app. **Bright Vision Core** ships inside it (submodule at `bright-vision-core/`: cecli + HTTP API). You do not add core to every project you code on.
+**BrightVision** is the desktop app. **BrightVision Core** ships inside it (submodule at `bright-vision-core/`: cecli + HTTP API). You do not add core to every project you code on.
 
 ## First-time setup (developers)
 
@@ -33,7 +33,7 @@ For local Ollama: set **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`)
 
 | Goal | Project workspace | Engine |
 |------|-------------------|--------|
-| Hack on Bright Vision itself | repo root (superproject) | Bundled `bright-vision-core` |
+| Hack on BrightVision itself | repo root (superproject) | Bundled `bright-vision-core` |
 | Work on any other repo | That repo’s root (via picker) | Same bundled engine |
 
 ## Environment

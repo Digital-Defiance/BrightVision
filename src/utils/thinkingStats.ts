@@ -32,6 +32,9 @@ export interface TurnTimingRecord {
   responseMs: number
   thinkMs: number
   promptChars: number
+  /** From core `Tokens:` tool_output when reported for this turn. */
+  tokensSent?: number
+  tokensReceived?: number
   /** Peak CPU % while the turn was active (desktop poll; optional). */
   peakCpuPct?: number
   /** Peak system RAM % during the turn. */
@@ -73,9 +76,26 @@ export interface TimingStatsView {
   response: TimingDistribution
   think: TimingDistribution
   avgThinkShare: number | null
+  /** Mean output tokens/sec over turns that reported received tokens. */
+  avgOutputTps: number | null
   byModel: ModelTimingStats[]
   history: TurnTimingRecord[]
 }
+
+export const TIMING_STATS_CSV_HEADERS = [
+  'at',
+  'model',
+  'response_ms',
+  'think_ms',
+  'think_share_pct',
+  'prompt_chars',
+  'tokens_sent',
+  'tokens_received',
+  'output_tps',
+  'peak_cpu_pct',
+  'peak_mem_pct',
+  'peak_gpu_pct',
+] as const
 
 /** @deprecated Use ModelTimingStats via buildTimingStatsView */
 export interface ModelThinkingSummary {
@@ -171,6 +191,8 @@ export function recordTurnTiming(
     peakCpuPct?: number
     peakMemPct?: number
     peakGpuPct?: number | null
+    tokensSent?: number
+    tokensReceived?: number
   }
 ): ThinkingStatsStore {
   if (sample.responseMs <= 0 && sample.thinkMs <= 0) return store
@@ -182,6 +204,12 @@ export function recordTurnTiming(
     responseMs: Math.max(0, sample.responseMs),
     thinkMs: Math.max(0, sample.thinkMs),
     promptChars: Math.max(0, sample.promptChars),
+    ...(sample.tokensSent != null && sample.tokensReceived != null
+      ? {
+          tokensSent: Math.max(0, sample.tokensSent),
+          tokensReceived: Math.max(0, sample.tokensReceived),
+        }
+      : {}),
     ...(sample.peakCpuPct != null && sample.peakMemPct != null
       ? {
           peakCpuPct: sample.peakCpuPct,
@@ -237,6 +265,76 @@ function percentile(sorted: number[], p: number): number {
 export function thinkShare(record: TurnTimingRecord): number | null {
   if (record.responseMs <= 0) return null
   return Math.min(1, record.thinkMs / record.responseMs)
+}
+
+/** Output tokens per second for one turn (received ÷ response wall time). */
+export function computeOutputTps(
+  tokensReceived: number | undefined,
+  responseMs: number
+): number | null {
+  if (tokensReceived == null || tokensReceived <= 0 || responseMs <= 0) return null
+  const tps = tokensReceived / (responseMs / 1000)
+  return Number.isFinite(tps) ? tps : null
+}
+
+export function formatOutputTps(tps: number | null): string {
+  if (tps == null || !Number.isFinite(tps)) return '—'
+  if (tps >= 100) return `${Math.round(tps)} tok/s`
+  if (tps >= 10) return `${tps.toFixed(1)} tok/s`
+  return `${tps.toFixed(2)} tok/s`
+}
+
+/** Running average output TPS across turns with token reports (full history, not display cap). */
+export function computeRunningAvgOutputTps(records: TurnTimingRecord[]): number | null {
+  const values = records
+    .map((r) => computeOutputTps(r.tokensReceived, r.responseMs))
+    .filter((t): t is number => t != null)
+  if (values.length === 0) return null
+  return values.reduce((n, v) => n + v, 0) / values.length
+}
+
+function csvEscape(value: string | number | null | undefined): string {
+  if (value == null || value === '') return ''
+  const s = String(value)
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+export function formatTurnTimingCsvRow(record: TurnTimingRecord): string {
+  const share = thinkShare(record)
+  const tps = computeOutputTps(record.tokensReceived, record.responseMs)
+  return [
+    record.at,
+    record.model,
+    record.responseMs,
+    record.thinkMs,
+    share != null ? Math.round(share * 100) : '',
+    record.promptChars,
+    record.tokensSent ?? '',
+    record.tokensReceived ?? '',
+    tps != null ? tps.toFixed(3) : '',
+    record.peakCpuPct ?? '',
+    record.peakMemPct ?? '',
+    record.peakGpuPct ?? '',
+  ]
+    .map(csvEscape)
+    .join(',')
+}
+
+export function timingStatsCsvHeaderLine(): string {
+  return [...TIMING_STATS_CSV_HEADERS].join(',')
+}
+
+/** Full CSV dump (all stored turns, newest first). */
+export function exportThinkingStatsCsv(
+  store: ThinkingStatsStore,
+  filterModel: string | null = null
+): string {
+  const filtered = filterModel
+    ? store.history.filter((r) => r.model === (filterModel.trim() || 'unknown'))
+    : store.history
+  const rows = [...filtered].reverse().map(formatTurnTimingCsvRow)
+  return [timingStatsCsvHeaderLine(), ...rows].join('\n') + '\n'
 }
 
 export function buildModelTimingStats(records: TurnTimingRecord[]): ModelTimingStats | null {
@@ -295,6 +393,7 @@ export function buildTimingStatsView(
     response: computeTimingDistribution(filtered.map((r) => r.responseMs)),
     think: computeTimingDistribution(filtered.map((r) => r.thinkMs)),
     avgThinkShare: shares.length > 0 ? shares.reduce((n, v) => n + v, 0) / shares.length : null,
+    avgOutputTps: computeRunningAvgOutputTps(filtered),
     byModel,
     history: [...filtered].reverse().slice(0, TIMING_STATS_DISPLAY_ROWS),
   }

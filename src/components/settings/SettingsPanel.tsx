@@ -16,6 +16,8 @@ import {
   applyLocalLlmToConfig,
   formatLocalLlmSources,
   type LocalLlmSnapshot,
+  type OllamaModelsSnapshot,
+  resolveLocalLlmForConfig,
 } from '../../ipc/localLlm'
 import { WorkspaceBar } from '../WorkspaceBar'
 import type { AppearanceConfig } from '../../theme/appearance'
@@ -27,6 +29,10 @@ import { LocalLlmPanel } from '../local-llm/LocalLlmPanel'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { SuggestedFilesSection } from './SuggestedFilesSection'
+import type { EditorLanguagePrefs } from '../../theme/editorLanguagePrefs'
+import { EditorLanguagesSection } from './EditorLanguagesSection'
+import { ModelRouterSection } from './ModelRouterSection'
+import type { ModelRouterPrefs } from '../../theme/modelRouterPrefs'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 import { AppVersionSection } from './AppVersionSection'
 import type { AppVersions } from '../../hooks/useAppVersions'
@@ -43,10 +49,16 @@ interface SettingsPanelProps {
   thinkingStatsStore: ThinkingStatsStore
   onClearThinkingStatsForModel: () => void
   onClearAllThinkingStats: () => void
+  onTimingStatsMessage?: (message: string, severity: 'info' | 'warning') => void
   resourceOverlayPrefs: ResourceOverlayPrefs
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
   suggestedFilesPrefs: SuggestedFilesPrefs
   onSuggestedFilesPrefsChange: (prefs: SuggestedFilesPrefs) => void
+  editorLanguagePrefs: EditorLanguagePrefs
+  onEditorLanguagePrefsChange: (prefs: EditorLanguagePrefs) => void
+  modelRouterPrefs: ModelRouterPrefs
+  onModelRouterPrefsChange: (prefs: ModelRouterPrefs) => void
+  sessionModel: string
   onSave: () => void
   onReset: () => void
   appVersions: AppVersions
@@ -64,16 +76,23 @@ export function SettingsPanel({
   thinkingStatsStore,
   onClearThinkingStatsForModel,
   onClearAllThinkingStats,
+  onTimingStatsMessage,
   resourceOverlayPrefs,
   onResourceOverlayPrefsChange,
   suggestedFilesPrefs,
   onSuggestedFilesPrefsChange,
+  editorLanguagePrefs,
+  onEditorLanguagePrefsChange,
+  modelRouterPrefs,
+  onModelRouterPrefsChange,
+  sessionModel,
   onSave,
   onReset,
   appVersions,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
+  const [ollamaTagsSnap, setOllamaTagsSnap] = useState<OllamaModelsSnapshot | null>(null)
 
   const refreshLocalLlm = useCallback(() => {
     if (!isTauriRuntime()) return
@@ -82,7 +101,14 @@ export function SettingsPanel({
     })
       .then(setLocalLlmSnap)
       .catch(() => setLocalLlmSnap(null))
-  }, [config.localLlmRoot])
+    const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config)
+    invoke<OllamaModelsSnapshot>('ollama_models_snapshot', {
+      ollamaHost,
+      modelTag: modelTag ?? '',
+    })
+      .then(setOllamaTagsSnap)
+      .catch(() => setOllamaTagsSnap(null))
+  }, [config.localLlmRoot, config.ollamaApiBase, config.model])
 
   useEffect(() => {
     if (!isTauriRuntime()) return
@@ -321,13 +347,27 @@ export function SettingsPanel({
         onChange={onSuggestedFilesPrefsChange}
       />
 
+      <EditorLanguagesSection
+        prefs={editorLanguagePrefs}
+        onChange={onEditorLanguagePrefsChange}
+      />
+
+      <ModelRouterSection
+        prefs={modelRouterPrefs}
+        sessionModel={sessionModel}
+        ollamaSnapshot={ollamaTagsSnap}
+        onChange={onModelRouterPrefsChange}
+      />
+
       <ThinkingTimingSection
         prefs={thinkingTimingPrefs}
         statsStore={thinkingStatsStore}
         currentModel={config.model}
+        workingDir={config.workingDir}
         onChange={onThinkingTimingPrefsChange}
         onClearModelStats={onClearThinkingStatsForModel}
         onClearAllStats={onClearAllThinkingStats}
+        onCsvMessage={onTimingStatsMessage}
       />
 
       <ResourceOverlaySection
