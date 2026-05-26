@@ -4,6 +4,8 @@ import { THINKING_STATS_STORAGE_KEY } from '../storageKeys'
 
 export { THINKING_STATS_STORAGE_KEY }
 export const MAX_TIMING_HISTORY = 300
+/** Rows shown in Settings timing history table (newest first). */
+export const TIMING_STATS_DISPLAY_ROWS = 7
 
 /** @deprecated v1 aggregate — used only for migration */
 interface ModelThinkingAggregateV1 {
@@ -30,6 +32,12 @@ export interface TurnTimingRecord {
   responseMs: number
   thinkMs: number
   promptChars: number
+  /** Peak CPU % while the turn was active (desktop poll; optional). */
+  peakCpuPct?: number
+  /** Peak system RAM % during the turn. */
+  peakMemPct?: number
+  /** Peak GPU % when available (null = no GPU sample with a reading). */
+  peakGpuPct?: number | null
 }
 
 export interface ThinkingStatsStore {
@@ -156,7 +164,14 @@ export function newTurnTimingId(): string {
 export function recordTurnTiming(
   store: ThinkingStatsStore,
   model: string,
-  sample: { responseMs: number; thinkMs: number; promptChars: number }
+  sample: {
+    responseMs: number
+    thinkMs: number
+    promptChars: number
+    peakCpuPct?: number
+    peakMemPct?: number
+    peakGpuPct?: number | null
+  }
 ): ThinkingStatsStore {
   if (sample.responseMs <= 0 && sample.thinkMs <= 0) return store
   const key = model.trim() || 'unknown'
@@ -167,6 +182,13 @@ export function recordTurnTiming(
     responseMs: Math.max(0, sample.responseMs),
     thinkMs: Math.max(0, sample.thinkMs),
     promptChars: Math.max(0, sample.promptChars),
+    ...(sample.peakCpuPct != null && sample.peakMemPct != null
+      ? {
+          peakCpuPct: sample.peakCpuPct,
+          peakMemPct: sample.peakMemPct,
+          peakGpuPct: sample.peakGpuPct ?? null,
+        }
+      : {}),
   }
   return {
     version: 2,
@@ -274,7 +296,7 @@ export function buildTimingStatsView(
     think: computeTimingDistribution(filtered.map((r) => r.thinkMs)),
     avgThinkShare: shares.length > 0 ? shares.reduce((n, v) => n + v, 0) / shares.length : null,
     byModel,
-    history: [...filtered].reverse(),
+    history: [...filtered].reverse().slice(0, TIMING_STATS_DISPLAY_ROWS),
   }
 }
 

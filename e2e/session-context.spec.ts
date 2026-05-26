@@ -25,4 +25,22 @@ test.describe('Session context chip (files + usage)', () => {
 
     await expect(chip).toContainText('1 file', { timeout: 15_000 })
   })
+
+  test('clicking context chip lists files in chat', async ({ page }) => {
+    await startMockSession(page, {
+      messageTurns: [[{ type: 'done', edited_files: [] }]],
+    })
+    await openChat(page)
+
+    await page.getByTestId('chat-input').fill('/add src/utils/contextUsage.ts')
+    await page.getByTestId('chat-send').click()
+    await expect(page.getByTestId('session-context-chip')).toContainText('1 file', {
+      timeout: 15_000,
+    })
+
+    await page.getByTestId('session-context-chip').click()
+    const popover = page.getByTestId('session-context-popover')
+    await expect(popover).toBeVisible()
+    await expect(popover).toContainText('src/utils/contextUsage.ts')
+  })
 })

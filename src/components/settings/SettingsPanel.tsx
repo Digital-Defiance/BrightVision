@@ -25,6 +25,8 @@ import { ResourceOverlaySection } from './ResourceOverlaySection'
 import type { ResourceOverlayPrefs } from '../../theme/resourceOverlayPrefs'
 import { LocalLlmPanel } from '../local-llm/LocalLlmPanel'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
+import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
+import { SuggestedFilesSection } from './SuggestedFilesSection'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 import { AppVersionSection } from './AppVersionSection'
 import type { AppVersions } from '../../hooks/useAppVersions'
@@ -43,6 +45,8 @@ interface SettingsPanelProps {
   onClearAllThinkingStats: () => void
   resourceOverlayPrefs: ResourceOverlayPrefs
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
+  suggestedFilesPrefs: SuggestedFilesPrefs
+  onSuggestedFilesPrefsChange: (prefs: SuggestedFilesPrefs) => void
   onSave: () => void
   onReset: () => void
   appVersions: AppVersions
@@ -62,6 +66,8 @@ export function SettingsPanel({
   onClearAllThinkingStats,
   resourceOverlayPrefs,
   onResourceOverlayPrefsChange,
+  suggestedFilesPrefs,
+  onSuggestedFilesPrefsChange,
   onSave,
   onReset,
   appVersions,
@@ -309,6 +315,11 @@ export function SettingsPanel({
       </Paper>
 
       <AppearanceSection appearance={appearance} onChange={onAppearanceChange} />
+
+      <SuggestedFilesSection
+        prefs={suggestedFilesPrefs}
+        onChange={onSuggestedFilesPrefsChange}
+      />
 
       <ThinkingTimingSection
         prefs={thinkingTimingPrefs}

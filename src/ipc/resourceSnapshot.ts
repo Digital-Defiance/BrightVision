@@ -12,6 +12,42 @@ export interface ResourceSnapshot {
   scope: string
 }
 
+/** Peak system utilization observed during one chat turn (polled while the turn is active). */
+export interface TurnResourcePeak {
+  peakCpuPct: number
+  peakMemPct: number
+  peakGpuPct: number | null
+  sampleCount: number
+}
+
+export function emptyTurnResourcePeak(): TurnResourcePeak {
+  return { peakCpuPct: 0, peakMemPct: 0, peakGpuPct: null, sampleCount: 0 }
+}
+
+export function hasTurnResourcePeak(peak: TurnResourcePeak): boolean {
+  return peak.sampleCount > 0
+}
+
+export function mergeSnapshotIntoPeak(
+  peak: TurnResourcePeak,
+  snapshot: ResourceSnapshot
+): TurnResourcePeak {
+  return {
+    peakCpuPct: Math.max(peak.peakCpuPct, snapshot.cpuPct),
+    peakMemPct: Math.max(peak.peakMemPct, snapshot.memPct),
+    peakGpuPct:
+      snapshot.gpuPct != null
+        ? Math.max(peak.peakGpuPct ?? 0, snapshot.gpuPct)
+        : peak.peakGpuPct,
+    sampleCount: peak.sampleCount + 1,
+  }
+}
+
+export function formatPeakPct(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—'
+  return `${Math.round(n)}%`
+}
+
 export interface ResourceOverlayRow {
   id: 'cpu' | 'ram' | 'gpu'
   label: string

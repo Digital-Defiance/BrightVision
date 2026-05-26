@@ -75,7 +75,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | 3 | **Done** | Stop in-flight turn (`cancelSend` + AbortSignal on fetch) |
 | 4 | **Done** | Queue messages while busy (`useVisionSession` queue + Queue button in `ChatPanel`) |
 | 12 | **Done** | `/add` / `/drop` path completion via Tauri `complete_workspace_path` + Tab in chat |
-| **32** | **Partial** | **Suggested files tray** — parse assistant **Answer** for repo-relative paths; tray above chat input with **Add all**, **Queue `/add`**, dismiss; uses `addFiles` + message queue (#4). **Open:** e2e polish, tree picker tie-in (#28). See [§ #32 design](#32-suggested-files--queued-add) |
+| **32** | **Partial** | **Suggested files tray** — parse assistant **Answer** for repo-relative paths (`-` / `*` / `1.` lists + backticks); tray above chat input with **Add all**, **Queue `/add`**, dismiss; uses `addFiles` + message queue (#4). Warn when paths fail to land in `files_in_chat`. **Open:** e2e polish, tree picker tie-in (#28). See [§ #32 design](#32-suggested-files--queued-add) |
 
 ## Approvals, workspace & engine
 
@@ -165,7 +165,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 … (one queued message per path)
 ```
 
-**Shipped (Partial):** `SuggestedFilesTray` in `ChatPanel`, session state in `App.tsx` (ingest on `done`, prune when `files_in_chat` updates). **Queue / Add all** use `POST …/files`; core ignores cecli `SwitchCoderSignal` after `/add` (`slash_helpers.py`). Remaining: structured SSE from core, optional auto-queue.
+**Shipped (Partial):** `SuggestedFilesTray` in `ChatPanel`, session state in `App.tsx` (ingest on `done`, prune when `files_in_chat` updates). **Queue / Add all** use `POST …/files`; core ignores cecli `SwitchCoderSignal` after `/add` (`slash_helpers.py`). **Add all & proceed** when `isAwaitingFilesCta`; Settings + tray toggles for auto-add / auto-`proceed`. Remaining: structured SSE from core; tie-in with edit confirms (not file-add confirms).
 
 ### Out of scope (v1)
 
@@ -240,11 +240,14 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 **Detection:** Section boundaries from streamed `► **THINKING**` / `**REASONING**` / `**ANSWER**` markers (`getActiveAssistantSection`); timer runs for the whole turn until `done` (survives tool_output gaps that split assistant bubbles).
 
-**Known context:** Response time is anchored at **Send** (`turnWallStartMsRef`); Stop no longer resets that anchor before `done`. Timing attaches only to the assistant bubble for the current turn (not an earlier message). **Queued sends** keep per-message Send time and restart the live timer after `done` when more messages are queued; `user_message` starts the timer if a turn begins without a prior `beginTurn`.
+**Known context:** Response time is anchored at **Send** (`turnWallStartMsRef`); Stop no longer resets that anchor before `done`. Timing attaches only to the assistant bubble for the current turn (not an earlier message). **Queued sends** keep per-message Send time and restart the live timer after `done` when more messages are queued; `user_message` starts the timer if a turn begins without a prior `beginTurn`. **Fix:** short queued follow-ups (e.g. `proceed`, 7 chars) no longer overwrite a long reply’s bubble timing or pollute history (`resolveMessageTurnTiming`, `shouldRecordTurnInHistory`).
+
+**Shipped (Partial):** Settings timing history stores **peak** CPU/RAM/GPU per turn (polled while the turn is active on desktop); last 7 rows in the history table.
 
 **Open / v2:**
 
 - Burndown chart or trend line in Settings / Tasks.
+- Mean vs peak toggle; process-scoped utilization (core + Ollama PIDs).
 - Export stats JSON; sync across machines.
 - Core SSE fields (`section_started`, `thought_ms`) instead of parser-only.
 - Include queued-wait time separately from model “thought” time.
@@ -258,7 +261,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 **Shipped (Partial):**
 
 1. **Unified `filesInChat`** — header chip uses `filesInChat` synced with `patchSessionFiles` on every `addFiles` / upload / `GET session` after `done`.
-2. **Header chip** — `N files · 12.0k sent` or `N files · ~2.1k added` (`data-testid="session-context-chip"`).
+2. **Header chip** — `N files · 12.0k sent` or `N files · ~2.1k added` (`data-testid="session-context-chip"`); **click** opens popover listing `files_in_chat`.
 3. **`/add` via chat** — after each `done`, `refreshSessionInfo()` pulls current `files_in_chat` from core.
 4. **Add estimate (desktop)** — Tauri `estimate_paths_context_chars` → cumulative `~tokens` in snackbar + tooltip; web relies on `Tokens:` line after turns.
 

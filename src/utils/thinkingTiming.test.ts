@@ -5,7 +5,9 @@ import {
   createTurnTimingTracker,
   finalizeTurnTiming,
   formatDurationMs,
+  resolveMessageTurnTiming,
   sectionDurationByIndex,
+  shouldRecordTurnInHistory,
   syncTurnTimingFromContent,
 } from './thinkingTiming'
 import { splitAssistantSections } from './chatStream'
@@ -49,6 +51,31 @@ describe('thinkingTiming', () => {
     expect(result.sections[1].durationMs).toBe(3000)
     expect(result.thoughtMs).toBe(4000)
     expect(result.turnDurationMs).toBe(8000)
+  })
+
+  it('keeps longer timing when a short follow-up would overwrite', () => {
+    const long = finalizeTurnTiming(createTurnTimingTracker(100, 0), 'answer', 674_000)
+    const short = finalizeTurnTiming(createTurnTimingTracker(7, 673_980), 'x', 674_000)
+    expect(resolveMessageTurnTiming(long, short).turnDurationMs).toBe(674_000)
+    expect(resolveMessageTurnTiming(undefined, short).turnDurationMs).toBe(20)
+  })
+
+  it('skips history for no-output housekeeping turns', () => {
+    const short = { turnDurationMs: 20, sections: [], userPromptChars: 7, thoughtMs: 0 }
+    expect(
+      shouldRecordTurnInHistory({
+        timing: short,
+        hadAssistantOutput: false,
+        hadExplicitAssistantTarget: false,
+      })
+    ).toBe(false)
+    expect(
+      shouldRecordTurnInHistory({
+        timing: short,
+        hadAssistantOutput: true,
+        hadExplicitAssistantTarget: false,
+      })
+    ).toBe(true)
   })
 
   it('zips section durations onto split sections', () => {

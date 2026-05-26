@@ -23,7 +23,14 @@ describe('thinkingStats', () => {
 
   it('records turns and builds per-model view', () => {
     let store = emptyThinkingStatsStore()
-    store = recordTurnTiming(store, 'm1', { responseMs: 5000, thinkMs: 2000, promptChars: 100 })
+    store = recordTurnTiming(store, 'm1', {
+      responseMs: 5000,
+      thinkMs: 2000,
+      promptChars: 100,
+      peakCpuPct: 42,
+      peakMemPct: 71,
+      peakGpuPct: 88,
+    })
     store = recordTurnTiming(store, 'm1', { responseMs: 8000, thinkMs: 3000, promptChars: 200 })
     store = recordTurnTiming(store, 'm2', { responseMs: 3000, thinkMs: 0, promptChars: 50 })
 
@@ -35,6 +42,7 @@ describe('thinkingStats', () => {
     const m1 = buildTimingStatsView(store, 'm1')
     expect(m1.totalTurns).toBe(2)
     expect(m1.history[0].responseMs).toBe(8000)
+    expect(m1.history.find((r) => r.peakCpuPct != null)?.peakCpuPct).toBe(42)
 
     const stats = buildModelTimingStats(store.history.filter((r) => r.model === 'm1'))
     expect(stats?.turns).toBe(2)

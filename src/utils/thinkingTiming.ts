@@ -179,3 +179,27 @@ export function msPer1kPromptChars(thoughtMs: number, promptChars: number): numb
   if (promptChars <= 0 || thoughtMs <= 0) return null
   return (thoughtMs / promptChars) * 1000
 }
+
+/**
+ * When a later `done` targets the same assistant bubble (e.g. queued "proceed" with no new
+ * tokens), keep the longer wall-clock timing from the substantive reply.
+ */
+export function resolveMessageTurnTiming(
+  existing: TurnThinkingTiming | undefined,
+  incoming: TurnThinkingTiming
+): TurnThinkingTiming {
+  if (!existing) return incoming
+  return incoming.turnDurationMs > existing.turnDurationMs ? incoming : existing
+}
+
+/** Skip recording noise turns that never produced assistant output (short queued housekeeping). */
+export function shouldRecordTurnInHistory(opts: {
+  timing: TurnThinkingTiming
+  hadAssistantOutput: boolean
+  hadExplicitAssistantTarget: boolean
+}): boolean {
+  const { timing, hadAssistantOutput, hadExplicitAssistantTarget } = opts
+  if (timing.turnDurationMs <= 0) return false
+  if (hadAssistantOutput || hadExplicitAssistantTarget) return true
+  return timing.turnDurationMs >= 1000
+}

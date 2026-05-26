@@ -30,6 +30,7 @@ import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
 import type { TurnThinkingTiming } from '../../utils/thinkingTiming'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
+import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 
 export interface ChatMessage {
   id: number
@@ -82,8 +83,12 @@ interface ChatPanelProps {
   onAttachContextDirectory?: () => void
   onAttachFolderPath?: (relativePath: string) => void
   suggestedFilePaths?: string[]
+  suggestedAwaitingProceed?: boolean
+  suggestedFilesPrefs?: SuggestedFilesPrefs
+  onSuggestedFilesPrefsChange?: (prefs: SuggestedFilesPrefs) => void
   onSuggestedAddOne?: (path: string) => void
   onSuggestedAddAll?: () => void
+  onSuggestedAddAllAndProceed?: () => void
   onSuggestedQueueAdds?: () => void
   onSuggestedDismiss?: (path: string) => void
   onSuggestedClearAll?: () => void
@@ -120,8 +125,12 @@ export function ChatPanel({
   onAttachContextDirectory,
   onAttachFolderPath,
   suggestedFilePaths = [],
+  suggestedAwaitingProceed = false,
+  suggestedFilesPrefs,
+  onSuggestedFilesPrefsChange,
   onSuggestedAddOne,
   onSuggestedAddAll,
+  onSuggestedAddAllAndProceed,
   onSuggestedQueueAdds,
   onSuggestedDismiss,
   onSuggestedClearAll,
@@ -306,8 +315,13 @@ export function ChatPanel({
           <SuggestedFilesTray
             paths={suggestedFilePaths}
             disabled={!isRunning}
+            isBusy={isBusy}
+            awaitingProceed={suggestedAwaitingProceed}
+            prefs={suggestedFilesPrefs}
+            onPrefsChange={onSuggestedFilesPrefsChange}
             onAddOne={onSuggestedAddOne}
             onAddAll={onSuggestedAddAll}
+            onAddAllAndProceed={onSuggestedAddAllAndProceed}
             onQueueAdds={onSuggestedQueueAdds}
             onDismiss={onSuggestedDismiss}
             onClearAll={onSuggestedClearAll}

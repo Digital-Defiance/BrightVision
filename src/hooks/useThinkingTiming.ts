@@ -20,6 +20,10 @@ import {
   type TurnTimingTracker,
 } from '../utils/thinkingTiming'
 import { getActiveAssistantSection } from '../utils/chatStream'
+import {
+  hasTurnResourcePeak,
+  type TurnResourcePeak,
+} from '../ipc/resourceSnapshot'
 
 export type { LiveThinkingState } from '../utils/thinkingTiming'
 
@@ -94,13 +98,20 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
   }, [])
 
   const recordCompletedTurn = useCallback(
-    (timing: TurnThinkingTiming) => {
+    (timing: TurnThinkingTiming, resources?: TurnResourcePeak) => {
       if (timing.turnDurationMs <= 0) return
       setStatsStore((prev) => {
         const next = recordTurnTiming(prev, model, {
           thinkMs: timing.thoughtMs,
           promptChars: timing.userPromptChars,
           responseMs: timing.turnDurationMs,
+          ...(resources && hasTurnResourcePeak(resources)
+            ? {
+                peakCpuPct: resources.peakCpuPct,
+                peakMemPct: resources.peakMemPct,
+                peakGpuPct: resources.peakGpuPct,
+              }
+            : {}),
         })
         saveThinkingStats(next)
         return next

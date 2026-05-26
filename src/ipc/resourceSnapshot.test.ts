@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatResourceOverlayLine, resourceOverlayRows } from './resourceSnapshot'
+import {
+  emptyTurnResourcePeak,
+  formatResourceOverlayLine,
+  hasTurnResourcePeak,
+  mergeSnapshotIntoPeak,
+  resourceOverlayRows,
+} from './resourceSnapshot'
 
 const sample = {
   cpuPct: 16,
@@ -27,5 +33,17 @@ describe('resourceSnapshot', () => {
   it('formatResourceOverlayLine joins rows', () => {
     expect(formatResourceOverlayLine(sample, true)).toContain('16%')
     expect(formatResourceOverlayLine(sample, true)).toContain('GPU')
+  })
+
+  it('tracks per-turn peaks across polls', () => {
+    let peak = emptyTurnResourcePeak()
+    expect(hasTurnResourcePeak(peak)).toBe(false)
+    peak = mergeSnapshotIntoPeak(peak, { ...sample, cpuPct: 10, memPct: 50 })
+    peak = mergeSnapshotIntoPeak(peak, { ...sample, cpuPct: 99, memPct: 80, gpuPct: 55 })
+    expect(hasTurnResourcePeak(peak)).toBe(true)
+    expect(peak.peakCpuPct).toBe(99)
+    expect(peak.peakMemPct).toBe(80)
+    expect(peak.peakGpuPct).toBe(55)
+    expect(peak.sampleCount).toBe(2)
   })
 })

@@ -18,12 +18,15 @@ import {
   Typography,
 } from '@mui/material'
 import { useMemo, useState } from 'react'
+import { formatPeakPct } from '../../ipc/resourceSnapshot'
+import { isTauriRuntime } from '../../ipc/isTauri'
 import {
   buildTimingStatsView,
   exportThinkingStatsJson,
   formatThinkSharePct,
   listModelsInHistory,
   thinkShare,
+  TIMING_STATS_DISPLAY_ROWS,
   type ThinkingStatsStore,
 } from '../../utils/thinkingStats'
 import { formatDurationMs } from '../../utils/thinkingTiming'
@@ -115,8 +118,8 @@ export function ThinkingStatsPanel({
     return (
       <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
         <Typography variant="body2" color="text.secondary" data-testid="timing-stats-empty">
-          No timing history yet. Complete a chat turn (Send → done) to record response and think
-          times.
+          No timing history yet. Complete a chat turn (Send → done) to record response, think time,
+          and peak CPU/RAM/GPU (desktop).
         </Typography>
       </Box>
     )
@@ -224,9 +227,14 @@ export function ThinkingStatsPanel({
       )}
 
       <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-        History (newest first, up to {store.history.length} stored)
+        History (newest first, last {TIMING_STATS_DISPLAY_ROWS} turns
+        {store.history.length > TIMING_STATS_DISPLAY_ROWS
+          ? ` · ${store.history.length} stored`
+          : ''}
+        )
+        {isTauriRuntime() ? ' · peak CPU/RAM/GPU sampled while the turn runs' : ''}
       </Typography>
-      <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 280 }}>
+      <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 320 }}>
         <Table size="small" stickyHeader data-testid="timing-stats-history">
           <TableHead>
             <TableRow>
@@ -235,6 +243,13 @@ export function ThinkingStatsPanel({
               <TableCell align="right">Response</TableCell>
               <TableCell align="right">Think</TableCell>
               <TableCell align="right">Think %</TableCell>
+              {isTauriRuntime() && (
+                <>
+                  <TableCell align="right">CPU peak</TableCell>
+                  <TableCell align="right">RAM peak</TableCell>
+                  <TableCell align="right">GPU peak</TableCell>
+                </>
+              )}
               <TableCell align="right">Prompt</TableCell>
             </TableRow>
           </TableHead>
@@ -259,6 +274,13 @@ export function ThinkingStatsPanel({
                 <TableCell align="right">{formatDurationMs(row.responseMs)}</TableCell>
                 <TableCell align="right">{formatDurationMs(row.thinkMs)}</TableCell>
                 <TableCell align="right">{formatThinkSharePct(thinkShare(row))}</TableCell>
+                {isTauriRuntime() && (
+                  <>
+                    <TableCell align="right">{formatPeakPct(row.peakCpuPct)}</TableCell>
+                    <TableCell align="right">{formatPeakPct(row.peakMemPct)}</TableCell>
+                    <TableCell align="right">{formatPeakPct(row.peakGpuPct)}</TableCell>
+                  </>
+                )}
                 <TableCell align="right">{row.promptChars.toLocaleString()}</TableCell>
               </TableRow>
             ))}

@@ -4,6 +4,7 @@ import {
   buildSuggestedFileEntries,
   extractAnswerSection,
   extractSuggestedFilePaths,
+  isAwaitingFilesCta,
   mergeSuggestedPaths,
   parseAddCommandPath,
 } from './suggestedFiles'
@@ -24,11 +25,34 @@ Based on your goal to deepen Kiro/EARS spec-driven development support, the foll
 
 Please add these files to the chat when you're ready, and let me know exactly which EARS/Kiro features or spec workflows you want to prioritize first (e.g., stricter EARS syntax validation, multi-file spec syncing, UI enhancements for spec layers, etc.). I'll wait for your input before proposing any changes.`
 
+const NUMBERED_CONFIRM_ASK = `► **ANSWER**
+To implement this feature, you'll need:
+
+1. \`bright-vision-core/cecli/io.py\`
+2. \`bright-vision-core/cecli/coders/base_coder.py\`
+3. \`src/components/chat/ChatPanel.tsx\`
+
+Could you please add these **three files** to the chat?`
+
 describe('suggestedFiles', () => {
   it('extracts Answer section', () => {
     const answer = extractAnswerSection(KIRO_SPEC_ANSWER)
     expect(answer).toContain('Kiro/EARS spec-driven')
     expect(answer).not.toContain('Please add these files')
+  })
+
+  it('detects add-files call-to-action', () => {
+    expect(isAwaitingFilesCta(NUMBERED_CONFIRM_ASK)).toBe(true)
+    expect(isAwaitingFilesCta(KIRO_SPEC_ANSWER)).toBe(true)
+    expect(isAwaitingFilesCta('Here is a patch for `src/foo.ts`.')).toBe(false)
+  })
+
+  it('extracts numbered list paths from confirm_ask style answers', () => {
+    expect(extractSuggestedFilePaths(NUMBERED_CONFIRM_ASK)).toEqual([
+      'bright-vision-core/cecli/coders/base_coder.py',
+      'bright-vision-core/cecli/io.py',
+      'src/components/chat/ChatPanel.tsx',
+    ])
   })
 
   it('extracts backtick paths from spec-driven file list', () => {

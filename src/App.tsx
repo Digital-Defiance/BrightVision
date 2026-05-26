@@ -39,6 +39,7 @@ import {
 import { isTauriRuntime } from './ipc/isTauri'
 import { CoreHttpClient } from './ipc/httpClient'
 import { useVisionSession } from './hooks/useVisionSession'
+import { useTurnResourcePeak } from './hooks/useTurnResourcePeak'
 import { usePathCompletion } from './hooks/usePathCompletion'
 import { filesToUploadParts } from './utils/imageUpload'
 import { buildImplementStepMessage, buildStartWorkMessage } from './todos/formatContext'
@@ -53,9 +54,19 @@ import { useGitStatus } from './hooks/useGitStatus'
 import { autoStageEditedFiles } from './ipc/gitStatus'
 import { useSessionActivity } from './hooks/useSessionActivity'
 import {
+  extractSuggestedFilePaths,
   filterPathsNotInChat,
+  isAwaitingFilesCta,
   mergeSuggestedPaths,
+  pathsNotInChat,
 } from './utils/suggestedFiles'
+import {
+  loadSuggestedFilesPrefs,
+  PROCEED_AFTER_FILES_MESSAGE,
+  saveSuggestedFilesPrefs,
+  type SuggestedFilesPrefs,
+} from './theme/suggestedFilesPrefs'
+import { SessionContextChip } from './components/session/SessionContextChip'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
 import { TodoPanel } from './components/todos/TodoPanel'
 import { GitPanel } from './components/GitPanel'
@@ -96,15 +107,17 @@ import {
   loadThinkingStats,
   saveThinkingStats,
 } from './utils/thinkingStats'
-import type { TurnThinkingTiming } from './utils/thinkingTiming'
+import {
+  resolveMessageTurnTiming,
+  shouldRecordTurnInHistory,
+  type TurnThinkingTiming,
+} from './utils/thinkingTiming'
 import { estimatePathsContextChars } from './ipc/contextEstimate'
 import {
   charsToEstimatedTokens,
   EMPTY_CONTEXT_USAGE,
-  formatSessionContextChip,
   formatTokenCount,
   parseTokenUsageReport,
-  sessionContextTooltip,
   type SessionContextUsage,
 } from './utils/contextUsage'
 import { createVisionTheme } from './theme'
@@ -179,6 +192,8 @@ function AppShell({
   setAppearance,
   thinkingTimingPrefs,
   setThinkingTimingPrefs,
+  suggestedFilesPrefs,
+  setSuggestedFilesPrefs,
   resourceOverlayPrefs,
   setResourceOverlayPrefs,
 }: {
@@ -186,6 +201,8 @@ function AppShell({
   setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
   thinkingTimingPrefs: ThinkingTimingPrefs
   setThinkingTimingPrefs: React.Dispatch<React.SetStateAction<ThinkingTimingPrefs>>
+  suggestedFilesPrefs: SuggestedFilesPrefs
+  setSuggestedFilesPrefs: React.Dispatch<React.SetStateAction<SuggestedFilesPrefs>>
   resourceOverlayPrefs: ResourceOverlayPrefs
   setResourceOverlayPrefs: React.Dispatch<React.SetStateAction<ResourceOverlayPrefs>>
 }) {
@@ -205,7 +222,10 @@ function AppShell({
   const remainingAutoRef = useRef(0)
   remainingAutoRef.current = remainingAutoApproves
   const [statusMessage, setStatusMessage] = useState('')
-  const [snackbar, setSnackbar] = useState<{ message: string; severity: 'error' | 'info' } | null>(
+  const [snackbar, setSnackbar] = useState<{
+    message: string
+    severity: 'error' | 'info' | 'warning'
+  } | null>(
     null
   )
   const [showWelcome, setShowWelcome] = useState(
@@ -228,6 +248,8 @@ function AppShell({
   const chatMessagesRef = useRef(chatMessages)
   chatMessagesRef.current = chatMessages
   const ingestSuggestionsRef = useRef<(content: string) => void>(() => {})
+  const suggestedFilesPrefsRef = useRef(suggestedFilesPrefs)
+  suggestedFilesPrefsRef.current = suggestedFilesPrefs
   const lastAssistantStreamRef = useRef('')
   const lastUserPromptCharsRef = useRef(0)
   const turnTimingActiveRef = useRef(false)
@@ -238,6 +260,8 @@ function AppShell({
   const queuedCountRef = useRef(0)
   /** Assistant bubble for the in-flight turn (avoids attributing timing to an older message). */
   const turnAssistantMessageIdRef = useRef<number | null>(null)
+  /** True once this turn streams at least one assistant token (vs. empty queued follow-up). */
+  const turnHadAssistantOutputRef = useRef(false)
   const refreshSessionInfoRef = useRef<() => Promise<import('./ipc/httpClient').CoreSessionInfo | null>>(
     async () => null
   )
@@ -251,7 +275,10 @@ function AppShell({
       opts?: { wallStartMs?: number; promptChars?: number }
     ) => TurnThinkingTiming | null
     reset: () => void
-    recordCompletedTurn: (t: TurnThinkingTiming) => void
+    recordCompletedTurn: (
+      t: TurnThinkingTiming,
+      resources?: import('./ipc/resourceSnapshot').TurnResourcePeak
+    ) => void
   }>({
     beginTurn: () => {},
     syncContent: () => {},
@@ -262,6 +289,7 @@ function AppShell({
   const startTurnTimingRef = useRef((promptChars: number, turnStartMs: number) => {
     turnWallStartMsRef.current = turnStartMs
     turnAssistantMessageIdRef.current = null
+    turnHadAssistantOutputRef.current = false
     thinkingTimingRef.current.beginTurn(promptChars, turnStartMs)
     turnTimingActiveRef.current = true
   })
@@ -279,6 +307,8 @@ function AppShell({
   })
   const unlistenersRef = useRef<UnlistenFn[]>([])
   const [suggestedPaths, setSuggestedPaths] = useState<string[]>([])
+  const [suggestedAwaitingProceed, setSuggestedAwaitingProceed] = useState(false)
+  const [trackTurnResources, setTrackTurnResources] = useState(false)
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
@@ -523,6 +553,7 @@ function AppShell({
           sid = orderId
           streamingAssistantId.current = sid
           turnAssistantMessageIdRef.current = sid
+          turnHadAssistantOutputRef.current = true
           setChatMessages((prev) => {
             const next = capList(
               [...prev, { id: sid!, role: 'assistant' as const, content: chunk }],
@@ -533,6 +564,7 @@ function AppShell({
           })
         } else {
           const captureSid = sid
+          turnHadAssistantOutputRef.current = true
           setChatMessages((prev) => {
             const next = capList(
               prev.map((m) => {
@@ -643,6 +675,7 @@ function AppShell({
             : []
         const wallStart = turnWallStartMsRef.current
         const turnAssistantId = turnAssistantMessageIdRef.current
+        const hadAssistantOutput = turnHadAssistantOutputRef.current
         let turnTiming: TurnThinkingTiming | null = null
         if (wallStart != null) {
           const prev = chatMessagesRef.current
@@ -658,9 +691,22 @@ function AppShell({
               wallStartMs: wallStart,
               promptChars: lastUserPromptCharsRef.current,
             })
-            if (turnTiming) thinkingTimingRef.current.recordCompletedTurn(turnTiming)
+            if (
+              turnTiming &&
+              shouldRecordTurnInHistory({
+                timing: turnTiming,
+                hadAssistantOutput,
+                hadExplicitAssistantTarget: turnAssistantId != null,
+              })
+            ) {
+              thinkingTimingRef.current.recordCompletedTurn(
+                turnTiming,
+                takeTurnResourcePeakRef.current()
+              )
+            }
           }
         }
+        if (!turnTiming) takeTurnResourcePeakRef.current()
         turnAssistantMessageIdRef.current = null
         streamingAssistantId.current = null
         setStatusMessage('Ready')
@@ -669,23 +715,27 @@ function AppShell({
           if (!armNextQueuedTurnTimingRef.current()) {
             turnWallStartMsRef.current = null
             turnTimingActiveRef.current = false
+            setTrackTurnResources(false)
             thinkingTimingRef.current.reset()
           }
         } else {
           turnWallStartMsRef.current = null
           turnTimingActiveRef.current = false
+          setTrackTurnResources(false)
           thinkingTimingRef.current.reset()
           pendingTurnTimingQueueRef.current = []
         }
         setChatMessages((prev) => {
           const attachId =
             turnAssistantId ??
-            (() => {
-              for (let i = prev.length - 1; i >= 0; i--) {
-                if (prev[i].role === 'assistant') return prev[i].id
-              }
-              return null
-            })()
+            (hadAssistantOutput
+              ? (() => {
+                  for (let i = prev.length - 1; i >= 0; i--) {
+                    if (prev[i].role === 'assistant') return prev[i].id
+                  }
+                  return null
+                })()
+              : null)
           if (attachId === null || !turnTiming) return prev
           return capList(
             prev.map((m) => {
@@ -693,7 +743,7 @@ function AppShell({
               return {
                 ...m,
                 ...(applied.length > 0 ? { appliedFiles: applied } : {}),
-                turnTiming,
+                turnTiming: resolveMessageTurnTiming(m.turnTiming, turnTiming),
               }
             }),
             MAX_CHAT_MESSAGES
@@ -753,6 +803,22 @@ function AppShell({
           const assistantText = lastAssistantStreamRef.current
           if (assistantText.trim()) {
             ingestSuggestionsRef.current(assistantText)
+            const awaiting = isAwaitingFilesCta(assistantText)
+            setSuggestedAwaitingProceed(awaiting)
+            const prefs = suggestedFilesPrefsRef.current
+            if (awaiting && prefs.autoAddSuggested) {
+              const paths = filterPathsNotInChat(
+                extractSuggestedFilePaths(assistantText),
+                filesInChatRef.current
+              )
+              if (paths.length) {
+                void runSuggestedAddAndProceedRef.current(paths, {
+                  proceed: prefs.autoProceedAfterAdd,
+                })
+              }
+            }
+          } else {
+            setSuggestedAwaitingProceed(false)
           }
           lastAssistantStreamRef.current = ''
         }
@@ -858,6 +924,7 @@ function AppShell({
   const applyFilesAdded = useCallback(
     async (paths: string[], info: { files_in_chat: string[] }, label?: string) => {
       syncSessionFiles(info.files_in_chat)
+      const missing = pathsNotInChat(paths, info.files_in_chat)
       const est = await recordAddedContextEstimate(paths)
       const parts: string[] = []
       if (label) parts.push(label)
@@ -865,12 +932,22 @@ function AppShell({
       if (parts.length) {
         setSnackbar({ message: parts.join(' · '), severity: 'info' })
       }
+      if (missing.length) {
+        setSnackbar({
+          message: `Not added to context: ${missing.join(', ')}`,
+          severity: 'warning',
+        })
+      }
     },
     [syncSessionFiles, recordAddedContextEstimate]
   )
 
   const stallWatch = useSessionStallWatch(isBusy, queuedCount)
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
+  const { resetPeak: resetTurnResourcePeak, takePeak: takeTurnResourcePeak } =
+    useTurnResourcePeak(isRunning && trackTurnResources, resourceOverlayPrefs.pollIntervalSec)
+  const takeTurnResourcePeakRef = useRef(takeTurnResourcePeak)
+  takeTurnResourcePeakRef.current = takeTurnResourcePeak
   stallWatchRef.current = stallWatch.touchEvent
 
   const thinkingTiming = useThinkingTiming(savedConfig.model, thinkingTimingPrefs)
@@ -884,6 +961,8 @@ function AppShell({
   startTurnTimingRef.current = (promptChars: number, turnStartMs: number) => {
     turnWallStartMsRef.current = turnStartMs
     turnAssistantMessageIdRef.current = null
+    resetTurnResourcePeak()
+    setTrackTurnResources(true)
     thinkingTiming.beginTurn(promptChars, turnStartMs)
     turnTimingActiveRef.current = true
   }
@@ -893,6 +972,7 @@ function AppShell({
     // Keep turnWallStartMsRef until `done` so wall-clock response time stays correct.
     thinkingTiming.reset()
     turnTimingActiveRef.current = false
+    setTrackTurnResources(false)
     pendingTurnTimingQueueRef.current = []
   }, [thinkingTiming, cancelSend])
 
@@ -1130,6 +1210,7 @@ function AppShell({
       // Do not clear turnWallStartMsRef here — late `done` still finalizes full Send→done time.
       thinkingTiming.reset()
       turnTimingActiveRef.current = false
+      setTrackTurnResources(false)
       pendingTurnTimingQueueRef.current = []
       setRemainingAutoApproves(0)
       setTerminalLines((prev) => [
@@ -1310,6 +1391,87 @@ function AppShell({
     }
   }, [isRunning, isBusy, suggestedPaths, addFiles, applyFilesAdded])
 
+  const sendProceedMessage = useCallback(async () => {
+    if (!isRunning) return
+    const msg = PROCEED_AFTER_FILES_MESSAGE
+    lastUserPromptCharsRef.current = msg.length
+    lastAssistantStreamRef.current = ''
+    stallWatch.touchEvent('user_send')
+    appendUserMessageToChat(msg, true)
+    const turnStartMs = Date.now()
+    if (isBusy) {
+      pendingTurnTimingQueueRef.current.push({ promptChars: msg.length, turnStartMs })
+    } else {
+      startTurnTimingRef.current(msg.length, turnStartMs)
+    }
+    try {
+      const result = await send(msg)
+      if (result.queued) {
+        setSnackbar({
+          message: 'Queued “proceed” — will send when the current turn finishes',
+          severity: 'info',
+        })
+      }
+    } catch (err) {
+      turnWallStartMsRef.current = null
+      turnAssistantMessageIdRef.current = null
+      turnHadAssistantOutputRef.current = false
+      turnTimingActiveRef.current = false
+      thinkingTimingRef.current.reset()
+      removeLastPendingUserMessage()
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [
+    isRunning,
+    isBusy,
+    send,
+    appendUserMessageToChat,
+    removeLastPendingUserMessage,
+    stallWatch,
+  ])
+
+  const runSuggestedAddAndProceed = useCallback(
+    async (paths: string[], opts?: { proceed?: boolean }) => {
+      if (!isRunning || paths.length === 0) return
+      const shouldProceed = opts?.proceed ?? true
+      try {
+        const info = await addFiles(paths)
+        setSuggestedPaths((prev) => filterPathsNotInChat(prev, info.files_in_chat))
+        await applyFilesAdded(
+          paths,
+          info,
+          `Added ${paths.length} file${paths.length === 1 ? '' : 's'} to session`
+        )
+        if (pathsNotInChat(paths, info.files_in_chat).length > 0) return
+        if (shouldProceed) {
+          await sendProceedMessage()
+        }
+      } catch (err) {
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+    },
+    [isRunning, addFiles, applyFilesAdded, sendProceedMessage]
+  )
+
+  const runSuggestedAddAndProceedRef = useRef(runSuggestedAddAndProceed)
+  runSuggestedAddAndProceedRef.current = runSuggestedAddAndProceed
+
+  const handleAddAllAndProceed = useCallback(async () => {
+    if (!isRunning || suggestedPaths.length === 0) return
+    await runSuggestedAddAndProceed([...suggestedPaths], { proceed: true })
+  }, [isRunning, suggestedPaths, runSuggestedAddAndProceed])
+
+  const handleSuggestedFilesPrefsChange = useCallback((prefs: SuggestedFilesPrefs) => {
+    setSuggestedFilesPrefs(prefs)
+    saveSuggestedFilesPrefs(prefs)
+  }, [setSuggestedFilesPrefs])
+
   const handleStartWork = useCallback(
     async (todo: TodoItem) => {
       await setActiveTodo(todo.id)
@@ -1450,7 +1612,9 @@ function AppShell({
     } catch (err) {
       turnWallStartMsRef.current = null
       turnAssistantMessageIdRef.current = null
+      turnHadAssistantOutputRef.current = false
       turnTimingActiveRef.current = false
+      setTrackTurnResources(false)
       thinkingTimingRef.current.reset()
       if (err instanceof Error && err.name === 'AbortError') {
         setStatusMessage('Stopped')
@@ -1526,13 +1690,7 @@ function AppShell({
           (isStarting ? 'Starting…' : isRunning ? 'Session live' : 'Stopped')}
       </Typography>
       {isRunning && sessionInfo && (
-        <Chip
-          data-testid="session-context-chip"
-          label={formatSessionContextChip(sessionFiles.length, contextUsage)}
-          size="small"
-          variant="outlined"
-          title={sessionContextTooltip(sessionFiles, contextUsage)}
-        />
+        <SessionContextChip files={sessionFiles} usage={contextUsage} />
       )}
       {remainingAutoApproves > 0 && (
         <Chip
@@ -1645,8 +1803,12 @@ function AppShell({
                 !isTauriRuntime() ? (path) => void handleAttachFolderPath(path) : undefined
               }
               suggestedFilePaths={suggestedPaths}
+              suggestedAwaitingProceed={suggestedAwaitingProceed}
+              suggestedFilesPrefs={suggestedFilesPrefs}
+              onSuggestedFilesPrefsChange={handleSuggestedFilesPrefsChange}
               onSuggestedAddOne={(path) => void handleAddSuggestedOne(path)}
               onSuggestedAddAll={() => void handleAddAllSuggested()}
+              onSuggestedAddAllAndProceed={() => void handleAddAllAndProceed()}
               onSuggestedQueueAdds={() => void handleQueueSuggestedAdds()}
               onSuggestedDismiss={handleDismissSuggested}
               onSuggestedClearAll={handleClearSuggested}
@@ -1803,6 +1965,8 @@ function AppShell({
                 onClearAllThinkingStats={handleClearAllThinkingStats}
                 resourceOverlayPrefs={resourceOverlayPrefs}
                 onResourceOverlayPrefsChange={setResourceOverlayPrefs}
+                suggestedFilesPrefs={suggestedFilesPrefs}
+                onSuggestedFilesPrefsChange={handleSuggestedFilesPrefsChange}
                 onSave={handleSave}
                 onReset={handleReset}
                 appVersions={appVersions}
@@ -1832,6 +1996,9 @@ export default function App() {
   const [thinkingTimingPrefs, setThinkingTimingPrefs] = useState<ThinkingTimingPrefs>(() =>
     loadThinkingTimingPrefs()
   )
+  const [suggestedFilesPrefs, setSuggestedFilesPrefs] = useState<SuggestedFilesPrefs>(() =>
+    loadSuggestedFilesPrefs()
+  )
   const [resourceOverlayPrefs, setResourceOverlayPrefs] = useState<ResourceOverlayPrefs>(() =>
     loadResourceOverlayPrefs()
   )
@@ -1851,6 +2018,8 @@ export default function App() {
           setAppearance={setAppearance}
           thinkingTimingPrefs={thinkingTimingPrefs}
           setThinkingTimingPrefs={setThinkingTimingPrefs}
+          suggestedFilesPrefs={suggestedFilesPrefs}
+          setSuggestedFilesPrefs={setSuggestedFilesPrefs}
           resourceOverlayPrefs={resourceOverlayPrefs}
           setResourceOverlayPrefs={setResourceOverlayPrefs}
         />

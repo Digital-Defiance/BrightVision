@@ -11,6 +11,7 @@ export const APPEARANCE_STORAGE_KEY = `${PRODUCT_VISION}-appearance`
 export const THINKING_TIMING_STORAGE_KEY = `${PRODUCT_VISION}-thinking-timing`
 export const THINKING_STATS_STORAGE_KEY = `${PRODUCT_VISION}-thinking-stats`
 export const RESOURCE_OVERLAY_STORAGE_KEY = `${PRODUCT_VISION}-resource-overlay`
+export const SUGGESTED_FILES_STORAGE_KEY = `${PRODUCT_VISION}-suggested-files`
 
 const MIGRATIONS: Array<{ current: string; legacy: string }> = [
   { current: CONFIG_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-config` },
