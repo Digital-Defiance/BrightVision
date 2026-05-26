@@ -152,8 +152,8 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 1. **Detect** — After an assistant turn, parse the **Answer** section (► **ANSWER**, `**ANSWER**`, or `Answer` heading) for workspace-relative paths: backtick paths in bullet lists, e.g. `` `src/todos/types.ts` ``.
 2. **Accumulate** — Merge into a session-scoped **Suggested** list (dedupe, drop paths already in `files_in_chat`).
 3. **Tray UI** — Chips or list near chat input: path, remove, “Add”, “Add all”, “Queue `/add`s”.
-4. **Queue `/add`s** — Enqueue one user message per file (`/add bright-vision-core/.../session.py`, …) via existing `useVisionSession` message queue (#4) so core handles each add like typed input.
-5. **Add all (fast path)** — Optional single `addFiles(paths)` API call when batch attach is enough (no per-file `/add` narration).
+4. **Queue `/add`s** — Single batch `addFiles(paths)` (same as Add all); does not enqueue per-file chat `/add` messages.
+5. **Add all** — Same batch `addFiles(paths)` API.
 
 ### Parser spike (in repo)
 
@@ -165,7 +165,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 … (one queued message per path)
 ```
 
-**Shipped (Partial):** `SuggestedFilesTray` in `ChatPanel`, session state in `App.tsx` (ingest on `done`, prune when `files_in_chat` updates). Remaining: structured SSE from core, optional auto-queue.
+**Shipped (Partial):** `SuggestedFilesTray` in `ChatPanel`, session state in `App.tsx` (ingest on `done`, prune when `files_in_chat` updates). **Queue / Add all** use `POST …/files`; core ignores cecli `SwitchCoderSignal` after `/add` (`slash_helpers.py`). Remaining: structured SSE from core, optional auto-queue.
 
 ### Out of scope (v1)
 

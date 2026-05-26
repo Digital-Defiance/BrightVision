@@ -16,8 +16,15 @@
     {
       "layers" : [
         {
-          "image-name" : "bright-vision-logo.svg",
-          "name" : "bright-vision-logo"
+          "image-name" : "bright_vision_bold_logo-tx.png",
+          "name" : "bright_vision_bold_logo-tx",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {

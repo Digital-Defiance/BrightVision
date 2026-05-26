@@ -26,6 +26,8 @@ import type { ResourceOverlayPrefs } from '../../theme/resourceOverlayPrefs'
 import { LocalLlmPanel } from '../local-llm/LocalLlmPanel'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
+import { AppVersionSection } from './AppVersionSection'
+import type { AppVersions } from '../../hooks/useAppVersions'
 
 interface SettingsPanelProps {
   config: VisionConfig
@@ -43,6 +45,7 @@ interface SettingsPanelProps {
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
   onSave: () => void
   onReset: () => void
+  appVersions: AppVersions
 }
 
 export function SettingsPanel({
@@ -61,6 +64,7 @@ export function SettingsPanel({
   onResourceOverlayPrefsChange,
   onSave,
   onReset,
+  appVersions,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
@@ -319,6 +323,8 @@ export function SettingsPanel({
         prefs={resourceOverlayPrefs}
         onChange={onResourceOverlayPrefsChange}
       />
+
+      <AppVersionSection versions={appVersions} />
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>

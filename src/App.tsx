@@ -53,7 +53,6 @@ import { useGitStatus } from './hooks/useGitStatus'
 import { autoStageEditedFiles } from './ipc/gitStatus'
 import { useSessionActivity } from './hooks/useSessionActivity'
 import {
-  buildQueuedAddMessages,
   filterPathsNotInChat,
   mergeSuggestedPaths,
 } from './utils/suggestedFiles'
@@ -86,6 +85,8 @@ import {
   saveResourceOverlayPrefs,
   type ResourceOverlayPrefs,
 } from './theme/resourceOverlayPrefs'
+import { useAppVersions } from './hooks/useAppVersions'
+import { StderrBatcher } from './utils/stderrBatch'
 import { useThinkingTiming } from './hooks/useThinkingTiming'
 import { useSessionStallWatch } from './hooks/useSessionStallWatch'
 import { useResourceOverlay } from './hooks/useResourceOverlay'
@@ -348,42 +349,57 @@ function AppShell({
     }
   }, [config])
 
-  const appendStderr = useCallback((payload: string) => {
+  const stderrBatcherRef = useRef<StderrBatcher | null>(null)
+  const flushStderrRef = useRef<(payload: string) => void>(() => {})
+
+  const flushStderrToUi = useCallback((payload: string) => {
     const trimmed = payload.trim()
-    if (
-      !trimmed ||
-      trimmed.includes('\r') ||
-      /Scanning repo:\s*\d+%/.test(trimmed) ||
-      /\d+it\/s\]/.test(trimmed)
-    ) {
-      return
-    }
+    if (!trimmed) return
     const id = Date.now()
-    setTerminalLines((prev) => [
-      ...prev,
-      {
-        id,
-        text: `${prefixForUserFacing('core')} ${payload}`,
-        type: 'stderr',
-        source: 'core',
-        channel: 'user',
-      },
-      {
-        id: id + 1,
-        text: `${prefixForTechnicalLog()} ${payload}`,
-        type: 'stderr',
-        source: 'core',
-        channel: 'technical',
-      },
-    ])
-    setChatMessages((chatPrev) => [
-      ...chatPrev,
-      {
-        id,
-        role: 'system',
-        content: `${prefixForUserFacing('core')} ${payload}`,
-      },
-    ])
+    setTerminalLines((prev) =>
+      capList(
+        [
+          ...prev,
+          {
+            id,
+            text: `${prefixForUserFacing('core')} ${trimmed}`,
+            type: 'stderr' as const,
+            source: 'core' as const,
+            channel: 'user' as const,
+          },
+          {
+            id: id + 1,
+            text: `${prefixForTechnicalLog()} ${trimmed}`,
+            type: 'stderr' as const,
+            source: 'core' as const,
+            channel: 'technical' as const,
+          },
+        ],
+        MAX_TERMINAL_LINES
+      )
+    )
+    setChatMessages((chatPrev) =>
+      capList(
+        [
+          ...chatPrev,
+          {
+            id,
+            role: 'system' as const,
+            content: `${prefixForUserFacing('core')} ${trimmed}`,
+          },
+        ],
+        MAX_CHAT_MESSAGES
+      )
+    )
+  }, [])
+
+  flushStderrRef.current = flushStderrToUi
+  if (!stderrBatcherRef.current) {
+    stderrBatcherRef.current = new StderrBatcher((text) => flushStderrRef.current(text))
+  }
+
+  const appendStderr = useCallback((payload: string) => {
+    stderrBatcherRef.current?.push(payload)
   }, [])
 
   const process = useProcess()
@@ -845,6 +861,14 @@ function AppShell({
     [savedConfig.coreApiUrl, savedConfig.coreApiToken]
   )
 
+  const appVersions = useAppVersions(httpClient ?? todoApiClient, {
+    enginePaths: {
+      coreEnginePath: savedConfig.coreEnginePath,
+      pythonPath: savedConfig.pythonPath,
+    },
+    refreshDeps: [isRunning, httpClient, activeTab === 'settings'],
+  })
+
   const workspaceTodosApi = useMemo(
     () => ({
       client: httpClient ?? todoApiClient,
@@ -916,6 +940,7 @@ function AppShell({
     }
     setup()
     return () => {
+      stderrBatcherRef.current?.flushNow()
       unlistenersRef.current.forEach((fn) => fn())
       unlistenersRef.current = []
     }
@@ -1223,52 +1248,20 @@ function AppShell({
   const handleQueueSuggestedAdds = useCallback(async () => {
     if (!isRunning || suggestedPaths.length === 0) return
     const paths = [...suggestedPaths]
-    if (isBusy) {
-      try {
-        const info = await addFiles(paths)
-        setSuggestedPaths((prev) => filterPathsNotInChat(prev, info.files_in_chat))
-        await applyFilesAdded(
-          paths,
-          info,
-          `Added ${paths.length} file${paths.length === 1 ? '' : 's'} while the current turn finishes`
-        )
-      } catch (err) {
-        setSnackbar({
-          message: err instanceof Error ? err.message : String(err),
-          severity: 'error',
-        })
-      }
-      return
-    }
-    const msgs = buildQueuedAddMessages(paths)
-    for (const msg of msgs) appendUserMessageToChat(msg, true)
     try {
-      const first = await send(msgs[0])
-      for (let i = 1; i < msgs.length; i++) void send(msgs[i])
-      setSnackbar({
-        message: first.queued
-          ? `Queued ${msgs.length} /add message${msgs.length === 1 ? '' : 's'}`
-          : `Sending ${msgs.length} /add message${msgs.length === 1 ? '' : 's'} when ready`,
-        severity: 'info',
-      })
-      setSuggestedPaths([])
+      const info = await addFiles(paths)
+      setSuggestedPaths((prev) => filterPathsNotInChat(prev, info.files_in_chat))
+      const label = isBusy
+        ? `Added ${paths.length} file${paths.length === 1 ? '' : 's'} while the current turn finishes`
+        : `Added ${paths.length} file${paths.length === 1 ? '' : 's'} to session`
+      await applyFilesAdded(paths, info, label)
     } catch (err) {
-      for (let i = 0; i < msgs.length; i++) removeLastPendingUserMessage()
       setSnackbar({
         message: err instanceof Error ? err.message : String(err),
         severity: 'error',
       })
     }
-  }, [
-    isRunning,
-    isBusy,
-    suggestedPaths,
-    addFiles,
-    applyFilesAdded,
-    appendUserMessageToChat,
-    send,
-    removeLastPendingUserMessage,
-  ])
+  }, [isRunning, isBusy, suggestedPaths, addFiles, applyFilesAdded])
 
   const handleStartWork = useCallback(
     async (todo: TodoItem) => {
@@ -1764,6 +1757,7 @@ function AppShell({
                 onResourceOverlayPrefsChange={setResourceOverlayPrefs}
                 onSave={handleSave}
                 onReset={handleReset}
+                appVersions={appVersions}
               />
             </Container>
           )}

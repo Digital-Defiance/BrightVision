@@ -43,7 +43,11 @@ export class CoreHttpClient {
     return h
   }
 
-  async health(signal?: AbortSignal): Promise<{ status: string; auth_required: boolean }> {
+  async health(signal?: AbortSignal): Promise<{
+    status: string
+    auth_required: boolean
+    versions?: { bright_vision_core?: string; cecli?: string }
+  }> {
     const res = await fetch(`${this.baseUrl}/health`, { signal })
     if (!res.ok) throw new Error(`health: ${res.status}`)
     return res.json()

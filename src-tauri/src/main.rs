@@ -269,16 +269,7 @@ async fn start_core_api(
         .arg(port.to_string())
         .current_dir(&engine_root)
         // Prefer submodule sources over an older pip-installed aider_vision_core.
-        .env(
-            "PYTHONPATH",
-            format!(
-                "{}{}",
-                engine_root.display(),
-                std::env::var("PYTHONPATH")
-                    .map(|p| format!(":{p}"))
-                    .unwrap_or_default()
-            ),
-        )
+        .env("PYTHONPATH", engine_pythonpath(&engine_root))
         .env("NO_COLOR", "1")
         .env("BRIGHT_VISION_HEADLESS", "1")
         .env("AIDER_VISION_HEADLESS", "1")
@@ -340,6 +331,66 @@ fn detect_workspace(hint: Option<String>) -> String {
 #[tauri::command]
 fn engine_install_path(core_engine_path: String) -> Result<String, String> {
     resolve_app_engine(&core_engine_path).map(|p| p.to_string_lossy().into_owned())
+}
+
+fn engine_pythonpath(engine_root: &Path) -> String {
+    format!(
+        "{}{}",
+        engine_root.display(),
+        std::env::var("PYTHONPATH")
+            .map(|p| format!(":{p}"))
+            .unwrap_or_default()
+    )
+}
+
+#[derive(Serialize, Deserialize)]
+struct EngineVersions {
+    bright_vision_core: String,
+    cecli: String,
+}
+
+/// Read package versions from the configured engine tree (no HTTP server required).
+#[tauri::command]
+fn query_engine_versions(
+    core_engine_path: String,
+    python_path: String,
+) -> Result<EngineVersions, String> {
+    let engine_root = resolve_app_engine(&core_engine_path)?;
+    let py = resolve_python_executable(&python_path);
+    let script = r#"
+import json
+out = {"bright_vision_core": "unknown", "cecli": "unknown"}
+try:
+    import bright_vision_core as bvc
+    out["bright_vision_core"] = str(getattr(bvc, "__version__", "unknown"))
+except Exception:
+    pass
+try:
+    from cecli._version import version as cv
+    out["cecli"] = str(cv)
+except Exception:
+    pass
+print(json.dumps(out))
+"#;
+    let output = std::process::Command::new(&py)
+        .arg("-c")
+        .arg(script)
+        .current_dir(&engine_root)
+        .env("PYTHONPATH", engine_pythonpath(&engine_root))
+        .output()
+        .map_err(|e| format!("Failed to query engine versions: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Engine version query failed (exit {}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: EngineVersions = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Invalid version JSON from engine: {e}"))?;
+    Ok(parsed)
 }
 
 #[tauri::command]
@@ -1002,6 +1053,7 @@ fn main() {
             default_python_path,
             detect_workspace,
             engine_install_path,
+            query_engine_versions,
             read_local_llm_config,
             local_llm_status,
             ollama_models_snapshot,
