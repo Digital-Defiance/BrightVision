@@ -71,6 +71,7 @@ interface ChatPanelProps {
   onCancelSend: () => void
   onConfirmAnswer: (accepted: boolean) => void
   onDismissMessage: (id: number) => void
+  onDismissToolEvent: (id: number) => void
   commands: VisionCommand[]
   onPickCommand: (command: string) => void
   useNativeImagePicker?: boolean
@@ -108,6 +109,7 @@ export function ChatPanel({
   onCancelSend,
   onConfirmAnswer,
   onDismissMessage,
+  onDismissToolEvent,
   commands,
   onPickCommand,
   useNativeImagePicker,
@@ -236,27 +238,42 @@ export function ChatPanel({
             ) : (
               <Box key={`tool-${entry.item.id}`} sx={{ width: '100%' }}>
                 {entry.item.type === 'tool_warning' ? (
-                  <Alert severity="warning" sx={{ mb: 1 }} data-testid="chat-tool-warning">
+                  <Alert
+                    severity="warning"
+                    sx={{ mb: 1 }}
+                    data-testid="chat-tool-warning"
+                    onClose={() => onDismissToolEvent(entry.item.id)}
+                  >
                     <Typography variant="body2" component="span">
                       {entry.item.output}
                     </Typography>
                   </Alert>
                 ) : (
-                <Paper
-                  data-testid="chat-tool-output"
-                  variant="outlined"
-                  sx={{
-                    p: 2,
-                    maxWidth: '95%',
-                    bgcolor: 'action.hover',
-                  }}
-                >
+                  <Paper
+                    data-testid="chat-tool-output"
+                    variant="outlined"
+                    sx={{
+                      position: 'relative',
+                      p: 2,
+                      maxWidth: '95%',
+                      bgcolor: 'action.hover',
+                    }}
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label="Dismiss tool output"
+                      onClick={() => onDismissToolEvent(entry.item.id)}
+                      sx={{ position: 'absolute', top: 4, right: 4, opacity: 0.6 }}
+                    >
+                      <CloseIcon fontSize="inherit" />
+                    </IconButton>
                     <Typography
                       variant="caption"
                       color="primary.main"
                       display="block"
                       gutterBottom
                       fontWeight="bold"
+                      sx={{ pr: 3 }}
                     >
                       {entry.item.type === 'tool_call' ? 'Tool call' : 'Tool'}:{' '}
                       {entry.item.name || 'tool'}
@@ -265,7 +282,7 @@ export function ChatPanel({
                       <Typography
                         component="pre"
                         variant="body2"
-                        sx={{ m: 0, whiteSpace: 'pre-wrap', overflowX: 'auto' }}
+                        sx={{ m: 0, pr: 3, whiteSpace: 'pre-wrap', overflowX: 'auto' }}
                       >
                         {entry.item.input || entry.item.output}
                       </Typography>

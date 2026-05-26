@@ -12,6 +12,7 @@ import {
   buildLiveThinkingState,
   createTurnTimingTracker,
   finalizeTurnTiming,
+  finalizeTurnTimingFromWallClock,
   formatDurationMs,
   syncTurnTimingFromContent,
   type LiveThinkingState,
@@ -42,8 +43,8 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
   }, [])
 
   const beginTurn = useCallback(
-    (promptChars: number) => {
-      trackerRef.current = createTurnTimingTracker(promptChars)
+    (promptChars: number, turnStartMs = Date.now()) => {
+      trackerRef.current = createTurnTimingTracker(promptChars, turnStartMs)
       publishLive()
     },
     [publishLive]
@@ -59,14 +60,33 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
     [publishLive]
   )
 
-  const finalizeTurn = useCallback((content: string): TurnThinkingTiming | null => {
-    const t = trackerRef.current
-    if (!t) return null
-    const result = finalizeTurnTiming(t, content)
-    trackerRef.current = null
-    setLive(null)
-    return result
-  }, [])
+  const finalizeTurn = useCallback(
+    (
+      content: string,
+      opts?: { wallStartMs?: number; promptChars?: number }
+    ): TurnThinkingTiming | null => {
+      const now = Date.now()
+      const t = trackerRef.current
+      if (!t) {
+        if (opts?.wallStartMs == null) return null
+        const result = finalizeTurnTimingFromWallClock(
+          opts.wallStartMs,
+          opts.promptChars ?? 0,
+          content,
+          now
+        )
+        setLive(null)
+        return result
+      }
+      const result = finalizeTurnTiming(t, content, now, {
+        turnStartMs: opts?.wallStartMs,
+      })
+      trackerRef.current = null
+      setLive(null)
+      return result
+    },
+    []
+  )
 
   const reset = useCallback(() => {
     trackerRef.current = null

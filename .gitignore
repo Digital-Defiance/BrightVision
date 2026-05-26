@@ -30,6 +30,9 @@ Thumbs.db
 # Aider
 .aider*
 
+# cecli tag cache (local SQLite; do not commit)
+.cecli/
+
 # LLM e2e (playwright globalSetup)
 .e2e-llm-core.pid
 

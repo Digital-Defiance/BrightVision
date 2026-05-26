@@ -230,15 +230,22 @@ function AppShell({
   const lastAssistantStreamRef = useRef('')
   const lastUserPromptCharsRef = useRef(0)
   const turnTimingActiveRef = useRef(false)
+  /** Send wall-clock; survives tracker reset until `done` finalizes the turn. */
+  const turnWallStartMsRef = useRef<number | null>(null)
+  /** Assistant bubble for the in-flight turn (avoids attributing timing to an older message). */
+  const turnAssistantMessageIdRef = useRef<number | null>(null)
   const refreshSessionInfoRef = useRef<() => Promise<import('./ipc/httpClient').CoreSessionInfo | null>>(
     async () => null
   )
   const syncSessionFilesRef = useRef<(files: string[]) => void>(() => {})
 
   const thinkingTimingRef = useRef<{
-    beginTurn: (n: number) => void
+    beginTurn: (n: number, turnStartMs?: number) => void
     syncContent: (content: string) => void
-    finalizeTurn: (content: string) => TurnThinkingTiming | null
+    finalizeTurn: (
+      content: string,
+      opts?: { wallStartMs?: number; promptChars?: number }
+    ) => TurnThinkingTiming | null
     reset: () => void
     recordCompletedTurn: (t: TurnThinkingTiming) => void
   }>({
@@ -470,12 +477,9 @@ function AppShell({
         )
         let sid = streamingAssistantId.current
         if (sid === null) {
-          if (!turnTimingActiveRef.current) {
-            thinkingTimingRef.current.beginTurn(lastUserPromptCharsRef.current)
-            turnTimingActiveRef.current = true
-          }
           sid = orderId
           streamingAssistantId.current = sid
+          turnAssistantMessageIdRef.current = sid
           setChatMessages((prev) => {
             const next = capList(
               [...prev, { id: sid!, role: 'assistant' as const, content: chunk }],
@@ -594,37 +598,49 @@ function AppShell({
           ev.edited_files && Array.isArray(ev.edited_files)
             ? (ev.edited_files as string[])
             : []
+        const wallStart = turnWallStartMsRef.current
+        const turnAssistantId = turnAssistantMessageIdRef.current
         let turnTiming: TurnThinkingTiming | null = null
-        {
+        if (wallStart != null) {
           const prev = chatMessagesRef.current
-          for (let i = prev.length - 1; i >= 0; i--) {
-            const m = prev[i]
-            if (m.role === 'assistant' && m.content.trim()) {
-              turnTiming = thinkingTimingRef.current.finalizeTurn(m.content)
-              turnTimingActiveRef.current = false
-              if (turnTiming) thinkingTimingRef.current.recordCompletedTurn(turnTiming)
-              break
-            }
+          const target =
+            turnAssistantId != null
+              ? prev.find((m) => m.id === turnAssistantId && m.role === 'assistant')
+              : undefined
+          const content = target?.content?.trim()
+            ? target.content
+            : lastAssistantStreamRef.current.trim()
+          if (content || turnTimingActiveRef.current) {
+            turnTiming = thinkingTimingRef.current.finalizeTurn(content, {
+              wallStartMs: wallStart,
+              promptChars: lastUserPromptCharsRef.current,
+            })
+            if (turnTiming) thinkingTimingRef.current.recordCompletedTurn(turnTiming)
           }
         }
+        turnWallStartMsRef.current = null
+        turnAssistantMessageIdRef.current = null
+        turnTimingActiveRef.current = false
+        thinkingTimingRef.current.reset()
         streamingAssistantId.current = null
         setStatusMessage('Ready')
         setChatMessages((prev) => {
-          let lastAssistantId: number | null = null
-          for (let i = prev.length - 1; i >= 0; i--) {
-            if (prev[i].role === 'assistant') {
-              lastAssistantId = prev[i].id
-              break
-            }
-          }
-          if (lastAssistantId === null) return prev
+          const attachId =
+            turnAssistantId ??
+            (() => {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].role === 'assistant') return prev[i].id
+              }
+              return null
+            })()
+          if (attachId === null || !turnTiming) return prev
           return capList(
             prev.map((m) => {
-              if (m.id !== lastAssistantId) return m
+              if (m.id !== attachId) return m
               return {
                 ...m,
                 ...(applied.length > 0 ? { appliedFiles: applied } : {}),
-                ...(turnTiming ? { turnTiming } : {}),
+                turnTiming,
               }
             }),
             MAX_CHAT_MESSAGES
@@ -812,9 +828,10 @@ function AppShell({
   }
 
   const handleCancelSend = useCallback(() => {
+    cancelSend()
+    // Keep turnWallStartMsRef until `done` so wall-clock response time stays correct.
     thinkingTiming.reset()
     turnTimingActiveRef.current = false
-    cancelSend()
   }, [thinkingTiming, cancelSend])
 
   const lifecycleActive = isSessionLifecycleActive(
@@ -1039,6 +1056,7 @@ function AppShell({
       syncSessionFiles([])
       setContextUsage(EMPTY_CONTEXT_USAGE)
       setSuggestedPaths([])
+      // Do not clear turnWallStartMsRef here — late `done` still finalizes full Send→done time.
       thinkingTiming.reset()
       turnTimingActiveRef.current = false
       setRemainingAutoApproves(0)
@@ -1372,7 +1390,10 @@ function AppShell({
     const todoOptions = activeTodo
       ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
       : undefined
-    thinkingTimingRef.current.beginTurn(text.length)
+    const turnStartMs = Date.now()
+    turnWallStartMsRef.current = turnStartMs
+    turnAssistantMessageIdRef.current = null
+    thinkingTimingRef.current.beginTurn(text.length, turnStartMs)
     turnTimingActiveRef.current = true
     try {
       const result = await send(text, todoOptions)
@@ -1386,6 +1407,8 @@ function AppShell({
         void reloadTodos()
       }
     } catch (err) {
+      turnWallStartMsRef.current = null
+      turnAssistantMessageIdRef.current = null
       turnTimingActiveRef.current = false
       thinkingTimingRef.current.reset()
       if (err instanceof Error && err.name === 'AbortError') {
@@ -1422,6 +1445,10 @@ function AppShell({
 
   const handleDismissMessage = (messageId: number) => {
     setChatMessages((prev) => prev.filter((m) => m.id !== messageId))
+  }
+
+  const handleDismissToolEvent = (toolEventId: number) => {
+    setToolEvents((prev) => prev.filter((t) => t.id !== toolEventId))
   }
 
   const handleUndo = async () => {
@@ -1562,6 +1589,7 @@ function AppShell({
               turnStalled={stallWatch.stalled}
               onConfirmAnswer={handleConfirmAnswer}
               onDismissMessage={handleDismissMessage}
+              onDismissToolEvent={handleDismissToolEvent}
               commands={commands}
               onPickCommand={(cmd) => setInputValue(cmd)}
               useNativeImagePicker={isTauriRuntime()}

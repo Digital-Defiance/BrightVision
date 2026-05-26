@@ -135,10 +135,16 @@ export function syncTurnTimingFromContent(
   }
 }
 
+export interface FinalizeTurnTimingOptions {
+  /** Wall-clock Send time; overrides tracker.turnStartMs for turnDurationMs. */
+  turnStartMs?: number
+}
+
 export function finalizeTurnTiming(
   tracker: TurnTimingTracker,
   content: string,
-  now = Date.now()
+  now = Date.now(),
+  opts?: FinalizeTurnTimingOptions
 ): TurnThinkingTiming {
   let t = syncTurnTimingFromContent(tracker, content, now)
   const sections = [...t.sections]
@@ -148,13 +154,25 @@ export function finalizeTurnTiming(
       durationMs: Math.max(0, now - t.activeStartMs),
     })
   }
-  const turnDurationMs = Math.max(0, now - t.turnStartMs)
+  const wallStart = opts?.turnStartMs ?? t.turnStartMs
+  const turnDurationMs = Math.max(0, now - wallStart)
   return {
     turnDurationMs,
     sections,
     userPromptChars: t.userPromptChars,
     thoughtMs: sumThoughtMs(sections),
   }
+}
+
+/** Finalize when the live tracker was cleared (e.g. Stop) but Send wall-clock is still known. */
+export function finalizeTurnTimingFromWallClock(
+  turnStartMs: number,
+  promptChars: number,
+  content: string,
+  now = Date.now()
+): TurnThinkingTiming {
+  const tracker = createTurnTimingTracker(promptChars, turnStartMs)
+  return finalizeTurnTiming(tracker, content, now, { turnStartMs })
 }
 
 export function msPer1kPromptChars(thoughtMs: number, promptChars: number): number | null {

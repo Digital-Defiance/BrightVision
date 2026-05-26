@@ -240,6 +240,8 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 
 **Detection:** Section boundaries from streamed `► **THINKING**` / `**REASONING**` / `**ANSWER**` markers (`getActiveAssistantSection`); timer runs for the whole turn until `done` (survives tool_output gaps that split assistant bubbles).
 
+**Known context:** Response time is anchored at **Send** (`turnWallStartMsRef`); Stop no longer resets that anchor before `done`. Timing attaches only to the assistant bubble for the current turn (not an earlier message).
+
 **Open / v2:**
 
 - Burndown chart or trend line in Settings / Tasks.

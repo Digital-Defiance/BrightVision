@@ -1,4 +1,4 @@
 # Pinned PyPI release (bright-vision-core/scripts/sync_bright_vision.sh).
 # Dev default: editable submodule via `source activate.sh` in Bright Vision.
-# After a core release: cd bright-vision-core && ./build.sh v0.111.1.bright0 --sync-vision
-bright-vision-core==0.111.1.post0
+# After a core release: cd bright-vision-core && ./build.sh v0.111.1.bright3 --sync-vision
+bright-vision-core==0.111.1.post3

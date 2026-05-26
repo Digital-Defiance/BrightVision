@@ -25,11 +25,25 @@ Output (typical):
 - `src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app`
 - `src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg`
 
-Shortcut:
+Shortcut (prompts for `APPLE_PASSWORD` if not set — avoids signed-but-not-notarized DMGs):
 
 ```bash
 yarn build:mac
+# sign only, no notarization prompt:
+yarn build:mac -- --skip-notarize
 ```
+
+`scripts/build-macos.sh` checks and prompts for every missing variable before building:
+
+| Purpose | Variables |
+|---------|-----------|
+| Signing | `APPLE_SIGNING_IDENTITY` (auto-picked if one Developer ID cert in Keychain) |
+| Notarization (Apple ID) | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` |
+| Notarization (API) | `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH` |
+
+`APPLE_TEAM_ID` is inferred from `APPLE_SIGNING_IDENTITY` when it contains `(TEAMID)`.
+
+For CI, export all required vars and set `NONINTERACTIVE=1`.
 
 ## Code signing (Developer ID)
 
@@ -39,9 +53,11 @@ You need a **Developer ID Application** certificate in Keychain.
 
 ```bash
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-export APPLE_TEAM_ID="TEAMID"   # for notarization
+export APPLE_TEAM_ID="TEAMID"
+export APPLE_ID="you@example.com"
+export APPLE_PASSWORD="xxxx-xxxx-xxxx-xxxx"   # app-specific password (Tauri name)
 
-yarn tauri build --target universal-apple-darwin --bundles dmg
+yarn build:mac
 ```
 
 For GitHub Actions, use base64 `.p12` — see [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
@@ -87,7 +103,7 @@ xcrun notarytool submit "path/to/Aider Vision.dmg" \
 xcrun stapler staple "path/to/Aider Vision.dmg"
 ```
 
-Tauri can automate this when `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID` are set during build — see the same signing doc.
+`yarn build:mac` prompts for these if missing. Tauri notarizes during the build when they are set — see [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
 
 ## Notes for Aider Vision
 

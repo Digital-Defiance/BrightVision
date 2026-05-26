@@ -1,0 +1,149 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#00f2ff;stop-opacity:1" />
+            <stop offset="50%" style="stop-color:#7b2fff;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#ff00ff;stop-opacity:1" />
+        </linearGradient>
+        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="4" result="blur1" />
+            <feGaussianBlur stdDeviation="10" in="blur1" result="blur2" />
+            <feMerge>
+                <feMergeNode in="blur2" />
+                <feMergeNode in="blur1" />
+                <feMergeNode in="SourceGraphic" />
+            </feMerge>
+        </filter>
+    </defs>
+
+    <rect width="512" height="512" fill="#000000" rx="0" />
+
+    <g transform="translate(256, 256)" filter="url(#glow)">
+        <path d="M 0,-220 L 190,-110 L 190,110 L 0,220 L -190,110 L -190,-110 Z"
+              fill="none" stroke="url(#grad1)" stroke-width="3.5" opacity="1" />
+
+        <g id="spiral">
+
+            <path d="M 0,-200.0 L -173.20508075688772,100.00000000000003 L 173.20508075688775,99.99999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(0.0)" opacity="1.0" />
+            <path d="M 0,-195.6 L -169.3945689802362,97.80000000000003 L 169.39456898023622,97.79999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(6.5)" opacity="0.989" />
+            <path d="M 0,-191.2 L -165.58405720358465,95.60000000000001 L 165.58405720358468,95.59999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(13.0)" opacity="0.978" />
+            <path d="M 0,-186.79999999999998 L -161.7735454269331,93.4 L 161.77354542693314,93.39999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(19.5)" opacity="0.967" />
+            <path d="M 0,-182.4 L -157.9630336502816,91.20000000000002 L 157.96303365028163,91.19999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(26.0)" opacity="0.956" />
+            <path d="M 0,-178.0 L -154.15252187363006,89.00000000000001 L 154.1525218736301,88.99999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(32.5)" opacity="0.9450000000000001" />
+            <path d="M 0,-173.6 L -150.34201009697853,86.80000000000001 L 150.34201009697856,86.79999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(39.0)" opacity="0.9339999999999999" />
+            <path d="M 0,-169.2 L -146.531498320327,84.60000000000001 L 146.53149832032702,84.59999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(45.5)" opacity="0.923" />
+            <path d="M 0,-164.8 L -142.72098654367548,82.40000000000002 L 142.7209865436755,82.39999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(52.0)" opacity="0.912" />
+            <path d="M 0,-160.4 L -138.91047476702394,80.20000000000002 L 138.91047476702397,80.19999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(58.5)" opacity="0.901" />
+            <path d="M 0,-156.0 L -135.09996299037243,78.00000000000001 L 135.09996299037243,77.99999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(65.0)" opacity="0.89" />
+            <path d="M 0,-151.6 L -131.2894512137209,75.80000000000001 L 131.2894512137209,75.79999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(71.5)" opacity="0.879" />
+            <path d="M 0,-147.2 L -127.47893943706936,73.60000000000001 L 127.47893943706937,73.59999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(78.0)" opacity="0.868" />
+            <path d="M 0,-142.79999999999998 L -123.66842766041782,71.4 L 123.66842766041783,71.39999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(84.5)" opacity="0.857" />
+            <path d="M 0,-138.39999999999998 L -119.85791588376628,69.2 L 119.8579158837663,69.19999999999997 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(91.0)" opacity="0.846" />
+            <path d="M 0,-134.0 L -116.04740410711477,67.00000000000001 L 116.04740410711479,66.99999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(97.5)" opacity="0.835" />
+            <path d="M 0,-129.6 L -112.23689233046323,64.80000000000001 L 112.23689233046325,64.79999999999998 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(104.0)" opacity="0.8240000000000001" />
+            <path d="M 0,-125.2 L -108.42638055381171,62.600000000000016 L 108.42638055381173,62.599999999999994 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(110.5)" opacity="0.813" />
+            <path d="M 0,-120.80000000000001 L -104.61586877716019,60.40000000000002 L 104.6158687771602,60.4 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(117.0)" opacity="0.802" />
+            <path d="M 0,-116.40000000000002 L -100.80535700050866,58.200000000000024 L 100.80535700050868,58.2 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(123.5)" opacity="0.791" />
+            <path d="M 0,-112.00000000000001 L -96.99484522385714,56.00000000000002 L 96.99484522385714,56.0 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(130.0)" opacity="0.78" />
+            <path d="M 0,-107.60000000000001 L -93.1843334472056,53.80000000000002 L 93.18433344720562,53.8 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(136.5)" opacity="0.769" />
+            <path d="M 0,-103.2 L -89.37382167055407,51.600000000000016 L 89.37382167055408,51.599999999999994 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(143.0)" opacity="0.758" />
+            <path d="M 0,-98.8 L -85.56330989390253,49.40000000000001 L 85.56330989390254,49.39999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(149.5)" opacity="0.747" />
+            <path d="M 0,-94.39999999999999 L -81.75279811725099,47.2 L 81.752798117251,47.19999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(156.0)" opacity="0.736" />
+            <path d="M 0,-90.00000000000001 L -77.94228634059948,45.000000000000014 L 77.9422863405995,45.0 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(162.5)" opacity="0.7250000000000001" />
+            <path d="M 0,-85.60000000000001 L -74.13177456394796,42.80000000000001 L 74.13177456394796,42.8 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(169.0)" opacity="0.714" />
+            <path d="M 0,-81.2 L -70.32126278729642,40.60000000000001 L 70.32126278729642,40.599999999999994 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(175.5)" opacity="0.7030000000000001" />
+            <path d="M 0,-76.8 L -66.51075101064488,38.400000000000006 L 66.5107510106449,38.39999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(182.0)" opacity="0.692" />
+            <path d="M 0,-72.39999999999999 L -62.700239233993344,36.2 L 62.70023923399336,36.19999999999999 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(188.5)" opacity="0.681" />
+            <path d="M 0,-68.00000000000001 L -58.889727457341834,34.000000000000014 L 58.88972745734184,34.0 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(195.0)" opacity="0.67" />
+            <path d="M 0,-63.60000000000001 L -55.079215680690304,31.80000000000001 L 55.07921568069031,31.8 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(201.5)" opacity="0.659" />
+            <path d="M 0,-59.20000000000001 L -51.26870390403877,29.600000000000012 L 51.26870390403878,29.6 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(208.0)" opacity="0.648" />
+            <path d="M 0,-54.800000000000004 L -47.458192127387235,27.40000000000001 L 47.45819212738724,27.4 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(214.5)" opacity="0.637" />
+            <path d="M 0,-50.4 L -43.647680350735705,25.200000000000006 L 43.64768035073571,25.199999999999996 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(221.0)" opacity="0.626" />
+            <path d="M 0,-46.00000000000002 L -39.837168574084195,23.000000000000014 L 39.8371685740842,23.000000000000007 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(227.5)" opacity="0.615" />
+            <path d="M 0,-41.600000000000016 L -36.02665679743266,20.80000000000001 L 36.026656797432665,20.800000000000004 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(234.0)" opacity="0.6040000000000001" />
+            <path d="M 0,-37.20000000000001 L -32.21614502078113,18.60000000000001 L 32.21614502078113,18.6 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(240.5)" opacity="0.593" />
+            <path d="M 0,-32.800000000000004 L -28.40563324412959,16.400000000000006 L 28.405633244129593,16.4 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(247.0)" opacity="0.5820000000000001" />
+            <path d="M 0,-28.400000000000002 L -24.59512146747806,14.200000000000005 L 24.595121467478062,14.2 Z"
+                  fill="none" stroke="url(#grad1)" stroke-width="2.8"
+                  transform="rotate(253.5)" opacity="0.571" />
+        </g>
+    </g>
+</svg>

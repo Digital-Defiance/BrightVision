@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "build:mac": "tauri build --target universal-apple-darwin --bundles dmg",
+    "build:mac": "/usr/bin/env bash scripts/build-macos.sh",
     "audit:core": "test -f aider-vision-core/scripts/audit_rename_compat.py && python aider-vision-core/scripts/audit_rename_compat.py || echo 'skip audit:core (legacy submodule absent)'",
     "test": "vitest run",
     "test:watch": "vitest",

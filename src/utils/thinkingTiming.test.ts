@@ -30,6 +30,14 @@ describe('thinkingTiming', () => {
     expect(waiting.phaseLabel).toBe('Waiting for model')
   })
 
+  it('honors turnStartMs override for wall-clock Send→done', () => {
+    const t = createTurnTimingTracker(80, 1_000_000)
+    const result = finalizeTurnTiming(t, '► **ANSWER**\nhi\n', 1_000_000 + 275_000, {
+      turnStartMs: 1_000_000,
+    })
+    expect(result.turnDurationMs).toBe(275_000)
+  })
+
   it('tracks section transitions', () => {
     let t = createTurnTimingTracker(120, 0)
     t = syncTurnTimingFromContent(t, '► **THINKING**\nplan\n', 1000)
