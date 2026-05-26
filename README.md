@@ -2,7 +2,9 @@
 
 **Website:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org)
 
-<img alt="Bright Vision" title="Bright Vision" src="https://bright-vision.digitaldefiance.org/bright-vision.svg" />
+<div align="center">
+  <img width="400" alt="Bright Vision" title="Bright Vision" src="https://bright-vision.digitaldefiance.org/bright-vision-white.svg" />
+</div>
 
 A lightweight, cross-platform desktop IDE built with **Tauri** and **React** — **local LLM first**, spec-driven tasks, and superproject/submodule git — powered by **[Bright Vision Core](https://github.com/Digital-Defiance/bright-vision-core)** (a **fork²** on [cecli](https://github.com/dwash96/cecli): bundled cecli + ported headless HTTP API from our earlier `aider-vision-core` — see [lineage](https://github.com/Digital-Defiance/bright-vision-core/blob/main/docs/LINEAGE.md)).
 
