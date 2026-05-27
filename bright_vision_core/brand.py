@@ -12,3 +12,6 @@ DISPLAY_MONOGRAM = "BV"
 
 CECLI_HOME_URL = "https://cecli.dev"
 CECLI_GITHUB_URL = "https://github.com/dwash96/cecli"
+
+# Per-project tree (shared with Cecli). BrightVision uses todos/specs/attachments subtrees.
+WORKSPACE_META_DIR = ".cecli"

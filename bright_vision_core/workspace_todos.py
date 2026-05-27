@@ -1,5 +1,5 @@
 """
-Workspace task list persisted in ``.aider-vision/todos.json``.
+Workspace task list persisted in ``.cecli/todos.json`` (see ``workspace_paths``).
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+
+from bright_vision_core.workspace_paths import specs_root, todos_json_path, workspace_meta_dir
 
 TodoStatus = Literal["open", "in_progress", "done", "cancelled"]
 
@@ -224,11 +226,12 @@ def format_todo_context(item: TodoItem, *, store: TodoStore | None = None) -> st
 class WorkspaceTodos:
     def __init__(self, workspace_dir: str | Path):
         self.root = Path(workspace_dir).resolve()
-        self.path = self.root / ".aider-vision" / "todos.json"
-        self.specs_root = self.root / ".aider-vision" / "specs"
+        workspace_meta_dir(self.root)
+        self.path = todos_json_path(self.root)
+        self.specs_root = specs_root(self.root)
 
     def sync_spec_files(self, item: TodoItem) -> None:
-        """Write three-layer markdown under ``.aider-vision/specs/{id}/`` for external editing."""
+        """Write three-layer markdown under ``.cecli/specs/{id}/`` for external editing."""
         item = migrate_todo_layers(item)
         folder = self.specs_root / item.id
         folder.mkdir(parents=True, exist_ok=True)

@@ -32,7 +32,7 @@ BrightVision is a **local-LLM-first** desktop IDE (Tauri + React) with a **headl
 
 ## Tasks & specs (#18)
 
-- `.bright-vision/todos.json` + workspace HTTP API  
+- `.cecli/todos.json` + workspace HTTP API  
 - Layered specs (requirements / design / tasks), `depends_on`, templates  
 - **Generate / Refine spec**, background jobs  
 - **Implement** steered steps with active task chip  

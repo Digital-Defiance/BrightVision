@@ -49,7 +49,7 @@ class TestWorkspaceTodos(unittest.TestCase):
             api = WorkspaceTodos(root)
             item = api.add("Spec task", template="spec-driven")
             api.sync_spec_files(item)
-            spec_dir = root / ".aider-vision" / "specs" / item.id
+            spec_dir = api.specs_root / item.id
             (spec_dir / "requirements.md").write_text("### REQ-1\nUpdated", encoding="utf-8")
             loaded = api.import_spec_files(item.id)
             self.assertIn("Updated", loaded.requirements)
