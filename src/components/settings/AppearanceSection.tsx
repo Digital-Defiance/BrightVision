@@ -7,12 +7,12 @@ import {
 } from '../../theme/appearance'
 
 const PRESET_ORDER: FontPresetId[] = [
+  'inter',
+  'system-ui',
   'glass-tty',
   'jetbrains',
   'fira',
   'system-mono',
-  'inter',
-  'system-ui',
   'custom',
 ]
 
@@ -96,8 +96,8 @@ export function AppearanceSection({ appearance, onChange }: AppearanceSectionPro
         Appearance
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Chat defaults to <strong>Glass TTY VT220</strong> (same family as the Aider wordmark) without
-        the animated scanner effect. Save settings to persist.
+        Chat defaults to <strong>Inter</strong> to match the BrightVision UI. Choose{' '}
+        <strong>Glass TTY VT220</strong> for a retro terminal look. Save settings to persist.
       </Typography>
       <Stack spacing={2.5}>
         <FontRow

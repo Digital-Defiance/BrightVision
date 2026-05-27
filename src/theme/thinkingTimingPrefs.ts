@@ -23,7 +23,7 @@ export const DEFAULT_THINKING_TIMING_PREFS: ThinkingTimingPrefs = {
   showMessageTurnTotal: true,
   showStatsInSettings: true,
   resourceDisplay: 'avgPeak',
-  timingStatsCsvPath: '.bright-vision/timing-history.csv',
+  timingStatsCsvPath: '.cecli/timing-history.csv',
   timingStatsAutoAppendCsv: false,
 }
 

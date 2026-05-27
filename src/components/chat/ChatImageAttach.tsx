@@ -31,7 +31,7 @@ export function ChatImageAttach({
           e.target.value = ''
         }}
       />
-      <Tooltip title="Attach images or PDF (vision models)">
+      <Tooltip title="Attach images or PDF (vision models). Opens a file picker — not /add path entry.">
         <span>
           <IconButton
             size="small"

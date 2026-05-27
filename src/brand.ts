@@ -19,6 +19,9 @@ export const DISPLAY_MONOGRAM = 'BV'
 export const CECLI_HOME_URL = 'https://cecli.dev'
 export const CECLI_GITHUB_URL = 'https://github.com/dwash96/cecli'
 
+/** Per-project metadata tree (shared with Cecli). Keep in sync with bright_vision_core/brand.py */
+export const WORKSPACE_META_DIR = '.cecli'
+
 /**
  * `vector` — inline SVG wordmark; Inter Black/Thin from `src/assets/fonts/`.
  * `png` — raster fallbacks in `src/assets/brand/*.png`.

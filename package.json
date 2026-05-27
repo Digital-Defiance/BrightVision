@@ -22,7 +22,7 @@
     "test:all": "yarn test:full",
     "test:local:sh": "sh scripts/test-local.sh",
     "test:git-workspace": "python -m pytest tests/core/test_git_workspace.py tests/core/test_http_api.py -q",
-    "test:bright-core": "python -m pytest tests/core/test_git_workspace.py tests/core/test_workspace_todos.py tests/core/test_http_api.py tests/core/test_http_interrupt.py tests/core/test_http_session_todos.py tests/core/test_http_session_persistence.py tests/core/test_superproject_integration.py tests/core/test_headless_args.py tests/core/test_headless_persistence.py tests/core/test_headless_agent.py tests/core/test_session_crypto.py tests/core/test_sessions.py tests/core/test_llm_ollama.py -q",
+    "test:bright-core": "python -m pytest tests/core/test_git_workspace.py tests/core/test_workspace_paths.py tests/core/test_workspace_todos.py tests/core/test_http_api.py tests/core/test_http_interrupt.py tests/core/test_http_session_todos.py tests/core/test_http_session_persistence.py tests/core/test_superproject_integration.py tests/core/test_headless_args.py tests/core/test_headless_persistence.py tests/core/test_headless_agent.py tests/core/test_session_crypto.py tests/core/test_sessions.py tests/core/test_llm_ollama.py -q",
     "bench:leaderboard": "node scripts/build-bench-leaderboard.mjs",
     "verify:submodule": "sh scripts/verify_submodule.sh",
     "sync:core": "bash cecli/scripts/sync_bright_vision.sh"

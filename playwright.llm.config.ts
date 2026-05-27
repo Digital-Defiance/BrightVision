@@ -12,7 +12,7 @@ export default defineConfig({
   testMatch: ['hello-llm.spec.ts', 'agent-llm.spec.ts'],
   fullyParallel: false,
   workers: 1,
-  timeout: 300_000,
+  timeout: 900_000,
   forbidOnly: !!process.env.CI,
   retries: 0,
   globalSetup: './e2e/global-llm-setup.ts',

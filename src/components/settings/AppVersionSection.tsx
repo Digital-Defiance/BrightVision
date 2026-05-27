@@ -1,5 +1,5 @@
 import Link from '@mui/material/Link'
-import { Paper, Stack, Typography } from '@mui/material'
+import { Box, Paper, Stack, Typography } from '@mui/material'
 import {
   CECLI_GITHUB_URL,
   CECLI_HOME_URL,
@@ -28,14 +28,18 @@ function VersionRow({ label, value }: { label: string; value: string | null }) {
 
 interface AppVersionSectionProps {
   versions: AppVersions
+  /** When true, omit outer Paper (e.g. inside About dialog). */
+  embedded?: boolean
 }
 
-export function AppVersionSection({ versions }: AppVersionSectionProps) {
-  return (
-    <Paper variant="outlined" sx={{ p: 2 }} data-testid="settings-versions">
-      <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-        About
-      </Typography>
+export function AppVersionSection({ versions, embedded = false }: AppVersionSectionProps) {
+  const body = (
+    <>
+      {!embedded && (
+        <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+          About
+        </Typography>
+      )}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         {versions.loading
           ? 'Loading versions…'
@@ -64,6 +68,20 @@ export function AppVersionSection({ versions }: AppVersionSectionProps) {
         ). Every coding turn runs on {DISPLAY_CORE}; {DISPLAY_VISION} adds the desktop shell and{' '}
         {DISPLAY_VISION_API}.
       </Typography>
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <Box data-testid="settings-versions" sx={{ pt: 0.5 }}>
+        {body}
+      </Box>
+    )
+  }
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2 }} data-testid="settings-versions">
+      {body}
     </Paper>
   )
 }

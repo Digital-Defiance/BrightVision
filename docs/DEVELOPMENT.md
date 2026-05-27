@@ -70,7 +70,8 @@ Import from `src/progress` or use `useProcess()` in components.
 | `src/assets/brand/*.svg` | Wordmarks (inline in UI when `BRAND_LOGO_MODE === 'vector'`) |
 | `src/assets/brand/*.png` | Raster fallbacks |
 | `src/assets/fonts/Inter-Black.woff2`, `Inter-Thin.woff2` | Wordmark text in inline SVG logos |
-| `src/assets/fonts/Glass_TTY_VT220.woff2` | Glass TTY VT220 chat preset (optional) |
+| `src/assets/fonts/Inter-*.woff2` | UI + chat (copy from `assets/Inter/`; see `src/assets/fonts/README.md`) |
+| `src/assets/fonts/Glass_TTY_VT220.woff2` | Optional retro chat font in Settings → Appearance |
 | `src/assets/brand/logo.png` | Source for `yarn tauri icon …` → dock/installer icons |
 
 ## macOS release DMG

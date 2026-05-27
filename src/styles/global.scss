@@ -2,7 +2,7 @@
 @use 'variables' as *;
 @use 'brand';
 
-// Glass TTY VT220 — chat/terminal preset (see BRAND_CHAT_FONT_FILE in brand.ts)
+// Glass TTY VT220 — optional chat preset (see BRAND_CHAT_FONT_FILE in brand.ts)
 $brand-chat-font-url: '../assets/fonts/Glass_TTY_VT220.woff2';
 
 @font-face {
@@ -19,6 +19,44 @@ $brand-chat-font-url: '../assets/fonts/Glass_TTY_VT220.woff2';
   font-weight: normal;
   font-style: normal;
   font-display: block;
+}
+
+// Inter UI (copied from repo ``assets/Inter/`` → ``src/assets/fonts/``)
+$inter-regular-url: '../assets/fonts/Inter-Regular.woff2';
+$inter-medium-url: '../assets/fonts/Inter-Medium.woff2';
+$inter-semibold-url: '../assets/fonts/Inter-SemiBold.woff2';
+$inter-bold-url: '../assets/fonts/Inter-Bold.woff2';
+
+@font-face {
+  font-family: 'Inter';
+  src: url($inter-regular-url) format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url($inter-medium-url) format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url($inter-semibold-url) format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url($inter-bold-url) format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
 
 // Wordmark SVG text (Inter Black / Thin) — inline logos in BrandLogo
@@ -45,7 +83,7 @@ $inter-thin-url: '../assets/fonts/Inter-Thin.woff2';
 
 :root {
   --vision-font-ui: #{$vision-font-sans};
-  --vision-font-chat: 'Glass TTY VT220', 'Glass_TTY_VT220', monospace;
+  --vision-font-chat: #{$vision-font-sans};
   --vision-font-terminal: #{$vision-font-mono};
 }
 
@@ -62,9 +100,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-// Chat tab — plain Glass TTY (or user choice); no VT scanline striping
+// Chat tab — Inter by default (Settings → Appearance); Glass TTY optional
 .vision-chat {
-  font-family: var(--vision-font-chat, #{$vision-font-mono});
+  font-family: var(--vision-font-chat, #{$vision-font-sans});
   font-size: 0.9rem;
   line-height: 1.5;
   font-variant-ligatures: none;

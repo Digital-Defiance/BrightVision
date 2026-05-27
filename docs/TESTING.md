@@ -51,6 +51,11 @@ source activate.sh
 python -m pytest cecli/tests/basic/test_session_crypto.py \
   cecli/tests/basic/test_session_args.py \
   cecli/tests/basic/test_sessions_manager.py -q
+# Optional: /add attachment staging-path regression only (class is TestCommands)
+python -m pytest \
+  cecli/tests/basic/test_commands.py::TestCommands::test_cmd_add_skips_create_on_attachment_staging_path -q
+# Or full cecli session + commands module:
+# python -m pytest cecli/tests/basic/test_session_*.py cecli/tests/basic/test_commands.py -q
 # BrightVision integration
 python -m pytest \
   tests/core/test_session_crypto.py \
@@ -163,7 +168,7 @@ LLM UI e2e uses workspace `e2e/fixtures/hello-workspace` (minimal git repo), not
 
 Default `yarn test:e2e` **does not** run `hello-llm.spec.ts` or `agent-llm.spec.ts`.
 
-`/agent` LLM tests use a strict no-tools prompt; large models may take several minutes (Playwright timeout 7m per test).
+`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
 
 ## Manual smoke (not Playwright)
 

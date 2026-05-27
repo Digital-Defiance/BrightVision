@@ -697,7 +697,7 @@ def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
 
 @app.post("/workspaces/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)
 def sync_workspace_spec_files(workspace: str, todo_id: str):
-    """Import three-layer markdown from ``.brightvision/specs/{id}/`` into todos.json."""
+    """Import three-layer markdown from ``.cecli/specs/{id}/`` into todos.json."""
     api = _todos_for_workspace(workspace)
     try:
         item = api.import_spec_files(todo_id)
