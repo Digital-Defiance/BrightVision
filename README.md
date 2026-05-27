@@ -1,9 +1,9 @@
 # BrightVision
 
-**Website:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org)
+**Website:** [brightvision.digitaldefiance.org](https://brightvision.digitaldefiance.org)
 
 <div align="center">
-  <img width="400" alt="BrightVision" title="BrightVision" src="https://bright-vision.digitaldefiance.org/bright-vision-white.svg" />
+  <img width="400" alt="BrightVision" title="BrightVision" src="https://brightvision.digitaldefiance.org/brightvision-white.svg" />
 </div>
 
 A **local-LLM-first** desktop IDE (Tauri + React) for AI-assisted coding — spec-driven tasks, superproject git, and a headless engine you control. **Two days of focused product work** (May 2026) shipped a full chat loop, tasks, git, editor, timing intelligence, and cecli agent hooks — not a thin wrapper.
@@ -11,6 +11,10 @@ A **local-LLM-first** desktop IDE (Tauri + React) for AI-assisted coding — spe
 **Built in partnership with the [Cecli](https://cecli.dev) team** — coding agent from [dwash96/cecli](https://github.com/dwash96/cecli) (coders, slash commands, agents, MCP, LiteLLM). BrightVision adds **`bright_vision_core`** HTTP/SSE so the React shell never drives the terminal CLI. Vision API: **`bright_vision_core/`** in this repo (PyPI `bright-vision-core`). Agent: submodule **`cecli/`** → [Digital-Defiance/cecli](https://github.com/Digital-Defiance/cecli).
 
 <img width="1392" height="832" alt="BrightVision screenshot" src="https://github.com/user-attachments/assets/646e3140-72c5-4760-84ae-24b4b9015434" />
+<img width="1392" height="832" alt="Screenshot 2026-05-26 at 8 50 56 PM" src="https://github.com/user-attachments/assets/09652221-d4bc-4dc3-8f25-56529d04b015" />
+<img width="1728" height="1084" alt="Screenshot 2026-05-26 at 8 51 20 PM" src="https://github.com/user-attachments/assets/f9ea3523-aa0d-405c-aff8-371d59412c36" />
+<img width="1728" height="1084" alt="Screenshot 2026-05-26 at 8 51 26 PM" src="https://github.com/user-attachments/assets/3e21ed90-362d-49f3-93dd-f0a16d786866" />
+<img width="1728" height="1084" alt="Screenshot 2026-05-26 at 8 51 34 PM" src="https://github.com/user-attachments/assets/ead7a30a-b01b-48ff-be71-e15689eeeba7" />
 
 ## What BrightVision does
 
