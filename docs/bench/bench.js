@@ -251,6 +251,8 @@ function init() {
   const dropzone = document.getElementById('dropzone')
   const fileInput = document.getElementById('csv-file')
   const displayName = document.getElementById('display-name')
+  const modelFromCsv = document.getElementById('model-from-csv')
+  const modelFromCsvValue = document.getElementById('model-from-csv-value')
   const hardware = document.getElementById('hardware')
   const hideGithub = document.getElementById('hide-github')
   const preview = document.getElementById('preview-card')
@@ -279,10 +281,13 @@ function init() {
     if (!agg) {
       preview.className = 'preview-card empty'
       preview.innerHTML = 'Upload timing CSV to preview your card'
+      modelFromCsv.hidden = true
       btnCopy.disabled = true
       btnPr.disabled = true
       return
     }
+    modelFromCsvValue.textContent = formatModelLabel(agg.model)
+    modelFromCsv.hidden = false
     preview.className = 'preview-card'
     preview.innerHTML = `
       <span class="badge">median TPS</span>
@@ -293,9 +298,6 @@ function init() {
         <span>Response p90 <strong>${agg.p90ResponseMs != null ? Math.round(agg.p90ResponseMs) + ' ms' : '—'}</strong></span>
         <span>Think share <strong>${agg.avgThinkSharePct != null ? Math.round(agg.avgThinkSharePct) + '%' : '—'}</strong></span>
       </div>`
-    if (!displayName.value.trim()) {
-      displayName.placeholder = slugify(formatModelLabel(agg.model)).slice(0, 20) || 'my-handle'
-    }
     updateSubmission()
   }
 

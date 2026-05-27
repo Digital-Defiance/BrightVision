@@ -1,5 +1,7 @@
 # Bench card submissions (private to repo, public aggregate only)
 
+**Maintainers:** see [docs/BENCH_LEADERBOARD.md](../docs/BENCH_LEADERBOARD.md) for CI, schema, and long-term upkeep.
+
 Each file is one **bench card** (aggregate stats only — never raw CSV or chat).
 
 ## Submit
@@ -11,7 +13,7 @@ Each file is one **bench card** (aggregate stats only — never raw CSV or chat)
 
 - Name: `your-handle-or-unique-id.json` (e.g. `nova-7b-q4.json`)
 - `schemaVersion`: `1`
-- `displayName`: public nickname (1–32 chars, `a-z`, `0-9`, `_`, `-`)
+- `displayName`: bench nickname — your label on the leaderboard, **not** the model name (1–32 chars, `a-z`, `0-9`, `_`, `-`)
 - `hideGitHubOnWall`: `true` to omit `@login` from the public leaderboard
 - `submittedBy`: set by maintainers/CI from GitHub — do not impersonate others
 - `stats`: from the bench page or Settings timing export

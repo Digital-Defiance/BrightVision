@@ -14,6 +14,7 @@ const ROOT = path.join(__dirname, '..')
 /** Map issue template headings → field ids */
 const HEADING_TO_FIELD = {
   'display name': 'display_name',
+  'bench nickname': 'display_name',
   hardware: 'hardware',
   model: 'model',
   'turn count': 'turn_count',

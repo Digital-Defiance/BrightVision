@@ -234,6 +234,29 @@ a:hover {
   margin-bottom: 0.35rem;
 }
 
+.field-hint {
+  margin: -0.15rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted-dim);
+  line-height: 1.45;
+}
+
+.field-readonly {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.field-readonly strong {
+  color: var(--white);
+  font-weight: 500;
+}
+
 .field input,
 .field select {
   width: 100%;

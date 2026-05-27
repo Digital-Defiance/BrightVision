@@ -27,6 +27,9 @@
           <a href="../">Home</a>
           <a href="#build">Build card</a>
           <a href="#leaderboard">Leaderboard</a>
+          <a href="https://github.com/Digital-Defiance/BrightVision/blob/main/docs/BENCH_LEADERBOARD.md"
+            >Docs</a
+          >
           <a
             href="https://github.com/Digital-Defiance/BrightVision/blob/main/bench-submissions/README.md"
             >Submit</a
@@ -67,16 +70,23 @@
 
             <h2 style="margin-top: 1.5rem">2. Card details</h2>
             <div class="field">
-              <label for="display-name">Display name</label>
+              <label for="display-name">Bench nickname</label>
+              <p class="field-hint">
+                A short public name for <em>you</em> on the leaderboard — not your real name,
+                not the model. The model is taken from your CSV (shown below after upload).
+              </p>
               <input
                 id="display-name"
                 type="text"
                 maxlength="32"
                 pattern="[a-zA-Z0-9_-]+"
-                placeholder="metal-box-7b"
+                placeholder="e.g. nova-rig"
                 autocomplete="off"
               />
             </div>
+            <p id="model-from-csv" class="field-readonly" hidden>
+              Model from CSV: <strong id="model-from-csv-value"></strong>
+            </p>
             <div class="field">
               <label for="hardware">Hardware</label>
               <select id="hardware"></select>
@@ -130,6 +140,9 @@
             >leaderboard.v1.json</a
           >
           on each merge to <code>bench-submissions/</code>.
+          <a href="https://github.com/Digital-Defiance/BrightVision/blob/main/docs/BENCH_LEADERBOARD.md"
+            >Maintenance guide</a
+          >.
         </p>
         <div id="leaderboard-grid" class="leaderboard-grid">
           <p class="empty-leaderboard">Loading…</p>

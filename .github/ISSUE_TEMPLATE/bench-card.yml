@@ -12,9 +12,9 @@ body:
   - type: input
     id: display_name
     attributes:
-      label: Display name
-      description: Public nickname (1–32 characters, letters, numbers, `_`, `-`)
-      placeholder: metal-box-7b
+      label: Bench nickname
+      description: Your public label on the leaderboard — not your real name and not the model (use the Model field below for that).
+      placeholder: e.g. nova-rig
     validations:
       required: true
   - type: checkboxes
