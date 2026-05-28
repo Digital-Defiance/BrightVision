@@ -37,6 +37,7 @@ from bright_vision_core.agent_todos import (
 )
 from bright_vision_core.http_auth import auth_enabled, configure_auth, get_token_from_env, verify_bearer
 from bright_vision_core.session import Session
+from bright_vision_core.session_debug import build_session_debug_export
 from bright_vision_core.session_transcript import transcript_rows_from_coder
 from bright_vision_core.todo_spec_jobs import spec_job_store
 from bright_vision_core.workspace_todos import (
@@ -432,6 +433,25 @@ def get_session_transcript(session_id: str):
     rows = transcript_rows_from_coder(session.coder)
     return TranscriptResponse(
         messages=[TranscriptRow(role=r["role"], content=r["content"]) for r in rows]
+    )
+
+
+@app.get("/sessions/{session_id}/debug")
+def get_session_debug(session_id: str):
+    """
+    Export a JSON debug bundle: messages, tool calls, duplicate hints, agent todo, recent events.
+
+    Use when reporting malformed tool args, duplicate GitLog/Grep calls, or stuck /agent turns.
+    """
+    session = _get_session(session_id)
+    payload = build_session_debug_export(session_id, session)
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="brightvision-session-{session_id[:8]}-debug.json"'
+            ),
+        },
     )
 
 

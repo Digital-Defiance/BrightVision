@@ -70,6 +70,16 @@ POST /sessions/{session_id}/messages
 
 The `done` event may include `active_todo_id`; edited files and commits are appended to that task’s `links`.
 
+### Session debug export
+
+When a turn misbehaves (wrong tool arguments, duplicate `GitLog`/`Grep`, char-split todos), export a JSON bundle:
+
+```http
+GET /sessions/{session_id}/debug
+```
+
+Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. Desktop: **Terminal → Export debug**. Redact secrets before sharing.
+
 ### Workspace tasks (no session)
 
 Same todo file; use when the Vision API is running but you have not opened a chat session:

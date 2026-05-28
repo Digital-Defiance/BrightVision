@@ -129,6 +129,17 @@ export class CoreHttpClient {
     return data.messages ?? []
   }
 
+  /** Full session debug bundle (messages, tool calls, agent todo, recent events). */
+  async fetchSessionDebugBlob(sessionId: string): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/debug`, {
+      headers: this.headers(false),
+    })
+    if (!res.ok) {
+      throw new Error(`session debug export: ${res.status} ${await res.text()}`)
+    }
+    return res.blob()
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
       method: 'DELETE',

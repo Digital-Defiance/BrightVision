@@ -17,6 +17,7 @@ import TerminalIcon from '@mui/icons-material/Terminal'
 import CodeIcon from '@mui/icons-material/Code'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import StopIcon from '@mui/icons-material/Stop'
+import SaveAltIcon from '@mui/icons-material/SaveAlt'
 import { Alert, Box, Button, Chip, Paper, Snackbar, Stack, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
@@ -154,6 +155,7 @@ import {
   saveThinkingStats,
 } from './utils/thinkingStats'
 import { estimateTurnEta } from './utils/turnEtaEstimate'
+import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
 import {
   resolveMessageTurnTiming,
   shouldRecordTurnInHistory,
@@ -1738,6 +1740,27 @@ function AppShell({
     setInputValue((prev) => (prev.endsWith('\n') || !prev ? prev + block : `${prev}\n\n${block}`))
   }, [isRunning, terminalLines])
 
+  const handleExportSessionDebug = useCallback(async () => {
+    const sid = sessionInfo?.session_id
+    const client = httpClient ?? todoApiClient
+    if (!sid) {
+      setSnackbar({ message: 'Start a session before exporting debug data', severity: 'info' })
+      return
+    }
+    try {
+      await downloadSessionDebugBundle(client, sid)
+      setSnackbar({
+        message: 'Session debug bundle downloaded (share when reporting tool-call issues)',
+        severity: 'info',
+      })
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [sessionInfo?.session_id, httpClient, todoApiClient])
+
   const handleAttachContextDirectory = useCallback(async () => {
     if (!isRunning || !isTauriRuntime()) return
     try {
@@ -2553,6 +2576,15 @@ function AppShell({
                   disabled={!lifecycleActive}
                 >
                   Stop
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<SaveAltIcon />}
+                  data-testid="terminal-export-debug"
+                  onClick={() => void handleExportSessionDebug()}
+                  disabled={!sessionInfo?.session_id}
+                >
+                  Export debug
                 </Button>
               </Stack>
             </Paper>
