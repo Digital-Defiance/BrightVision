@@ -17,5 +17,6 @@ export async function settleTurnAfterReply(page: Page, timeoutMs = 180_000) {
     if ((await page.getByTestId('chat-stop-turn').count()) === 0) break
     await page.waitForTimeout(400)
   }
-  await expectTurnIdle(page, timeoutMs)
+  const remaining = Math.max(5_000, deadline - Date.now())
+  await expectTurnIdle(page, remaining)
 }

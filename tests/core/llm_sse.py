@@ -26,20 +26,39 @@ def assistant_text(events: list[dict]) -> str:
     return "".join(tokens)
 
 
+def _is_hex_part(part: str) -> bool:
+    return len(part) >= 2 and all(c in "0123456789abcdef" for c in part.lower())
+
+
 def fuzzy_contains_magic(reply: str, magic: str) -> bool:
     """
     True when *magic* appears verbatim or each hyphen segment appears in *reply*.
 
-    Small local models sometimes double syllables (``bvbv-context-context-…``) while
-    still echoing the right constant; Playwright e2e uses the same segments in regex.
+    Small local models sometimes double syllables (``bvbv-context-context-…``) or mash
+    hex tails (``77ff33aa`` for ``7f3a``); Playwright e2e uses the same leniency.
     """
-    text = (reply or "").strip()
+    text = (reply or "").strip().lower()
     if not text or not magic:
         return False
-    if magic in text:
+    magic_lower = magic.lower()
+    if magic_lower in text:
         return True
-    parts = [p for p in magic.split("-") if p]
-    return bool(parts) and all(p in text for p in parts)
+    parts = [p for p in magic_lower.split("-") if p]
+    if not parts:
+        return False
+    if all(p in text for p in parts):
+        return True
+    for part in parts:
+        if part in text:
+            continue
+        if _is_hex_part(part):
+            if not all(c in text for c in part):
+                return False
+            continue
+        prefix_len = max(2, (len(part) + 1) // 2)
+        if part[:prefix_len] not in text:
+            return False
+    return True
 
 
 def tool_output_text(events: list[dict]) -> str:

@@ -19,6 +19,7 @@ except ImportError:
     reset_auth_for_tests = None
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_client import stream_session_message
 from llm_sse import assistant_text, parse_sse_payload, tool_output_text
 
 from test_agent_llm import _ensure_llm_e2e_workspace
@@ -69,15 +70,7 @@ class TestTodoListLlm(unittest.TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         session_id = res.json()["session_id"]
 
-        with client.stream(
-            "POST",
-            f"/sessions/{session_id}/messages",
-            json={"content": TODO_AGENT_PROMPT, "preproc": True},
-        ) as stream:
-            self.assertEqual(stream.status_code, 200)
-            body = stream.read().decode("utf-8")
-
-        events = parse_sse_payload(body)
+        events = stream_session_message(client, session_id, TODO_AGENT_PROMPT)
         errors = [e for e in events if e.get("type") == "error"]
         self.assertFalse(errors, errors)
         combined = assistant_text(events) + "\n" + tool_output_text(events)

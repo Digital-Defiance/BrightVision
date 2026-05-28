@@ -19,7 +19,8 @@ except ImportError:
     reset_auth_for_tests = None
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
-from llm_sse import assistant_text, parse_sse_payload
+from llm_client import stream_session_message
+from llm_sse import assistant_text
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EDIT_WORKSPACE = REPO_ROOT / "e2e" / "fixtures" / "edit-block-workspace"
@@ -83,29 +84,14 @@ class TestEditBlockLlm(unittest.TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         session_id = res.json()["session_id"]
 
-        with client.stream(
-            "POST",
-            f"/sessions/{session_id}/messages",
-            json={"content": f"/add {PATCH_REL}", "preproc": True},
-        ) as stream:
-            self.assertEqual(stream.status_code, 200)
-            add_body = stream.read().decode("utf-8")
-        add_events = parse_sse_payload(add_body)
+        add_events = stream_session_message(client, session_id, f"/add {PATCH_REL}")
         self.assertFalse([e for e in add_events if e.get("type") == "error"])
 
         prompt = (
             f"In {PATCH_REL}, change the string 'old' to 'new' in the export. "
             "Reply with a single fenced SEARCH/REPLACE block only (no shell, no other files)."
         )
-        with client.stream(
-            "POST",
-            f"/sessions/{session_id}/messages",
-            json={"content": prompt, "preproc": True},
-        ) as stream:
-            self.assertEqual(stream.status_code, 200)
-            body = stream.read().decode("utf-8")
-
-        events = parse_sse_payload(body)
+        events = stream_session_message(client, session_id, prompt)
         errors = [e for e in events if e.get("type") == "error"]
         self.assertFalse(errors, errors)
         reply = assistant_text(events)

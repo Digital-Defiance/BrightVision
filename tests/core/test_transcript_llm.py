@@ -17,9 +17,10 @@ except ImportError:
     reset_auth_for_tests = None
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
-from llm_sse import assistant_text, parse_sse_payload
+from llm_client import stream_session_message
+from llm_sse import assistant_text
 
-from test_context_llm import _ensure_context_workspace
+from test_agent_llm import _ensure_llm_e2e_workspace
 
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
@@ -40,7 +41,7 @@ class TestTranscriptLlm(unittest.TestCase):
 
     def test_transcript_includes_user_and_assistant_after_turn(self):
         model = resolve_vision_model()
-        workspace = _ensure_context_workspace()
+        workspace = _ensure_llm_e2e_workspace()
         client = TestClient(app)
         res = client.post("/sessions", json={"workspace": workspace, "model": model})
         if res.status_code == 400:
@@ -49,15 +50,7 @@ class TestTranscriptLlm(unittest.TestCase):
         session_id = res.json()["session_id"]
 
         prompt = "Reply with exactly: transcript e2e ok"
-        with client.stream(
-            "POST",
-            f"/sessions/{session_id}/messages",
-            json={"content": prompt, "preproc": True},
-        ) as stream:
-            self.assertEqual(stream.status_code, 200)
-            body = stream.read().decode("utf-8")
-
-        events = parse_sse_payload(body)
+        events = stream_session_message(client, session_id, prompt)
         self.assertFalse([e for e in events if e.get("type") == "error"])
         reply = assistant_text(events)
         self.assertIn("transcript", reply.lower())

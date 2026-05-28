@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
+import { expectOptimisticSend } from './helpers/chatSend'
 import {
   assertOllamaForLlmE2e,
   ensureLlmE2eWorkspace,
@@ -7,8 +7,9 @@ import {
   resolveVisionModel,
 } from './helpers/llmEnv'
 import { openLlmChat, primeLlmE2eApp, startLlmE2eSession } from './helpers/llmSession'
+import { settleTurnAfterReply } from './helpers/llmTurn'
 
-test.describe.configure({ mode: 'serial' })
+test.describe.configure({ mode: 'serial', timeout: 900_000 })
 
 test.describe('Hello LLM (real Ollama + Vision API)', () => {
   test.skip(!isLlmE2eEnabled(), 'Run: yarn test:e2e:llm (sets E2E_LLM=1 and E2E_OLLAMA_MODEL)')
@@ -44,7 +45,8 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
     await expect(page.getByText(/Turn stalled/i)).toHaveCount(0)
     await expect(page.getByText(/likely stuck/i)).toHaveCount(0)
 
-    await expectTurnIdle(page)
+    // Answer can appear before SSE `done` (router / Ollama tail); allow post-answer wait.
+    await settleTurnAfterReply(page, 180_000)
     await page.getByTestId('chat-input').fill('follow-up probe')
     await expect(page.getByTestId('chat-send')).toBeEnabled()
   })

@@ -1,6 +1,6 @@
 {
   "name": "bright-vision",
-  "version": "0.1.2-bright17",
+  "version": "0.1.2-bright18",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,7 +20,7 @@
     "test:e2e:llm": "E2E_MODEL_ROUTER=1 E2E_LLM=1 E2E_PYTHON=.venv/bin/python3 playwright test -c playwright.llm.config.ts",
     "test:e2e:llm:single": "E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 E2E_PYTHON=.venv/bin/python3 playwright test -c playwright.llm.config.ts --grep-invert @router",
     "test:e2e:fixtures": "sh scripts/verify-e2e-fixture-pack.sh",
-    "test:llm:core": "E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 python3 -m pytest tests/core/test_hello_llm.py tests/core/test_agent_llm.py tests/core/test_context_llm.py tests/core/test_todo_list_llm.py tests/core/test_edit_block_llm.py tests/core/test_transcript_llm.py -q",
+    "test:llm:core": "VISION_AGENT_PREPROC_TIMEOUT_S=480 VISION_SLASH_PREPROC_TIMEOUT_S=240 LLM_TEST_TURN_TIMEOUT_S=300 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 .venv/bin/python3 -m pytest tests/core/test_hello_llm.py tests/core/test_agent_llm.py tests/core/test_context_llm.py tests/core/test_todo_list_llm.py tests/core/test_edit_block_llm.py tests/core/test_transcript_llm.py -q",
     "test:e2e:llm:superproject": "E2E_SUPERPROJECT_LLM=1 E2E_LLM=1 E2E_PYTHON=.venv/bin/python3 playwright test -c playwright.llm.config.ts superproject-llm.spec.ts",
     "dogfood:agent": "sh scripts/dogfood-agent.sh",
     "dogfood:gate": "sh scripts/dogfood-gate.sh",

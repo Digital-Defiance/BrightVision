@@ -87,7 +87,8 @@ async function waitForHealth(timeoutMs: number): Promise<void> {
 }
 
 export async function startRealCoreServer(): Promise<void> {
-  const forceRestart = process.env.E2E_INTEGRATION === '1'
+  // Always restart for LLM/integration e2e so :8741 picks up current code + timeout env.
+  const forceRestart = process.env.E2E_INTEGRATION === '1' || process.env.E2E_LLM === '1'
   if (forceRestart) {
     await stopRealCoreServer()
     killListenersOnPort(CORE_PORT)
@@ -112,7 +113,12 @@ export async function startRealCoreServer(): Promise<void> {
   }
   assertPythonReady(python, repoRoot)
 
-  const env = buildVisionCoreEnv(ollamaEnvForCore())
+  const env = buildVisionCoreEnv({
+    ...ollamaEnvForCore(),
+    // Cap /agent preproc during LLM e2e (default product: unlimited). Override via env.
+    VISION_AGENT_PREPROC_TIMEOUT_S: process.env.VISION_AGENT_PREPROC_TIMEOUT_S ?? '600',
+    VISION_SLASH_PREPROC_TIMEOUT_S: process.env.VISION_SLASH_PREPROC_TIMEOUT_S ?? '300',
+  })
 
   const serveCli = path.join(repoRoot, '.venv', 'bin', 'bright-vision-core-serve')
   const useServeCli = fs.existsSync(serveCli)

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
+import { expectOptimisticSend } from './helpers/chatSend'
 import { expectLatestAssistantReply, expectNoAgentVerboseCrash } from './helpers/llmChat'
 import {
   assertOllamaForLlmE2e,
@@ -7,6 +7,7 @@ import {
   isLlmE2eEnabled,
 } from './helpers/llmEnv'
 import { openLlmChat, primeLlmE2eApp, startLlmE2eSession } from './helpers/llmSession'
+import { settleTurnAfterReply } from './helpers/llmTurn'
 
 // Session (120s) + slash/agent preproc (300s default) + reply + turn idle — keep headroom.
 test.describe.configure({ mode: 'serial', timeout: 900_000 })
@@ -61,7 +62,7 @@ test.describe('Agent slash (real Ollama + Vision API)', () => {
 
     await expect(page.getByText(/Turn stalled/i)).toHaveCount(0)
     await expect(page.getByText(/Slash commands.*timed out/i)).toHaveCount(0)
-    await expectTurnIdle(page, 60_000)
+    await settleTurnAfterReply(page, 180_000)
     await page.getByTestId('chat-input').fill('agent follow-up probe')
     await expect(page.getByTestId('chat-send')).toBeEnabled({ timeout: 30_000 })
   })

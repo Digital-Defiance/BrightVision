@@ -26,6 +26,9 @@ if [ "${DOGFOOD_LLM:-}" = "1" ]; then
     host="${OLLAMA_HOST:-http://127.0.0.1:11434}"
     host="${host%/}"
     if curl -sf "${host}/api/tags" >/dev/null 2>&1; then
+      export VISION_AGENT_PREPROC_TIMEOUT_S="${VISION_AGENT_PREPROC_TIMEOUT_S:-600}"
+      export VISION_SLASH_PREPROC_TIMEOUT_S="${VISION_SLASH_PREPROC_TIMEOUT_S:-300}"
+      export LLM_TEST_TURN_TIMEOUT_S="${LLM_TEST_TURN_TIMEOUT_S:-300}"
       yarn test:llm:core
       step "LLM Playwright (standard lane)"
       yarn test:e2e:llm

@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test'
 import type { TodoItem, TodoStore } from '../../src/todos/types'
 import {
-  agentPlanTodoStore,
   clearTurnEvents,
   confirmTurnEvents,
   defaultTurnEvents,
@@ -24,7 +23,7 @@ export interface MockCoreOptions {
   sessionTranscript?: { role: string; content: string }[]
   /** When set, POST import-agent-plan returns 404 (no Cecli todo.txt). */
   agentPlanMissing?: boolean
-  /** Store applied when import-agent-plan succeeds (default: agentPlanTodoStore()). */
+  /** When set, POST import-agent-plan returns this store (simulated import without disk). */
   agentPlanTodos?: TodoStore
   /** Run real import_agent_plan_for_workspace against workspacePath (reads agent todo.txt on disk). */
   agentTodoImportFromDisk?: boolean
@@ -316,8 +315,16 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
           })
           return
         }
+      } else if (opts.agentPlanTodos) {
+        todoStore = cloneStore(opts.agentPlanTodos)
       } else {
-        todoStore = cloneStore(opts.agentPlanTodos ?? agentPlanTodoStore())
+        // Real core: no agent todo.txt → 404; workspace todos.json unchanged.
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+        })
+        return
       }
       await route.fulfill({
         status: 200,

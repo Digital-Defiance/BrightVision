@@ -8,6 +8,7 @@ import {
 import { expectLatestAssistantReply } from './helpers/llmChat'
 import { assertOllamaForLlmE2e, isLlmE2eEnabled } from './helpers/llmEnv'
 import { openLlmChat, primeLlmE2eApp, startLlmE2eSession } from './helpers/llmSession'
+import { settleTurnAfterReply } from './helpers/llmTurn'
 
 test.describe.configure({ mode: 'serial', timeout: 900_000 })
 
@@ -58,6 +59,6 @@ test.describe('LLM context (/add file in fixture repo)', () => {
       )
     }
 
-    await expectTurnIdle(page, 60_000)
+    await settleTurnAfterReply(page, 180_000)
   })
 })

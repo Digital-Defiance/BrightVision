@@ -20,6 +20,7 @@ except ImportError:
     reset_auth_for_tests = None
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_client import stream_session_message
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LLM_E2E_WORKSPACE = REPO_ROOT / "e2e" / "fixtures" / "hello-workspace"
@@ -116,15 +117,7 @@ class TestAgentLlm(unittest.TestCase):
         self.assertEqual(res.status_code, 200, res.text)
         session_id = res.json()["session_id"]
 
-        with client.stream(
-            "POST",
-            f"/sessions/{session_id}/messages",
-            json={"content": AGENT_PROMPT, "preproc": True},
-        ) as stream:
-            self.assertEqual(stream.status_code, 200)
-            body = stream.read().decode("utf-8")
-
-        events = _parse_sse_payload(body)
+        events = stream_session_message(client, session_id, AGENT_PROMPT)
         types = [e.get("type") for e in events]
         errors = [e for e in events if e.get("type") == "error"]
         self.assertFalse(errors, errors)

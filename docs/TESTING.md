@@ -191,6 +191,9 @@ Optional env:
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
+| `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in `test:llm:core` (default `300`; `/agent` uses max with `VISION_AGENT_PREPROC_TIMEOUT_S`) |
+| `VISION_AGENT_PREPROC_TIMEOUT_S` | Wall-clock cap for `/agent` preproc in core + pytest (default `480` in `test:llm:core`; `0` = no cap in dev) |
+| `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (default `240` in `test:llm:core`, `300` in product) |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
 

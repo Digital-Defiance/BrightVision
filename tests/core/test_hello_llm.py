@@ -20,6 +20,7 @@ except ImportError:
 from cecli.utils import GitTemporaryDirectory
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_client import stream_session_message
 
 
 def _parse_sse_payload(raw: str) -> list[dict]:
@@ -58,15 +59,9 @@ class TestHelloLlm(unittest.TestCase):
             self.assertEqual(res.status_code, 200, res.text)
             session_id = res.json()["session_id"]
 
-            with client.stream(
-                "POST",
-                f"/sessions/{session_id}/messages",
-                json={"content": "Reply with exactly: hello from pytest", "preproc": True},
-            ) as stream:
-                self.assertEqual(stream.status_code, 200)
-                body = stream.read().decode("utf-8")
-
-            events = _parse_sse_payload(body)
+            events = stream_session_message(
+                client, session_id, "Reply with exactly: hello from pytest"
+            )
             types = [e.get("type") for e in events]
             errors = [e for e in events if e.get("type") == "error"]
             self.assertFalse(errors, errors)
