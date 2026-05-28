@@ -60,11 +60,36 @@ function searchReplaceCandidates(search: string): string[] {
   return [...new Set(variants.filter((s) => s.length > 0 || !search.trim()))]
 }
 
+function leadingWhitespace(line: string): string {
+  return line.match(/^(\s*)/)?.[1] ?? ''
+}
+
+/** Re-indent REPLACE lines to match the matched file block’s base indent. */
+function reindentReplaceBlock(
+  replace: string,
+  fileBaseIndent: string,
+  searchBlockIndent: string
+): string {
+  const replaceLines = replace.replace(/\r\n/g, '\n').split('\n')
+  const searchLen = searchBlockIndent.length
+  return replaceLines
+    .map((line) => {
+      if (line.trim() === '') return line
+      const lineIndent = leadingWhitespace(line)
+      if (lineIndent.length >= searchLen) {
+        return fileBaseIndent + lineIndent.slice(searchLen) + line.trimStart()
+      }
+      return fileBaseIndent + line.trimStart()
+    })
+    .join('\n')
+}
+
 /** Line-trimmed consecutive match when exact SEARCH fails (common with trailing spaces). */
 function applyLineTrimmedBlockReplace(
   content: string,
   search: string,
-  replace: string
+  replace: string,
+  compare: (fileLine: string, searchLine: string) => boolean
 ): string | null {
   const searchLines = search.replace(/\r\n/g, '\n').split('\n')
   if (searchLines.length < 2) {
@@ -75,13 +100,17 @@ function applyLineTrimmedBlockReplace(
   for (let i = 0; i <= fileLines.length - n; i++) {
     let ok = true
     for (let j = 0; j < n; j++) {
-      if (fileLines[i + j].trimEnd() !== searchLines[j].trimEnd()) {
+      if (!compare(fileLines[i + j], searchLines[j])) {
         ok = false
         break
       }
     }
     if (!ok) continue
-    const replaceLines = replace.replace(/\r\n/g, '\n').split('\n')
+    const fileBaseIndent = leadingWhitespace(fileLines[i])
+    const firstSearchLine = searchLines.find((l) => l.trim() !== '') ?? searchLines[0]
+    const searchBlockIndent = leadingWhitespace(firstSearchLine)
+    const replaceBody = reindentReplaceBlock(replace, fileBaseIndent, searchBlockIndent)
+    const replaceLines = replaceBody.split('\n')
     const next = [
       ...fileLines.slice(0, i),
       ...replaceLines,
@@ -90,6 +119,17 @@ function applyLineTrimmedBlockReplace(
     return next.join('\n')
   }
   return null
+}
+
+/** Full line trim — model omitted or changed leading indent vs workspace file. */
+function applyIndentFlexibleBlockReplace(
+  content: string,
+  search: string,
+  replace: string
+): string | null {
+  return applyLineTrimmedBlockReplace(content, search, replace, (fileLine, searchLine) =>
+    fileLine.trim() === searchLine.trim()
+  )
 }
 
 /** First exact occurrence replace; fuzzy fallbacks for newline / trailing-space drift. */
@@ -108,7 +148,24 @@ export function applySearchReplaceToContent(
     }
   }
   if (search.includes('\n')) {
-    return applyLineTrimmedBlockReplace(content, search, replace)
+    const trimmedEnd = applyLineTrimmedBlockReplace(
+      content,
+      search,
+      replace,
+      (fileLine, searchLine) => fileLine.trimEnd() === searchLine.trimEnd()
+    )
+    if (trimmedEnd !== null) return trimmedEnd
+    return applyIndentFlexibleBlockReplace(content, search, replace)
+  }
+  const fileLines = content.replace(/\r\n/g, '\n').split('\n')
+  const needle = search.trim()
+  for (let i = 0; i < fileLines.length; i++) {
+    if (fileLines[i].trim() === needle) {
+      const indent = leadingWhitespace(fileLines[i])
+      const replaceLine =
+        replace.includes('\n') ? replace : indent + replace.trimStart()
+      return [...fileLines.slice(0, i), replaceLine, ...fileLines.slice(i + 1)].join('\n')
+    }
   }
   return null
 }
@@ -153,7 +210,7 @@ export async function applyProposedEditSegment(
       if (patched === null) {
         return {
           ok: false,
-          message: `SEARCH block did not match ${path} — file unchanged. Try /add ${path} and ask the model to retry.`,
+          message: `SEARCH block did not match ${path} (exact or fuzzy) — file unchanged. Try /add ${path} and ask the model to retry.`,
         }
       }
       next = patched

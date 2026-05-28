@@ -60,7 +60,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | # | Status | Item |
 |---|--------|------|
 | 1 | **Done** | Stream dedupe — core skips stdout when `yield_stream`; UI `appendStreamingToken` for cumulative chunks; timeline interleaves tools (`stream-chat.spec.ts`) |
-| 2 | **Done** | Proposed edits → accordions + CM6 fence; **Apply to workspace** (desktop, exact SEARCH/REPLACE); dedupe path-only fences + redundant tool_output; **Applied** chip from `done.edited_files` or manual apply. **Tests:** `proposed-edits-apply.spec.ts`, `applyProposedEdit.test.ts`, `chat-ux.spec.ts`. **Open:** fuzzy SEARCH when exact match fails. |
+| 2 | **Done** | Proposed edits → accordions + CM6 fence; **Apply to workspace** (desktop, exact + fuzzy SEARCH/REPLACE: trailing-space, indent drift, single-line trim); dedupe path-only fences + redundant tool_output; **Applied** chip from `done.edited_files` or manual apply. **Tests:** `proposed-edits-apply.spec.ts`, `applyProposedEdit.test.ts`, `chat-ux.spec.ts`. |
 | 8 | **Done** | Duplicate assistant text (same stdout fix as #1) |
 | 9 | **Done** | Basic section chips for `► **THINKING**` / `► **ANSWER**` (`splitAssistantSections`) |
 | 10 | **Done** | Dismiss (×) on chat bubbles |
@@ -101,11 +101,11 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **34** | **Done** | **Thinking timers** — live elapsed on current section; durations on completed chips; per-model averages in Settings. **Tests:** `thinkingTiming.test.ts`, `chat-ux.spec.ts`. See [§ #34 design](#34-thinking-timers) |
 | **35** | **Done** | **Context window awareness** — header chip: file count + `Tokens:` / ~added estimate; sync after `done` + `/add`. **Tests:** `session-context.spec.ts`, `contextUsage.test.ts`. **Open:** core-reported context % bar. See [§ #35](#35-context-window--file-counter) |
 | **36** | **Done** | **LLM ping** — Settings **Ping LLM**: Ollama tags + 1-token generate + core `/health`. **Tests:** `local-llm-ping.spec.ts`. See [§ #36](#36-llm-ping) |
-| **37** | **Done** | **Empty LLM response** — rewrite legacy “provider account” copy for Ollama; **Retry** (exact resend) + **Retry with hint** (append nudge); remember last user message in `App.tsx`. `emptyLlmResponse.ts`, `EmptyLlmWarning.tsx`. **Upstream:** cecli `base_coder.py` still emits legacy text until core patch. |
+| **37** | **Done** | **Empty LLM response** — rewrite legacy “provider account” copy for Ollama; **Retry** (exact resend) + **Retry with hint** (append nudge); remember last user message in `App.tsx`. `emptyLlmResponse.ts`, `EmptyLlmWarning.tsx`. **Cecli fork:** `base_coder.empty_llm_tool_warning()` for tool_output path. |
 | **38** | **Done** | **Editor** — left-rail tab; file tabs + CM6 + explorer + git badges + open-from-chat; optional language packs (Settings). See [§ #38](#38--editor-rail-tab--file-tabs--explorer) |
 | **39** | **Done** | **Local model router** — hopper, Tauri preload/swap, chat escalate + force tier. **Tests:** `router-llm.spec.ts` (LLM lane), existing unit coverage. See [§ #39](#39--local-model-router) |
 | **40** | **Done** | **cecli agents in Vision (v1)** — chat agent bar, Settings registry, `GET …/subagents`, slash fallbacks. **Tests:** `agents-bar.spec.ts`. **Open (v2):** `POST …/agents/invoke`, header pill. See [§ #40](#40--cecli-agents-in-vision) |
-| **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done`. **Tests:** `ntfy-alerts.spec.ts`. **Open:** automated turn-`done` notification e2e. See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
+| **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done`. **Tests:** `ntfy-alerts.spec.ts` (settings test ping + mock turn-`done` push). See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
 | **43** | **Done** | **LLM fixture packs for e2e** — external curated workspace collection via `E2E_FIXTURE_PACK_ROOT` (submodule-friendly), in-repo fallback, plus `scripts/verify-e2e-fixture-pack.sh` (`yarn test:e2e:fixtures`) for structure + optional pin-status preflight. |
 | **44** | **Done** | **Session debug export** — `GET /sessions/{id}/debug` JSON bundle (messages, tool_calls, duplicate hints, agent todo, EventIO ring); Settings **Session history → Export debug bundle**. See [IPC.md](./IPC.md). |
 

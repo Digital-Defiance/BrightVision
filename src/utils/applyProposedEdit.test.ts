@@ -24,6 +24,21 @@ new line
     expect(out).not.toContain('old line')
   })
 
+  it('applies when search block differs only by leading indent', () => {
+    const content = '  function foo() {\n    return 1;\n  }\n'
+    const search = 'function foo() {\n  return 1;\n}\n'
+    const replace = 'function foo() {\n  return 2;\n}\n'
+    const out = applySearchReplaceToContent(content, search, replace)
+    expect(out).toContain('return 2')
+    expect(out).not.toContain('return 1')
+    expect(out?.startsWith('  function')).toBe(true)
+  })
+
+  it('applies single-line search when file line differs only by indent', () => {
+    const out = applySearchReplaceToContent('  const x = 1;\n', 'const x = 1;', 'const x = 2;')
+    expect(out).toBe('  const x = 2;\n')
+  })
+
   it('applies when search block differs only by trailing spaces per line', () => {
     const content = 'function foo() {\n  return 1;\n}\n'
     const search = 'function foo() {\n  return 1; \n}\n'

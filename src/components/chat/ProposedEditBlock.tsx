@@ -90,7 +90,7 @@ export function ProposedEditBlock({
         {!applied && (
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
             {canApply
-              ? 'Apply writes this block to your project (exact SEARCH match). The engine may still propose the same edit until the turn finishes.'
+              ? 'Apply writes this block to your project (exact or fuzzy SEARCH match). The engine may still propose the same edit until the turn finishes.'
               : 'Apply is available in the desktop app. Shown in chat until Cecli applies it or you use Apply.'}
           </Typography>
         )}

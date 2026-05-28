@@ -6,6 +6,7 @@ Map every **Done** roadmap slice to automated verification. Add a row when you s
 |-------------------|------------|---------------|-------------------|
 | Stream / dedupe | `stream-chat.spec.ts` | `cumulative-stream` | — |
 | Proposed edits + apply | `proposed-edits-apply.spec.ts` | `proposed-edit`, `applied-edit` | `edit-block-llm` @edit |
+| Proposed edits fuzzy apply | `proposed-edits-apply.spec.ts` | — | — |
 | Inline display fences | `chat-parsing.spec.ts` | `display-fence` | — |
 | Chat sections / timers / dismiss | `chat-ux.spec.ts` | `default` | — |
 | GFM markdown (#25) | `chat-ux.spec.ts` | `markdown-answer` | — |
@@ -31,7 +32,7 @@ Map every **Done** roadmap slice to automated verification. Add a row when you s
 | Resource overlay | `resource-overlay.spec.ts` | — | — |
 | Model router / hopper | `model-router.spec.ts`, `model-hopper.spec.ts` | — | — |
 | Agents bar | `agents-bar.spec.ts` | — | — |
-| ntf alerts | `ntfy-alerts.spec.ts` | — | — |
+| ntf alerts | `ntfy-alerts.spec.ts` | — | turn-`done` push (mock SSE) |
 | About | `about-dialog.spec.ts` | — | — |
 | Editor / languages | `editor-languages.spec.ts` | — | — |
 | Session persistence | `session-transcript-hydrate.spec.ts` | `session-transcript` | `test_http_session_persistence.py` |

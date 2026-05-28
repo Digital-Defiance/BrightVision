@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "bright-vision"
-version = "0.1.2-bright18"
+version = "0.1.2-bright19"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.2.17",
