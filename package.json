@@ -67,8 +67,10 @@
     "mermaid": "^11.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-qr-code": "^2.0.21",
-    "react-resizable-panels": "^4.11.2"
+    "react-resizable-panels": "^4.11.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

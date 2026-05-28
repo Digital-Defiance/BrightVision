@@ -11,6 +11,7 @@ import {
   type AssistantContentSegment,
 } from '../../utils/proposedEdits'
 import { ChatFenceBlock } from './ChatFenceBlock'
+import { ChatMarkdown } from './ChatMarkdown'
 import { ProposedEditBlock } from './ProposedEditBlock'
 
 function sectionLabel(kind: string, durationMs?: number): string {
@@ -38,11 +39,7 @@ function renderSegment(
   if (seg.type === 'prose') {
     const text = seg.content.trim()
     if (!text) return null
-    return (
-      <Typography key={key} variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-        {seg.content}
-      </Typography>
-    )
+    return <ChatMarkdown key={key} content={seg.content} />
   }
   if (seg.type === 'display_fence') {
     return (

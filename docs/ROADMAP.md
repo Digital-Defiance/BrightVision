@@ -68,7 +68,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | 13 | **Done** | Token stats footer (`TokenStatsBar`, parses `Tokens:` tool_output) |
 | 15 | **Done** | Suppress empty `tool_output` in `App.tsx` + `ChatPanel` |
 | 6 | **Done** | Full-width chat (`ChatPanel` drops `maxWidth="md"`) |
-| **25** | **Done** | Richer assistant section parser — multiple markers per message (`**THINKING**` / `**ANSWER**` / `**REASONING**`) |
+| **25** | **Done** | Richer assistant section parser — multiple markers per message (`**THINKING**` / `**ANSWER**` / `**REASONING**`); **GFM markdown** for prose (`ChatMarkdown`, `react-markdown`). **Tests:** `ChatMarkdown.test.ts`, `chat-ux.spec.ts`. |
 
 ## Input & session control
 

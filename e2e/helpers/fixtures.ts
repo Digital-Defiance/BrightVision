@@ -123,6 +123,19 @@ export function defaultTurnEvents() {
   ]
 }
 
+/** Assistant answer with GFM lists/bold (no proposed-edit fences). */
+export function markdownAnswerTurnEvents() {
+  return [
+    { type: 'token', text: '► **THINKING**\nReading roadmap.\n' },
+    {
+      type: 'token',
+      text:
+        '► **ANSWER**\n**Open Items:**\n- **#21** — EARS linter\n- **#22** — spec index\n\nUse `yarn dogfood:agent`.\n',
+    },
+    { type: 'done', edited_files: [] as string[] },
+  ]
+}
+
 export function confirmTurnEvents() {
   return [
     {

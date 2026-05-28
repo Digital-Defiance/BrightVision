@@ -34,6 +34,7 @@ from bright_vision_core.git_workspace import create_git_workspace
 from bright_vision_core.headless_args import default_headless_args
 from bright_vision_core.headless_persistence import apply_persistence_to_args
 from bright_vision_core.todo_spec_generate import build_generate_message, parse_generated_layers
+from bright_vision_core.roadmap_hints import maybe_append_roadmap_hint
 from bright_vision_core.slash_helpers import (
     fast_slash_preproc_timeout_s,
     is_switch_coder_signal,
@@ -310,7 +311,7 @@ class Session:
                 manager = SessionManager(coder, io)
                 name = headless_args.auto_save_session_name or "auto-save"
                 try:
-                    run(manager.load_session(name, switch=False))
+                    run(manager.load_session(name, switch=False, quiet=True))
                 except Exception:
                     pass
                 io.drain_events()
@@ -385,7 +386,7 @@ class Session:
         escalate_from_last: bool = False,
     ) -> Iterator[dict[str, Any]]:
         turn_todo_id: str | None = None
-        user_text = message
+        user_text = maybe_append_roadmap_hint(message, self.coder)
         if active_todo_id:
             todos = WorkspaceTodos(self.coder.root)
             store = todos.load()
