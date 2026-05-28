@@ -78,7 +78,7 @@ When a turn misbehaves (wrong tool arguments, duplicate `GitLog`/`Grep`, char-sp
 GET /sessions/{session_id}/debug
 ```
 
-Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. Desktop: **Terminal → Export debug**. Redact secrets before sharing.
+Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. UI: **Settings → Session history → Export debug bundle**. Redact secrets before sharing.
 
 ### Workspace tasks (no session)
 

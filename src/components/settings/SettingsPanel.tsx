@@ -78,6 +78,8 @@ interface SettingsPanelProps {
   subagents: SubAgentInfo[]
   agentModeAvailable: boolean
   sessionActive: boolean
+  sessionId?: string | null
+  onExportSessionDebug?: () => void | Promise<void>
 }
 
 export function SettingsPanel({
@@ -110,6 +112,8 @@ export function SettingsPanel({
   subagents,
   agentModeAvailable,
   sessionActive,
+  sessionId,
+  onExportSessionDebug,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
@@ -455,7 +459,12 @@ export function SettingsPanel({
         onMessage={onTimingStatsMessage}
       />
 
-      <SessionPersistenceSection config={config} onChange={onChange} />
+      <SessionPersistenceSection
+        config={config}
+        onChange={onChange}
+        sessionId={sessionId}
+        onExportSessionDebug={onExportSessionDebug}
+      />
 
       <AppVersionSection versions={appVersions} />
 

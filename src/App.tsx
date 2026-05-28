@@ -17,7 +17,6 @@ import TerminalIcon from '@mui/icons-material/Terminal'
 import CodeIcon from '@mui/icons-material/Code'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import StopIcon from '@mui/icons-material/Stop'
-import SaveAltIcon from '@mui/icons-material/SaveAlt'
 import { Alert, Box, Button, Chip, Paper, Snackbar, Stack, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, UnlistenFn } from '@tauri-apps/api/event'
@@ -2577,15 +2576,6 @@ function AppShell({
                 >
                   Stop
                 </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<SaveAltIcon />}
-                  data-testid="terminal-export-debug"
-                  onClick={() => void handleExportSessionDebug()}
-                  disabled={!sessionInfo?.session_id}
-                >
-                  Export debug
-                </Button>
               </Stack>
             </Paper>
           )}
@@ -2664,6 +2654,8 @@ function AppShell({
                 subagents={subagents}
                 agentModeAvailable={agentModeAvailable}
                 sessionActive={isRunning}
+                sessionId={sessionInfo?.session_id}
+                onExportSessionDebug={handleExportSessionDebug}
               />
             </Box>
           )}

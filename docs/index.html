@@ -887,6 +887,41 @@
         color: var(--accent);
       }
 
+      .project-notice {
+        padding: 0 0 2.5rem;
+      }
+
+      .project-notice p {
+        margin: 0;
+        padding: 1.15rem 1.25rem;
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        border-radius: var(--radius);
+        background: rgba(245, 158, 11, 0.06);
+        font-size: 0.9rem;
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .project-notice strong {
+        color: var(--white);
+      }
+
+      .footer-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .legal-disclaimer {
+        margin: 1.5rem 0 0;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.75rem;
+        line-height: 1.6;
+        color: var(--muted-dim);
+        max-width: 52rem;
+      }
+
       @media (max-width: 600px) {
         nav .nav-docs {
           display: none;
@@ -1004,6 +1039,26 @@
               Chat with Mermaid, tasks, editor, and git in one native shell
             </figcaption>
           </figure>
+        </div>
+      </section>
+
+      <section class="project-notice" aria-label="Project status">
+        <div class="wrap">
+          <p>
+            <strong>Early project — expectations.</strong>
+            BrightVision is new software with ambitious goals. You should assume
+            <strong>imperfections, rough edges, and incomplete features</strong> until proven otherwise.
+            We are actively fixing issues, but this is not a product from a large vendor with
+            dedicated QA — please calibrate expectations accordingly. If something breaks or
+            behaves oddly, report it on
+            <a
+              href="https://github.com/Digital-Defiance/BrightVision/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              >GitHub Issues</a
+            >
+            and we will iterate as quickly as we can.
+          </p>
         </div>
       </section>
 
@@ -1961,12 +2016,19 @@ source activate.sh</code></pre>
     </main>
 
     <footer>
-      <div class="wrap footer-inner">
-        <p>
-          © 2026 Digital Defiance, Jessica Mulein · MIT License · Built in partnership with the
-          <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer">Cecli</a> team
-        </p>
-        <div class="footer-links">
+      <div class="wrap footer-stack">
+        <div class="footer-inner">
+          <p>
+            © 2026 Digital Defiance, Jessica Mulein · MIT License · Built in partnership with the
+            <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer">Cecli</a> team
+          </p>
+          <div class="footer-links">
+          <a
+            href="https://github.com/Digital-Defiance/BrightVision/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Report a bug</a
+          >
           <a
             href="https://github.com/Digital-Defiance/BrightVision"
             target="_blank"
@@ -1991,7 +2053,38 @@ source activate.sh</code></pre>
           >
           <a href="#architecture">Architecture</a>
           <a href="bench/">Local LLM bench</a>
+          </div>
         </div>
+        <p class="legal-disclaimer">
+          <strong>Disclaimer.</strong>
+          BrightVision, its authors, and Digital Defiance provide this software and documentation
+          <strong>“as is”</strong>, without warranty of any kind, express or implied, including but
+          not limited to merchantability, fitness for a particular purpose, and non-infringement.
+          <strong>You use BrightVision at your own risk.</strong>
+          The tool may suggest, generate, or apply changes to your code and environment using
+          automated and AI-assisted means. You are solely responsible for reviewing, testing, and
+          approving any output before relying on it in production or for any purpose where loss,
+          corruption, security exposure, or downtime would matter.
+          <strong
+            >We are not liable</strong
+          >
+          for any direct, indirect, incidental, special, consequential, or punitive damages arising
+          from use of BrightVision or from code, configurations, or actions produced with it —
+          including bugs or defects in BrightVision itself.
+          BrightVision integrates with and depends on third-party projects and services (including
+          but not limited to
+          <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer">Cecli</a>,
+          <a href="https://github.com/Aider-AI/aider" target="_blank" rel="noopener noreferrer"
+            >Aider</a
+          >,
+          local LLM runtimes such as Ollama, model providers, and other open-source libraries).
+          <strong
+            >We are not responsible for errors, vulnerabilities, license terms, or behavior of those
+            components</strong
+          >, and their respective authors and distributors disclaim liability on their own terms.
+          Nothing on this site constitutes legal advice. If you need enforceable terms for your
+          organization, consult qualified counsel and do not rely on this paragraph alone.
+        </p>
       </div>
     </footer>
   </body>

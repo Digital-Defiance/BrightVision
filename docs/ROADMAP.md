@@ -107,7 +107,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **40** | **Done** | **cecli agents in Vision (v1)** — chat agent bar, Settings registry, `GET …/subagents`, slash fallbacks. **Tests:** `agents-bar.spec.ts`. **Open (v2):** `POST …/agents/invoke`, header pill. See [§ #40](#40--cecli-agents-in-vision) |
 | **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done`. **Tests:** `ntfy-alerts.spec.ts`. **Open:** automated turn-`done` notification e2e. See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
 | **43** | **Done** | **LLM fixture packs for e2e** — external curated workspace collection via `E2E_FIXTURE_PACK_ROOT` (submodule-friendly), in-repo fallback, plus `scripts/verify-e2e-fixture-pack.sh` (`yarn test:e2e:fixtures`) for structure + optional pin-status preflight. |
-| **44** | **Done** | **Session debug export** — `GET /sessions/{id}/debug` JSON bundle (messages, tool_calls, duplicate hints, agent todo, EventIO ring); Terminal **Export debug**. See [IPC.md](./IPC.md). |
+| **44** | **Done** | **Session debug export** — `GET /sessions/{id}/debug` JSON bundle (messages, tool_calls, duplicate hints, agent todo, EventIO ring); Settings **Session history → Export debug bundle**. See [IPC.md](./IPC.md). |
 
 ## Spec-driven development (#18)
 

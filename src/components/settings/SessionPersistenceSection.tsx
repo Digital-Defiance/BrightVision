@@ -1,5 +1,7 @@
+import SaveAltIcon from '@mui/icons-material/SaveAlt'
 import {
   Alert,
+  Button,
   FormControlLabel,
   Paper,
   Stack,
@@ -14,9 +16,17 @@ import { WORKSPACE_META_DIR } from '../../brand'
 interface SessionPersistenceSectionProps {
   config: VisionConfig
   onChange: (next: VisionConfig) => void
+  /** Active Vision session id (required to download debug bundle). */
+  sessionId?: string | null
+  onExportSessionDebug?: () => void | Promise<void>
 }
 
-export function SessionPersistenceSection({ config, onChange }: SessionPersistenceSectionProps) {
+export function SessionPersistenceSection({
+  config,
+  onChange,
+  sessionId,
+  onExportSessionDebug,
+}: SessionPersistenceSectionProps) {
   const desktop = isTauriRuntime()
   const patch = (partial: Partial<VisionConfig>) => onChange({ ...config, ...partial })
 
@@ -97,6 +107,29 @@ export function SessionPersistenceSection({ config, onChange }: SessionPersisten
           </Typography>
         )}
       </Stack>
+
+      {onExportSessionDebug && (
+        <Stack spacing={0.5} sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle2" fontWeight={600}>
+            Session debug
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Download a JSON bundle (messages, tool calls, recent events) when reporting tool-call or
+            streaming issues. Redact secrets before sharing.
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<SaveAltIcon />}
+            data-testid="settings-export-session-debug"
+            onClick={() => void onExportSessionDebug()}
+            disabled={!sessionId}
+            sx={{ alignSelf: 'flex-start', mt: 0.5 }}
+          >
+            Export debug bundle
+          </Button>
+        </Stack>
+      )}
     </Paper>
   )
 }
