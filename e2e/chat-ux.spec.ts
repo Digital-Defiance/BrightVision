@@ -20,7 +20,7 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
     await page.getByTestId('chat-input').fill('what is next')
     await page.getByTestId('chat-send').click()
 
-    const md = page.getByTestId('chat-markdown')
+    const md = page.getByTestId('chat-markdown').filter({ hasText: 'Open Items' })
     await expect(md).toBeVisible({ timeout: 15_000 })
     await expect(md.locator('strong', { hasText: 'Open Items' })).toBeVisible()
     await expect(md.getByRole('listitem').filter({ hasText: '#21' })).toBeVisible()

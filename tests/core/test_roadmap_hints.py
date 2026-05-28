@@ -19,3 +19,10 @@ def test_no_hint_without_roadmap_in_chat():
     coder.get_inchat_relative_files.return_value = ["README.md"]
     out = maybe_append_roadmap_hint("what's next?", coder)
     assert out == "what's next?"
+
+
+def test_appends_hint_for_lets_work_on_next_thing():
+    coder = Mock()
+    coder.get_inchat_relative_files.return_value = ["docs/ROADMAP.md"]
+    out = maybe_append_roadmap_hint("let's work on the next thing shall we?", coder)
+    assert "Suggested fix order" in out

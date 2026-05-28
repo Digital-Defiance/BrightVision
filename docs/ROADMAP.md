@@ -430,7 +430,7 @@ Prefer **permissive licenses** and **small bundle** ([AGENTS.md](../AGENTS.md)).
 - **`/add` completion**: Tauri desktop only (#12); type path manually on web-only `yarn dev`.
 - **Tasks:** `.cecli/todos.json`; workspace API when session + core up; Tauri file mirror when core is down.
 - **18d:** Task list uses **manual order** (Up/Down); `depends_on` shows **blocked** chip, not auto-sort.
-- **Dogfooding:** [DOGFOOD.md](./DOGFOOD.md), `yarn dogfood:agent`. Friction → failing test or roadmap row: wrong workspace root, proposed vs applied edits, commit in wrong repo, char-split agent todo titles.
+- **Dogfooding:** [DOGFOOD.md](./DOGFOOD.md), `yarn dogfood:agent`. Friction → failing test or roadmap row: wrong workspace root, proposed vs applied edits, commit in wrong repo, char-split agent todo titles, glued ``{…}{}{…}`` tool JSON (cecli `parse_tool_arguments` / `_expand_concatenated_json`), Grep `tool_footer` TypeError on bad `searches`.
 - **Orange `[BrightVision] Task was destroyed…` in chat:** Python asyncio stderr when the core event loop is closed while tasks still wait (common after **Stop** mid-turn or SSE abort during “Waiting for Ollama”; can also appear under heavy Ollama load). Usually harmless noise; recovery = **Stop** → optional **Clear queue** → **Terminal Stop/Start** if still stuck. Manual **`proceed` while a turn is running** is **queued** (bubble appears only when it is actually sent) — it does not preempt the current Ollama wait.
 
 ## Suggested fix order

@@ -23,15 +23,30 @@ def _roadmap_in_chat(coder: Any) -> bool:
     return any(p.endswith("docs/ROADMAP.md") or p == "ROADMAP.md" for p in rel)
 
 
+def _asks_for_roadmap_priority(lower: str) -> bool:
+    if "roadmap" in lower:
+        return True
+    if "what's next" in lower or "whats next" in lower:
+        return True
+    if "next thing" in lower or "the next thing" in lower:
+        return True
+    if "work on the next" in lower or "next priority" in lower or "next item" in lower:
+        return True
+    if "next" in lower and "what" in lower:
+        return True
+    if "next" in lower and ("shall we" in lower or "let's" in lower or "lets " in lower):
+        return True
+    return False
+
+
 def maybe_append_roadmap_hint(user_text: str, coder: Any) -> str:
     """Append a one-block hint for common /agent 'what's next' questions."""
     text = (user_text or "").strip()
     if not text:
         return user_text
     lower = text.lower()
-    if "roadmap" not in lower and "what's next" not in lower and "whats next" not in lower:
-        if "next" not in lower or "what" not in lower:
-            return user_text
+    if not _asks_for_roadmap_priority(lower):
+        return user_text
     if not _roadmap_in_chat(coder):
         return user_text
     if _ROADMAP_HINT in text:
