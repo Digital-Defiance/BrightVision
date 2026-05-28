@@ -39,13 +39,19 @@ def run(coro: Coroutine[object, object, T]) -> T:
     runs the coroutine on a worker thread so we never nest ``asyncio.run`` on the
     active loop.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
+    if _running_loop() is None:
         return asyncio.run(coro)
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
+
+
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    """Return the active loop, or None (avoid raising in tracebacks)."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
 
 
 def iterate_async(agen: AsyncIterator[T]) -> Iterator[T]:
