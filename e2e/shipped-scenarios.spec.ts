@@ -86,6 +86,12 @@ for (const name of listScenarioNames()) {
           await openTasks(page)
           await expect(page.getByText('First task')).toBeVisible({ timeout: 15_000 })
           break
+        case 'markdown-answer':
+          await expect(
+            page.getByTestId('chat-markdown').filter({ hasText: 'Open Items' })
+          ).toBeVisible({ timeout: 15_000 })
+          await expect(page.getByRole('listitem').filter({ hasText: '#21' })).toBeVisible()
+          break
         default:
           break
       }

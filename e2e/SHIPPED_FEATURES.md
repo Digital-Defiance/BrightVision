@@ -8,6 +8,7 @@ Map every **Done** roadmap slice to automated verification. Add a row when you s
 | Proposed edits + apply | `proposed-edits-apply.spec.ts` | `proposed-edit`, `applied-edit` | `edit-block-llm` @edit |
 | Inline display fences | `chat-parsing.spec.ts` | `display-fence` | — |
 | Chat sections / timers / dismiss | `chat-ux.spec.ts` | `default` | — |
+| GFM markdown (#25) | `chat-ux.spec.ts` | `markdown-answer` | — |
 | Stop / queue / multiline | `chat-input.spec.ts` | — | — |
 | Confirm | `confirm-flow.spec.ts` | `confirm` | — |
 | `/add` Tab | `path-completion.spec.ts` | — | — |
@@ -36,6 +37,8 @@ Map every **Done** roadmap slice to automated verification. Add a row when you s
 | Session persistence | `session-transcript-hydrate.spec.ts` | `session-transcript` | `test_http_session_persistence.py` |
 | Session lifecycle | `session-lifecycle.spec.ts` | `scan-progress` | — |
 | Agent todo bridge | — | — | `integration/agent-todo-sync` |
+| Roadmap agent hints | — | — | `test_roadmap_hints.py` (unit + session `user_message`) |
+| Cecli glued tool JSON | — | — | `test_cecli_tool_json.py`, cecli `test_tool_arguments.py` |
 | Char-split UpdateTodoList recovery | `agent-todo-char-split.spec.ts` (`agent-todo-char-split` scenario) | — | `integration/import-agent-plan`, `integration/agent-todo-sync` (title), `test_http_agent_todo_import.py`, `test_agent_todos.py` |
 | Navigation | `navigation.spec.ts` | — | — |
 | Roadmap gaps UI | `roadmap-gaps.spec.ts` | — | — |

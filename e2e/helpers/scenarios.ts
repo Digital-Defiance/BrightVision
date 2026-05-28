@@ -12,6 +12,7 @@ import {
   scanProgressTurnEvents,
   slowTurnEvents,
   suggestedFilesTurnEvents,
+  markdownAnswerTurnEvents,
 } from './fixtures'
 import {
   E2E_EDIT_BLOCK_NEW,
@@ -36,6 +37,7 @@ export type ScenarioName =
   | 'session-transcript'
   | 'tasks-seeded'
   | 'agent-todo-char-split'
+  | 'markdown-answer'
 
 export interface ScenarioDefinition {
   /** Human label for failures */
@@ -140,6 +142,10 @@ const SCENARIOS: Record<ScenarioName, ScenarioDefinition> = {
     turns: [defaultTurnEvents()],
     workspace: 'agent-todo-char-split',
     agentTodoImportFromDisk: true,
+  },
+  'markdown-answer': {
+    label: 'GFM markdown in assistant answer',
+    turns: [markdownAnswerTurnEvents()],
   },
 }
 

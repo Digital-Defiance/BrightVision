@@ -1,6 +1,6 @@
 {
   "name": "bright-vision",
-  "version": "0.1.2-bright15",
+  "version": "0.1.2-bright16",
   "private": true,
   "type": "module",
   "scripts": {
@@ -28,7 +28,7 @@
     "test:all": "yarn test:full",
     "test:local:sh": "sh scripts/test-local.sh",
     "test:git-workspace": "python -m pytest tests/core/test_git_workspace.py tests/core/test_http_api.py -q",
-    "test:bright-core": "python -m pytest tests/core/test_git_workspace.py tests/core/test_workspace_paths.py tests/core/test_workspace_todos.py tests/core/test_agent_todos.py tests/core/test_http_api.py tests/core/test_http_interrupt.py tests/core/test_http_session_todos.py tests/core/test_http_session_persistence.py tests/core/test_http_agent_todo_import.py tests/core/test_superproject_integration.py tests/core/test_superproject_dogfood.py tests/core/test_headless_args.py tests/core/test_headless_persistence.py tests/core/test_headless_agent.py tests/core/test_session_crypto.py tests/core/test_session_transcript.py tests/core/test_sessions.py tests/core/test_llm_ollama.py -q",
+    "test:bright-core": "python -m pytest tests/core/test_git_workspace.py tests/core/test_workspace_paths.py tests/core/test_workspace_todos.py tests/core/test_agent_todos.py tests/core/test_http_api.py tests/core/test_http_interrupt.py tests/core/test_http_session_todos.py tests/core/test_http_session_persistence.py tests/core/test_http_agent_todo_import.py tests/core/test_superproject_integration.py tests/core/test_superproject_dogfood.py tests/core/test_headless_args.py tests/core/test_headless_persistence.py tests/core/test_headless_agent.py tests/core/test_session_crypto.py tests/core/test_session_transcript.py tests/core/test_sessions.py tests/core/test_llm_ollama.py tests/core/test_roadmap_hints.py tests/core/test_cecli_tool_json.py -q",
     "bench:leaderboard": "node scripts/build-bench-leaderboard.mjs",
     "verify:submodule": "sh scripts/verify_submodule.sh",
     "dogfood:check": "sh scripts/dogfood-check.sh",
