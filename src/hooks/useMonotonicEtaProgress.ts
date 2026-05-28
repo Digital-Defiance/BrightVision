@@ -11,13 +11,26 @@ export function useMonotonicEtaProgress(
   elapsedMs: number
 ): number | null {
   const maxFractionRef = useRef(0)
+  const prevRemainingRef = useRef<number | null>(null)
 
   const fraction = eta != null ? etaCompletionFraction(eta, elapsedMs) : null
 
   if (fraction == null) {
     maxFractionRef.current = 0
+    prevRemainingRef.current = null
     return null
   }
+
+  const remaining = eta?.remainingMs ?? null
+  if (
+    remaining != null &&
+    prevRemainingRef.current != null &&
+    remaining > prevRemainingRef.current * 1.08
+  ) {
+    // Estimate lengthened (e.g. p90 after median overrun) — bar must not stay near 100%.
+    maxFractionRef.current = fraction
+  }
+  prevRemainingRef.current = remaining
 
   const { percent, maxFraction } = monotonicEtaCompletionPercent(
     maxFractionRef.current,

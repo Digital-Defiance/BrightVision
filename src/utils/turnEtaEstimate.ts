@@ -112,6 +112,11 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
     lines.push('Running longer than median — using p90 for remaining time.')
   }
 
+  // Bar and "~Xm left" must share one timeline (elapsed + remaining = total).
+  if (remaining > 0) {
+    estimatedTotal = Math.max(estimatedTotal, input.elapsedMs + remaining)
+  }
+
   const shortLabel =
     remaining > 0 ? `~${formatDurationMs(remaining)} left*` : null
 
@@ -141,7 +146,10 @@ export function etaCompletionFraction(
     return null
   }
   if (eta.confidence === 'none') return null
-  const fraction = elapsedMs / eta.totalMs
+  let fraction = elapsedMs / eta.totalMs
+  if (eta.remainingMs != null && eta.remainingMs > 0) {
+    fraction = (eta.totalMs - eta.remainingMs) / eta.totalMs
+  }
   if (!Number.isFinite(fraction)) return null
   return clamp(fraction, 0, 0.98)
 }
