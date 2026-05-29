@@ -2750,16 +2750,31 @@ function AppShell({
                 onChooseProject={handleChooseProject}
                 onOpenSettings={() => setActiveTab('settings')}
                 onOpenSpec={() => setActiveTab('spec')}
-                onStart={() => {
-                  setActiveTab('terminal')
-                  void handleStart()
-                }}
+                onStart={() => void handleStart()}
                 onDismiss={dismissWelcome}
               />
             )}
             <ChatPanel
               messages={chatMessages}
               toolEvents={toolEvents}
+              easyStart={
+                !isRunning && !showWelcome
+                  ? {
+                      onStart: () => void handleStart(),
+                      starting: lifecycleActive && !isRunning,
+                      startLabel: process.snapshot.label,
+                      startDetail: process.snapshot.detail,
+                      disabled: !savedConfig.workingDir?.trim(),
+                      disabledReason: !savedConfig.workingDir?.trim()
+                        ? 'Choose a project folder in Settings or Welcome first.'
+                        : undefined,
+                      showLocalLlmStep:
+                        isTauriRuntime() &&
+                        savedConfig.manageLocalLlm &&
+                        isLocalLlmModel,
+                    }
+                  : undefined
+              }
               inputValue={inputValue}
               isRunning={isRunning}
               isBusy={isBusy}
@@ -2817,6 +2832,7 @@ function AppShell({
               onDismissRouterEscalate={() => setRouterEscalateOffer(null)}
               subagents={subagents}
               agentModeAvailable={agentModeAvailable}
+              suppressEmptyHint={showWelcome}
             />
             </>
           )}

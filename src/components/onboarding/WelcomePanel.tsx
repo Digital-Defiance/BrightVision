@@ -52,7 +52,7 @@ export function WelcomePanel({
         {[
           { n: 1, text: 'Choose the repo you want to work on (or keep the auto-detected path).' },
           { n: 2, text: 'Optionally set model and API keys in Settings, then Save.' },
-          { n: 3, text: 'Terminal → Start to launch the agent, then chat (or use the Spec tab for spec-first work).' },
+          { n: 3, text: 'Click Start agent below (or on the chat tab) — launches local LLM, Vision API, and session.' },
         ].map((step) => (
           <Stack key={step.n} direction="row" spacing={1.5} alignItems="flex-start">
             <Box

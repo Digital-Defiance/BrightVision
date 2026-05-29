@@ -9,10 +9,10 @@ export function specGenerateBlockedReason(opts: {
   if (opts.specGenerating) return 'Spec generation is already running.'
   if (opts.sessionBusy) return 'Wait for the current chat turn to finish, then try again.'
   if (!opts.todosHttpReady) {
-    return 'Vision API is not connected — open Terminal, click Start Vision API, then wait for the green status.'
+    return 'Vision API is not connected — use Chat → Start (or Terminal → Start Vision API).'
   }
   if (!opts.isRunning) {
-    return 'Start a coding session — Terminal tab → green Start button (under Vision API). Generate needs an active session.'
+    return 'Start a coding session — Chat tab → Start (launches LLM, Vision API, and session).'
   }
   if (!opts.hasTask) {
     return 'Create a task on the Tasks tab and set it active (or select one on Tasks for Generate spec).'

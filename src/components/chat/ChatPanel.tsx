@@ -35,6 +35,7 @@ import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { ModelRouterBar, type RouterEscalateOffer } from './ModelRouterBar'
 import { ChatAgentBar } from './ChatAgentBar'
+import { ChatEasyStart } from './ChatEasyStart'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
 import type { AssistantContentSegment } from '../../utils/proposedEdits'
@@ -121,6 +122,18 @@ interface ChatPanelProps {
   onDismissRouterEscalate?: () => void
   subagents?: SubAgentInfo[]
   agentModeAvailable?: boolean
+  /** When set and chat is empty, show in-tab Start instead of Terminal redirect copy. */
+  easyStart?: {
+    onStart: () => void
+    starting: boolean
+    startLabel?: string
+    startDetail?: string
+    disabled?: boolean
+    disabledReason?: string
+    showLocalLlmStep?: boolean
+  }
+  /** Hide generic empty copy when Welcome panel is shown above. */
+  suppressEmptyHint?: boolean
 }
 
 export function ChatPanel({
@@ -177,6 +190,8 @@ export function ChatPanel({
   onDismissRouterEscalate,
   subagents = [],
   agentModeAvailable = false,
+  easyStart,
+  suppressEmptyHint = false,
 }: ChatPanelProps) {
   const { onKeyDown: onFileCommandKeyDown, onPickPath } = useFileCommandKeyboard({
     inputValue,
@@ -221,13 +236,28 @@ export function ChatPanel({
         </Alert>
       )}
       <Box sx={{ flex: 1, overflow: 'auto', mb: 1, px: 1, minHeight: 0 }}>
-        {messages.length === 0 && meaningfulToolEvents.length === 0 && (
-          <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-            <Typography color="text.secondary">
-              Start {DISPLAY_CORE} from the Terminal tab, then chat here.
-            </Typography>
-          </Paper>
+        {messages.length === 0 && meaningfulToolEvents.length === 0 && easyStart && (
+          <ChatEasyStart
+            onStart={easyStart.onStart}
+            starting={easyStart.starting}
+            startLabel={easyStart.startLabel}
+            startDetail={easyStart.startDetail}
+            disabled={easyStart.disabled}
+            disabledReason={easyStart.disabledReason}
+            showLocalLlmStep={easyStart.showLocalLlmStep}
+          />
         )}
+        {messages.length === 0 &&
+          meaningfulToolEvents.length === 0 &&
+          !easyStart &&
+          !suppressEmptyHint &&
+          !isRunning && (
+            <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">
+                Start {DISPLAY_CORE} to begin chatting.
+              </Typography>
+            </Paper>
+          )}
         <Stack spacing={2}>
           {timeline.map((entry) =>
             entry.kind === 'message' ? (
