@@ -1,5 +1,7 @@
 /** Heuristics for “thinking” vs likely stall during an in-flight turn. */
 
+import { isOllamaVisionModel } from '../ipc/localLlm'
+
 export type TurnActivityKind =
   | 'idle'
   | 'waiting_model'
@@ -26,7 +28,13 @@ const WAITING_STALL_MS = 8 * 60_000
 const WAITING_WARN_MS = 3 * 60_000
 
 const PROGRESS_WORKING_RE =
-  /waiting for|preparing|ollama|slash command|repo|scanning|vision|llm|working/i
+  /waiting for|preparing|ollama|cloud llm|slash command|repo|scanning|vision|llm|working/i
+
+function isLocalLlmSession(sessionModel: string | undefined): boolean {
+  const m = sessionModel?.trim()
+  if (!m) return true
+  return isOllamaVisionModel(m)
+}
 
 export function buildTurnActivity(
   isBusy: boolean,
@@ -88,14 +96,24 @@ export function isLikelyStalled(activity: TurnActivitySnapshot): boolean {
   return activity.sinceLastEventMs >= STALL_WARN_MS
 }
 
-function waitingModelHint(activity: TurnActivitySnapshot, queuedCount: number): string {
+function waitingModelHint(
+  activity: TurnActivitySnapshot,
+  queuedCount: number,
+  sessionModel: string | undefined
+): string {
   const min = Math.round(activity.sinceLastEventMs / 60_000)
-  let base =
-    'Waiting for the LLM (Ollama load can be idle on CPU — not the same as generating tokens).'
+  const local = isLocalLlmSession(sessionModel)
+  let base = local
+    ? 'Waiting for the local model (Ollama load can be idle on CPU — not the same as generating tokens).'
+    : 'Waiting for the cloud LLM (API latency — not the same as streaming tokens yet).'
   if (activity.sinceLastEventMs >= WAITING_STALL_MS) {
-    base = `Waiting for Ollama for ${min}+ min — likely stuck. Stop, Ping stack, check ollama ps, or Force FAST for UI-style tasks.`
+    base = local
+      ? `Waiting for Ollama for ${min}+ min — likely stuck. Stop, Ping stack, check ollama ps, or Force FAST for UI-style tasks.`
+      : `Waiting for cloud LLM for ${min}+ min — likely stuck. Stop, verify OPENAI_API_KEY / OPENAI_API_BASE in the shell that launched the app, then retry.`
   } else if (activity.sinceLastEventMs >= WAITING_WARN_MS) {
-    base += ' Taking a long time — try Stop, Force FAST (chat bar), or Terminal → Local LLM → Start.'
+    base += local
+      ? ' Taking a long time — try Stop, Force FAST (chat bar), or Terminal → Local LLM → Start.'
+      : ' Taking a long time — try Stop, confirm Settings model and cloud env, then retry.'
   }
   if (queuedCount > 0) {
     return `${base} ${queuedCount} message${queuedCount === 1 ? '' : 's'} will send when this turn completes.`
@@ -105,8 +123,10 @@ function waitingModelHint(activity: TurnActivitySnapshot, queuedCount: number): 
 
 export function turnActivityHint(
   activity: TurnActivitySnapshot,
-  queuedCount: number
+  queuedCount: number,
+  sessionModel?: string
 ): string {
+  const local = isLocalLlmSession(sessionModel)
   if (activity.kind === 'idle') {
     if (queuedCount > 0) {
       return `${queuedCount} message${queuedCount === 1 ? '' : 's'} queued — waiting for current turn to finish.`
@@ -123,15 +143,18 @@ export function turnActivityHint(
   }
 
   if (activity.kind === 'waiting_model') {
-    return waitingModelHint(activity, queuedCount)
+    return waitingModelHint(activity, queuedCount, sessionModel)
   }
 
   if (activity.kind === 'post_answer_wait') {
     const min = Math.round((activity.sinceLastTokenMs ?? activity.sinceLastEventMs) / 60_000)
-    let base =
-      'Answer is visible but the turn has not finished — core may be waiting on Ollama (check Settings → Ollama models /api/ps) or repo work. Queued /add messages will not run until the turn ends.'
+    let base = local
+      ? 'Answer is visible but the turn has not finished — core may be waiting on Ollama (check Settings → Ollama models /api/ps) or repo work. Queued /add messages will not run until the turn ends.'
+      : 'Answer is visible but the turn has not finished — core may be waiting on the cloud API or repo work. Queued /add messages will not run until the turn ends.'
     if (activity.sinceLastEventMs >= WAITING_STALL_MS || (activity.sinceLastTokenMs ?? 0) >= WAITING_STALL_MS) {
-      base = `Answer visible but no progress for ${min}+ min — likely stuck on heavy Ollama or repo work. Stop, Force FAST, Ping stack, then retry.`
+      base = local
+        ? `Answer visible but no progress for ${min}+ min — likely stuck on heavy Ollama or repo work. Stop, Force FAST, Ping stack, then retry.`
+        : `Answer visible but no progress for ${min}+ min — likely stuck on cloud LLM or repo work. Stop, verify cloud env, then retry.`
     } else if (activity.sinceLastEventMs >= WAITING_WARN_MS) {
       base += ' If this persists, Stop or Force FAST.'
     }
@@ -143,7 +166,10 @@ export function turnActivityHint(
 
   if (isLikelyStalled(activity)) {
     const sec = Math.round(activity.sinceLastEventMs / 1000)
-    return `No core activity for ${sec}s — likely stuck (not thinking). Try Stop, check Terminal / Ollama, then retry. Clear the queue if you queued many /add messages.`
+    const tail = local
+      ? 'Try Stop, check Terminal / Ollama, then retry.'
+      : 'Try Stop, check Terminal and cloud API env, then retry.'
+    return `No core activity for ${sec}s — likely stuck (not thinking). ${tail} Clear the queue if you queued many /add messages.`
   }
 
   if (queuedCount > 0) {

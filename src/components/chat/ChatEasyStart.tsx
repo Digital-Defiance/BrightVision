@@ -8,6 +8,7 @@ import {
   Typography,
 } from '@mui/material'
 import { DISPLAY_CORE, DISPLAY_VISION_API } from '../../brand'
+import { isOllamaVisionModel } from '../../ipc/localLlm'
 
 export interface ChatEasyStartProps {
   onStart: () => void
@@ -16,6 +17,8 @@ export interface ChatEasyStartProps {
   startDetail?: string
   disabled?: boolean
   disabledReason?: string
+  /** Settings LLM model (shown so cloud vs local is obvious before Start). */
+  llmModel?: string
   /** Desktop: show Ollama step when local LLM management is on. */
   showLocalLlmStep?: boolean
 }
@@ -27,10 +30,19 @@ export function ChatEasyStart({
   startDetail,
   disabled = false,
   disabledReason,
+  llmModel = '',
   showLocalLlmStep = false,
 }: ChatEasyStartProps) {
+  const model = llmModel.trim()
+  const local = model ? isOllamaVisionModel(model) : showLocalLlmStep
   const steps = [
-    ...(showLocalLlmStep ? ['Local LLM (Ollama)'] : []),
+    model
+      ? local
+        ? `Ollama · ${model}`
+        : `Cloud · ${model}`
+      : showLocalLlmStep
+        ? 'Local LLM (Ollama)'
+        : 'Cloud LLM',
     `${DISPLAY_VISION_API} on :8741`,
     `${DISPLAY_CORE} coding session`,
   ]

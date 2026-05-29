@@ -44,6 +44,19 @@ describe('sessionStall', () => {
     expect(turnActivityHint(a, 0)).toContain('Force FAST')
   })
 
+  it('uses cloud stall hints when session model is not Ollama', () => {
+    const now = 100_000
+    const a = buildTurnActivity(
+      true,
+      now - 4 * 60_000,
+      null,
+      'Waiting for cloud LLM (openai/gpt-5.3-chat) (240s)',
+      now
+    )
+    expect(turnActivityHint(a, 0, 'openai/gpt-5.3-chat')).toContain('cloud LLM')
+    expect(turnActivityHint(a, 0, 'openai/gpt-5.3-chat')).not.toContain('Force FAST')
+  })
+
   it('flags stall only after several minutes without progress for unknown kind', () => {
     const now = 100_000
     const a = buildTurnActivity(true, now - 60_000, now - 55_000, 'Scanning repo map', now)

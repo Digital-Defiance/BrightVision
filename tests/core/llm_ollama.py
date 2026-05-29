@@ -46,12 +46,17 @@ def resolve_ollama_tag() -> str:
 
 
 def vision_model_from_tag(tag: str) -> str:
-    if tag.startswith("ollama_chat/") or tag.startswith("ollama/"):
-        return tag
-    return f"ollama_chat/{tag}"
+    from llm_model_resolve import normalize_vision_model_for_e2e
+
+    return normalize_vision_model_for_e2e(tag)
 
 
 def resolve_vision_model() -> str:
+    explicit = (
+        os.environ.get("E2E_VISION_MODEL") or os.environ.get("E2E_OLLAMA_MODEL") or ""
+    ).strip()
+    if explicit:
+        return vision_model_from_tag(explicit)
     return vision_model_from_tag(resolve_ollama_tag())
 
 

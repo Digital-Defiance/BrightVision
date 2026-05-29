@@ -1341,7 +1341,7 @@ function AppShell({
     [syncSessionFiles, recordAddedContextEstimate, savedConfig.workingDir]
   )
 
-  const stallWatch = useSessionStallWatch(isBusy, queuedCount)
+  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model)
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
   const { resetPeak: resetTurnResourcePeak, takePeak: takeTurnResourcePeak } =
     useTurnResourcePeak(isRunning && trackTurnResources, resourceOverlayPrefs.pollIntervalSec)
@@ -1629,6 +1629,7 @@ function AppShell({
   )
 
   const handleSave = () => {
+    const modelChanged = config.model.trim() !== savedConfig.model.trim()
     setSavedConfig(config)
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
     saveAppearance(appearance)
@@ -1637,7 +1638,25 @@ function AppShell({
     saveNtfyAlertsPrefs(ntfyAlertsPrefs)
     saveEditorLanguagePrefs(editorLanguagePrefs)
     saveModelRouterPrefs(modelRouterPrefs)
-    setSnackbar({ message: 'Settings saved', severity: 'info' })
+    if (isRunning && modelChanged && sessionInfo) {
+      setSnackbar({
+        message:
+          'LLM model updated in Settings — use Stop & Start in Chat to apply (no app restart needed).',
+        severity: 'warning',
+      })
+    } else {
+      setSnackbar({ message: 'Settings saved', severity: 'info' })
+    }
+  }
+
+  const handleRestartSession = async () => {
+    try {
+      await handleStop()
+      await handleStart()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setSnackbar({ message: msg, severity: 'error' })
+    }
   }
 
   const handleReset = () => {
@@ -1747,6 +1766,13 @@ function AppShell({
     if (lifecycleActive) {
       await stop()
       process.idle()
+    }
+    if (config.model.trim() !== savedConfig.model.trim()) {
+      setSnackbar({
+        message: 'Save Settings before Start so the new LLM model is used.',
+        severity: 'warning',
+      })
+      return
     }
     try {
       await ensureLocalLlm()
@@ -2757,21 +2783,34 @@ function AppShell({
             <ChatPanel
               messages={chatMessages}
               toolEvents={toolEvents}
+              modelSwitchBanner={
+                isRunning &&
+                sessionInfo &&
+                sessionInfo.model.trim() !== savedConfig.model.trim()
+                  ? {
+                      activeModel: sessionInfo.model,
+                      settingsModel: savedConfig.model,
+                      onRestart: () => void handleRestartSession(),
+                      restarting: lifecycleActive,
+                    }
+                  : undefined
+              }
               easyStart={
                 !isRunning && !showWelcome
                   ? {
                       onStart: () => void handleStart(),
-                      starting: lifecycleActive && !isRunning,
+                      starting: lifecycleActive,
                       startLabel: process.snapshot.label,
                       startDetail: process.snapshot.detail,
                       disabled: !savedConfig.workingDir?.trim(),
                       disabledReason: !savedConfig.workingDir?.trim()
                         ? 'Choose a project folder in Settings or Welcome first.'
                         : undefined,
+                      llmModel: config.model,
                       showLocalLlmStep:
                         isTauriRuntime() &&
-                        savedConfig.manageLocalLlm &&
-                        isLocalLlmModel,
+                        config.manageLocalLlm &&
+                        isOllamaVisionModel(config.model),
                     }
                   : undefined
               }

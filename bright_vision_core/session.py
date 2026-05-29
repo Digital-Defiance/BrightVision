@@ -57,6 +57,7 @@ from bright_vision_core.model_router import (
     should_escalate_fast_turn,
 )
 from bright_vision_core.model_router_apply import apply_route_to_coder
+from bright_vision_core.llm_progress import llm_wait_messages
 from bright_vision_core.workspace_todos import WorkspaceTodos, format_todo_context
 
 
@@ -542,7 +543,8 @@ class Session:
                     for event in self.io.drain_events():
                         yield event
 
-                emit_progress(self.io, label="LLM", message="Waiting for Ollama…")
+                wait_initial, wait_heartbeat = llm_wait_messages(self.coder.main_model)
+                emit_progress(self.io, label="LLM", message=wait_initial)
                 for event in self.io.drain_events():
                     yield event
 
@@ -552,7 +554,7 @@ class Session:
                     self.io,
                     coder=self.coder,
                     label="LLM",
-                    message="Waiting for Ollama",
+                    message=wait_heartbeat,
                 ):
                     for event in self.io.drain_events():
                         if event.get("type") == "tool_error":

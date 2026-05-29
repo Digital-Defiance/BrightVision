@@ -1,6 +1,6 @@
 [package]
 name = "bright-vision"
-version = "0.1.2-bright20"
+version = "0.1.2-bright21"
 description = "BrightVision — local LLM desktop IDE (Tauri + cecli)"
 authors = ["Digital Defiance"]
 edition = "2021"

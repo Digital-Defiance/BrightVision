@@ -247,13 +247,36 @@ export async function resolveOllamaTagWithFallback(): Promise<string> {
   return defaultE2eOllamaTag()
 }
 
+const LITELLM_PROVIDER_PREFIXES = [
+  'openai/',
+  'anthropic/',
+  'azure/',
+  'gemini/',
+  'cohere/',
+  'groq/',
+  'deepseek/',
+  'openrouter/',
+  'mistral/',
+  'xai/',
+] as const
+
+export function isProviderVisionModel(model: string): boolean {
+  const m = model.trim().toLowerCase()
+  return LITELLM_PROVIDER_PREFIXES.some((p) => m.startsWith(p))
+}
+
 export function visionModelFromTag(tag: string): string {
-  if (tag.startsWith('ollama_chat/') || tag.startsWith('ollama/')) return tag
-  return `ollama_chat/${tag}`
+  const m = tag.trim()
+  if (!m) return m
+  if (isProviderVisionModel(m) || m.startsWith('ollama_chat/') || m.startsWith('ollama/')) {
+    return m
+  }
+  return `ollama_chat/${m}`
 }
 
 export function resolveVisionModel(): string {
-  const explicit = process.env.E2E_OLLAMA_MODEL?.trim()
+  const explicit =
+    process.env.E2E_VISION_MODEL?.trim() || process.env.E2E_OLLAMA_MODEL?.trim()
   if (explicit) return visionModelFromTag(explicit)
   const tag = resolveOllamaTag()
   if (tag) return visionModelFromTag(tag)

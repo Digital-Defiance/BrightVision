@@ -130,7 +130,15 @@ interface ChatPanelProps {
     startDetail?: string
     disabled?: boolean
     disabledReason?: string
+    llmModel?: string
     showLocalLlmStep?: boolean
+  }
+  /** Active session model differs from saved Settings — Stop then Start to apply. */
+  modelSwitchBanner?: {
+    activeModel: string
+    settingsModel: string
+    onRestart: () => void
+    restarting?: boolean
   }
   /** Hide generic empty copy when Welcome panel is shown above. */
   suppressEmptyHint?: boolean
@@ -191,6 +199,7 @@ export function ChatPanel({
   subagents = [],
   agentModeAvailable = false,
   easyStart,
+  modelSwitchBanner,
   suppressEmptyHint = false,
 }: ChatPanelProps) {
   const { onKeyDown: onFileCommandKeyDown, onPickPath } = useFileCommandKeyboard({
@@ -223,6 +232,29 @@ export function ChatPanel({
       {pendingConfirm && (
         <ConfirmBanner confirm={pendingConfirm} onAnswer={onConfirmAnswer} />
       )}
+      {modelSwitchBanner && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{ mb: 1, mx: 1, py: 0.25 }}
+          data-testid="model-switch-banner"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              disabled={modelSwitchBanner.restarting}
+              onClick={modelSwitchBanner.onRestart}
+            >
+              {modelSwitchBanner.restarting ? 'Restarting…' : 'Stop & Start'}
+            </Button>
+          }
+        >
+          <Typography variant="caption" component="span">
+            Session model <strong>{modelSwitchBanner.activeModel}</strong> — Settings has{' '}
+            <strong>{modelSwitchBanner.settingsModel}</strong>. Stop and Start to switch.
+          </Typography>
+        </Alert>
+      )}
       {(isBusy || queuedCount > 0) && turnActivityHint && (
         <Alert
           severity={turnStalled ? 'warning' : 'info'}
@@ -236,16 +268,19 @@ export function ChatPanel({
         </Alert>
       )}
       <Box sx={{ flex: 1, overflow: 'auto', mb: 1, px: 1, minHeight: 0 }}>
-        {messages.length === 0 && meaningfulToolEvents.length === 0 && easyStart && (
-          <ChatEasyStart
-            onStart={easyStart.onStart}
-            starting={easyStart.starting}
-            startLabel={easyStart.startLabel}
-            startDetail={easyStart.startDetail}
-            disabled={easyStart.disabled}
-            disabledReason={easyStart.disabledReason}
-            showLocalLlmStep={easyStart.showLocalLlmStep}
-          />
+        {!isRunning && easyStart && (
+          <Box sx={{ mb: messages.length === 0 && meaningfulToolEvents.length === 0 ? 0 : 2 }}>
+            <ChatEasyStart
+              onStart={easyStart.onStart}
+              starting={easyStart.starting}
+              startLabel={easyStart.startLabel}
+              startDetail={easyStart.startDetail}
+              disabled={easyStart.disabled}
+              disabledReason={easyStart.disabledReason}
+              llmModel={easyStart.llmModel}
+              showLocalLlmStep={easyStart.showLocalLlmStep}
+            />
+          </Box>
         )}
         {messages.length === 0 &&
           meaningfulToolEvents.length === 0 &&

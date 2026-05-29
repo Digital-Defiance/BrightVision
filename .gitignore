@@ -65,6 +65,7 @@ e2e/fixtures/integration-workspace/.cecli/
 
 # Local Ollama defaults for BrightVision (see docs/LOCAL_LLM.md)
 local-llm.env
+cloud-llm.env
 
 
 #Ignore cursor AI rules

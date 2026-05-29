@@ -15,7 +15,8 @@ export interface SessionStallWatch {
 
 export function useSessionStallWatch(
   isBusy: boolean,
-  queuedCount: number
+  queuedCount: number,
+  sessionModel = ''
 ): SessionStallWatch {
   const lastEventAtRef = useRef<number | null>(null)
   const lastTokenAtRef = useRef<number | null>(null)
@@ -54,7 +55,7 @@ export function useSessionStallWatch(
     lastProgressDetailRef.current
   )
   const stalled = isLikelyStalled(activity)
-  const hint = turnActivityHint(activity, queuedCount)
+  const hint = turnActivityHint(activity, queuedCount, sessionModel)
 
   return { activity, hint, stalled, touchEvent }
 }

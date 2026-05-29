@@ -19,6 +19,7 @@ All checks run on **your machine**. Nothing here requires GitHub Actions — wor
 | Scenario matrix (all registered SSE outputs) | `yarn test:e2e shipped-scenarios` | ~2–3 min |
 | Fixture-pack structure preflight | `yarn test:e2e:fixtures` | ~1s |
 | **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` / `sh scripts/test-everything.sh` | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures` |
+| Cloud / custom OpenAI base URL smoke | `yarn test:cloud-llm` (needs `cloud-llm.env`, `E2E_CLOUD_LLM=1` inside script) | ~15–45 s when passing |
 
 Same tiers via shell:
 
@@ -193,7 +194,7 @@ Optional env:
 
 | Variable | Purpose |
 |----------|---------|
-| `E2E_OLLAMA_MODEL` | LiteLLM id or bare tag (`yarn test:llm:core` sets `ollama_chat/llama3.2:3b`) |
+| `E2E_OLLAMA_MODEL` | LiteLLM id or bare Ollama tag (`ollama_chat/…` or `llama3.2:3b`); `openai/…` / `azure/…` pass through unchanged |
 | `E2E_MODEL_ROUTER` | `1` required for `yarn test:e2e:llm:router` (`router-llm.spec.ts`) |
 | `E2E_FAST_MODEL` | Router fast tier model tag/id (falls back to `FAST_MODEL`) |
 | `E2E_HEAVY_MODEL` | Router heavy tier model tag/id (falls back to `HEAVY_MODEL`) |
@@ -209,8 +210,32 @@ Optional env:
 | `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (default `240` in `test:llm:core`, `300` in product) |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
+| `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |
 
 E2E clears **`PYTHONPATH`**. Do not export `PYTHONPATH=$PWD` — the repo’s `cecli/` folder is not the Python package and will break `import cecli` (`unknown location`).
+
+### Cloud / OpenAI-compatible LLM (opt-in)
+
+Not part of `yarn test:everything` or `DOGFOOD_LLM` (those stay Ollama-first). Use this to validate a custom **`OPENAI_API_BASE`** (proxy, Azure-compatible gateway, etc.) without pulling Ollama.
+
+1. Copy `cloud-llm.env.example` → `cloud-llm.env` (gitignored). For Azure’s **OpenAI v1** portal sample use `OPENAI_API_BASE=https://<resource>.openai.azure.com/openai/v1` (not `…/chat/completions`) and `E2E_VISION_MODEL=openai/<deployment>` (e.g. `openai/gpt-5.3-chat`).
+2. Put your regenerated key in `OPENAI_API_KEY` only in `cloud-llm.env` — never commit it.
+3. Run:
+
+```bash
+source activate.sh
+yarn test:cloud-llm
+```
+
+**Desktop manual check** (same env vars must exist **before** you click Start — Tauri does not write `OPENAI_API_BASE` for you):
+
+```bash
+set -a && source cloud-llm.env && set +a
+# Settings → LLM model: openai/<model> (not ollama_chat/…)
+# Turn off “Manage local LLM” if you only want cloud → Save → Chat → Start
+```
+
+Playwright cloud UI tests are not wired yet; use `yarn test:cloud-llm` for API-level smoke, then dogfood in the app.
 
 | Workspace | Use |
 |-----------|-----|
