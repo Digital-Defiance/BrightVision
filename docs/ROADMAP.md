@@ -108,6 +108,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done` and spec generate/refine job complete. **Tests:** `ntfy-alerts.spec.ts` (settings ping, turn-`done`, spec job). See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
 | **43** | **Done** | **LLM fixture packs for e2e** — external curated workspace collection via `E2E_FIXTURE_PACK_ROOT` (submodule-friendly), in-repo fallback, plus `scripts/verify-e2e-fixture-pack.sh` (`yarn test:e2e:fixtures`) for structure + optional pin-status preflight. |
 | **44** | **Done** | **Session debug export** — `GET /sessions/{id}/debug` JSON bundle (messages, tool_calls, duplicate hints, agent todo, EventIO ring); Settings **Session history → Export debug bundle**. See [IPC.md](./IPC.md). |
+| **45** | **Open** | **BrightVision Remote** — agent spec + phases in [MOBILE_REMOTE.md](./MOBILE_REMOTE.md) (copy-paste prompts, R0–R1 acceptance criteria). Optional scaffold: `packages/vision-client`, `apps/remote`, LAN Settings — verify before marking R0/R1 done. **Then:** R2 Connect, chat, R3+ tasks/push. |
 
 ## Spec-driven development (#18)
 

@@ -7,6 +7,7 @@ mod local_llm_runtime;
 mod ntfy_notify;
 mod resource_monitor;
 mod session_key;
+mod lan_remote;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -23,6 +24,7 @@ struct AppState {
     serve_child: Mutex<Option<Child>>,
     api_port: Mutex<u16>,
     engine_logs: Arc<Mutex<Vec<String>>>,
+    lan_remote: Mutex<Option<lan_remote::LanRemoteHandle>>,
 }
 
 fn project_root() -> PathBuf {
@@ -239,6 +241,51 @@ async fn llm_ping(
 }
 
 #[tauri::command]
+fn generate_vision_api_token() -> String {
+    lan_remote::generate_vision_api_token()
+}
+
+#[tauri::command]
+fn get_lan_host_addresses() -> Vec<String> {
+    lan_remote::list_lan_ipv4_addresses()
+}
+
+#[tauri::command]
+async fn start_lan_remote_proxy(
+    state: State<'_, AppState>,
+    token: String,
+    core_port: Option<u16>,
+    proxy_port: Option<u16>,
+    device_name: Option<String>,
+) -> Result<lan_remote::LanRemoteStatus, String> {
+    let core = core_port.unwrap_or(*state.api_port.lock().await);
+    let proxy = proxy_port.unwrap_or(lan_remote::DEFAULT_LAN_PROXY_PORT);
+    let name = device_name.unwrap_or_else(|| "BrightVision".into());
+    lan_remote::start_lan_remote(
+        &state.lan_remote,
+        token,
+        core,
+        proxy,
+        name,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn stop_lan_remote_proxy(state: State<'_, AppState>) -> Result<(), String> {
+    lan_remote::stop_lan_remote(&state.lan_remote).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn lan_remote_proxy_status(
+    state: State<'_, AppState>,
+) -> Result<lan_remote::LanRemoteStatus, String> {
+    let core = *state.api_port.lock().await;
+    Ok(lan_remote::lan_remote_status(&state.lan_remote, core).await)
+}
+
+#[tauri::command]
 async fn start_core_api(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -249,6 +296,7 @@ async fn start_core_api(
     ollama_api_base: String,
     port: u16,
     session_encrypt: Option<bool>,
+    api_token: Option<String>,
 ) -> Result<String, String> {
     let mut guard = state.serve_child.lock().await;
     if let Some(ref mut child) = *guard {
@@ -296,6 +344,12 @@ async fn start_core_api(
     if session_encrypt.unwrap_or(false) {
         let key_b64 = session_key::ensure_session_encryption_key()?;
         cmd.env("CECLI_SESSION_KEY", key_b64);
+    }
+    if let Some(token) = api_token {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            cmd.env("BRIGHT_VISION_TOKEN", trimmed);
+        }
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -686,6 +740,43 @@ fn git_stage_paths(working_dir: String, paths: Option<Vec<String>>) -> Result<()
             git_ops::run_git(&workspace, &args).map(|_| ())
         }
     }
+}
+
+/// Discard worktree (and staged) changes for paths; remove untracked files/dirs.
+#[tauri::command]
+fn git_restore_worktree_paths(working_dir: String, paths: Vec<String>) -> Result<(), String> {
+    let workspace = normalize_project_workspace(&working_dir);
+    if !workspace.is_dir() {
+        return Err(format!("Not a directory: {}", workspace.display()));
+    }
+    if paths.is_empty() {
+        return Err("No paths to restore".into());
+    }
+    let status = git_workspace_status(working_dir.clone());
+    let mut tracked: Vec<String> = Vec::new();
+    let mut untracked: Vec<String> = Vec::new();
+    for path in paths {
+        let entry = status.files.iter().find(|f| f.path == path);
+        if let Some(f) = entry {
+            if f.index == "?" && f.worktree == "?" {
+                untracked.push(path);
+                continue;
+            }
+        }
+        tracked.push(path);
+    }
+    if !tracked.is_empty() {
+        let mut args = vec!["restore", "--source=HEAD", "--staged", "--worktree", "--"];
+        for p in &tracked {
+            args.push(p.as_str());
+        }
+        git_ops::run_git(&workspace, &args)?;
+    }
+    for path in untracked {
+        let args = vec!["clean", "-fd", "--", path.as_str()];
+        git_ops::run_git(&workspace, &args)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1179,6 +1270,7 @@ fn main() {
                 serve_child: Mutex::new(None),
                 api_port: Mutex::new(8741),
                 engine_logs: Arc::new(Mutex::new(Vec::new())),
+                lan_remote: Mutex::new(None),
             });
             
             // Ensure core API process is terminated when the app quits to prevent port conflicts
@@ -1189,6 +1281,7 @@ fn main() {
                         let app_handle = app_handle.clone();
                         tauri::async_runtime::spawn(async move {
                             let state = app_handle.state::<AppState>();
+                            lan_remote::stop_lan_remote(&state.lan_remote).await;
                             let mut guard = state.serve_child.lock().await;
                             if let Some(mut child) = guard.take() {
                                 let _ = child.kill().await;
@@ -1225,6 +1318,7 @@ fn main() {
             git_commit_graph,
             git_commit_detail,
             git_stage_paths,
+            git_restore_worktree_paths,
             pick_workspace_folder,
             pick_context_directory,
             complete_workspace_path,
@@ -1242,6 +1336,11 @@ fn main() {
             estimate_paths_context_chars,
             resource_monitor::get_resource_snapshot,
             ntfy_notify::ntfy_send_push,
+            generate_vision_api_token,
+            get_lan_host_addresses,
+            start_lan_remote_proxy,
+            stop_lan_remote_proxy,
+            lan_remote_proxy_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

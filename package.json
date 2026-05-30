@@ -1,8 +1,12 @@
 {
   "name": "bright-vision",
-  "version": "0.1.2-bright21",
+  "version": "0.1.2-bright22",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -11,6 +15,9 @@
     "build:mac": "/usr/bin/env bash scripts/build-macos.sh",
     "audit:core": "echo 'skip audit:core (bright_vision_core in parent repo)'",
     "test": "vitest run",
+    "test:vision-client": "yarn workspace @brightvision/vision-client test",
+    "remote:dev": "yarn workspace @brightvision/remote start",
+    "remote:install": "yarn workspace @brightvision/remote install",
     "test:watch": "vitest",
     "test:rust": "cd src-tauri && cargo test",
     "test:fast": "yarn tsc --noEmit && yarn test",
@@ -35,13 +42,15 @@
     "verify:submodule": "sh scripts/verify_submodule.sh",
     "verify:ears": "sh scripts/verify-ears.sh",
     "install-git-hooks": "sh scripts/install-git-hooks.sh",
-    "test:everything": "sh scripts/test-everything.sh",
+    "test:everything": "bash scripts/test-everything.sh",
+    "test:everything:logged": "bash scripts/test-everything.sh --logged",
     "dogfood:check": "sh scripts/dogfood-check.sh",
     "dogfood:setup": "sh scripts/setup-m4-dogfood.sh",
     "sync:core": "bash cecli/scripts/sync_bright_vision.sh"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.0",
+    "@brightvision/vision-client": "workspace:*",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",

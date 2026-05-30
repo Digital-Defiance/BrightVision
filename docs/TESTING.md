@@ -18,7 +18,8 @@ All checks run on **your machine**. Nothing here requires GitHub Actions — wor
 | Full dogfood gate only | `yarn dogfood:gate` | release tier; optional `DOGFOOD_LLM=1` |
 | Scenario matrix (all registered SSE outputs) | `yarn test:e2e shipped-scenarios` | ~2–3 min |
 | Fixture-pack structure preflight | `yarn test:e2e:fixtures` | ~1s |
-| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` / `sh scripts/test-everything.sh` | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures` |
+| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` / `bash scripts/test-everything.sh` | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures` |
+| Same, tee to terminal + `test-everything-log.txt` | `yarn test:everything:logged` / `bash scripts/test-everything.sh --logged` | Requires `tee` + `ansifilter`; optional `TEST_EVERYTHING_LOG` |
 | Cloud / custom OpenAI base URL smoke | `yarn test:cloud-llm` (needs `cloud-llm.env`, `E2E_CLOUD_LLM=1` inside script) | ~15–45 s when passing |
 
 Same tiers via shell:

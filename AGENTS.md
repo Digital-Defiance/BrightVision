@@ -20,6 +20,10 @@ Prioritize dogfoodable workflows: run `yarn dogfood:agent` (headless, no GUI req
 | **`docs/`** | Architecture, ROADMAP, LOCAL_LLM |
 | **`e2e/`** | Playwright (mocked `/api/core` + optional mocked Tauri) |
 | **`scripts/`** | Superproject helpers (`compare-cores.py`, build) |
+| **`packages/vision-client/`** | Shared Vision HTTP + SSE types (`@brightvision/vision-client`) |
+| **`apps/remote/`** | BrightVision Remote (Expo) — thin client to `:8741` / LAN proxy |
+
+**Mobile Remote (#45):** Execution spec = **`docs/MOBILE_REMOTE.md`** (agent copy-paste prompts + per-phase acceptance criteria). Head-only; contract = `docs/IPC.md`. Do not treat partial scaffold as done until criteria pass.
 
 **User project vs engine:** Settings **project** (`workingDir`) is any git repo the agent edits. Cecli + Vision API live beside the app install, not inside the user’s project.
 
@@ -85,6 +89,8 @@ See `.cursor/rules/roadmap.mdc`.
 | Tier | Command |
 |------|---------|
 | TS unit | `yarn test` |
+| Vision client package | `yarn test:vision-client` |
+| Remote (Expo) | `yarn remote:dev` (manual; same Wi‑Fi as desktop LAN Link) |
 | TS + types | `yarn test:fast` |
 | + Rust | `yarn test:local` |
 | + E2E | `yarn test:full` (needs `npx playwright install chromium` once) |

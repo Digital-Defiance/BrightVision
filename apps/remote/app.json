@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "BrightVision Remote",
+    "slug": "brightvision-remote",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "brightvision-remote",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.digitaldefiance.brightvision.remote"
+    },
+    "android": {
+      "package": "org.digitaldefiance.brightvision.remote"
+    }
+  }
+}

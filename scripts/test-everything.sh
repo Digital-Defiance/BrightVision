@@ -2,14 +2,58 @@
 # 100% automated confidence suite: dogfood:check + release + fixtures + full LLM
 # (core pytest, e2e:llm, superproject-llm). Superset of DOGFOOD_LLM=1 + DOGFOOD_SUPERPROJECT_LLM=1
 # dogfood:gate without re-running release twice. See docs/TESTING.md.
-# Usage: source activate.sh && sh scripts/test-everything.sh
+# Usage: source activate.sh && bash scripts/test-everything.sh
+#   --logged   Tee live output to the terminal; ansifilter writes test-everything-log.txt
 # Each step is timed with btime (BrightDate units). Requires btime on PATH (e.g. Homebrew).
 # Set SKIP_TIME=1 to disable timing. Set SKIP_LLM=1 to skip LLM tiers when Ollama is down.
+# Set TEST_EVERYTHING_LOG to override the --logged output path.
 # Exit 0 only if every step succeeded; keeps running after failures for full report.
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+LOG_FILE="${TEST_EVERYTHING_LOG:-$ROOT/test-everything-log.txt}"
+LOGGED_INNER="${BV_TEST_EVERYTHING_LOGGED_INNER:-}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --logged)
+      if [ -n "$LOGGED_INNER" ]; then
+        echo "error: --logged cannot be nested" >&2
+        exit 1
+      fi
+      if ! command -v ansifilter >/dev/null 2>&1; then
+        echo "error: ansifilter not on PATH (required for --logged)" >&2
+        exit 1
+      fi
+      if ! command -v tee >/dev/null 2>&1; then
+        echo "error: tee not on PATH (required for --logged)" >&2
+        exit 1
+      fi
+      export BV_TEST_EVERYTHING_LOGGED_INNER=1
+      # Live transcript on stdout; parallel strip ANSI into the log file.
+      bash "$0" --logged-inner "${@:2}" 2>&1 | tee >(ansifilter -o "$LOG_FILE")
+      exit "${PIPESTATUS[0]}"
+      ;;
+    --logged-inner)
+      if [ -z "$LOGGED_INNER" ]; then
+        echo "error: internal --logged-inner without --logged wrapper" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    -h | --help)
+      echo "Usage: bash scripts/test-everything.sh [--logged]"
+      echo "  --logged   Tee to terminal + test-everything-log.txt (ansifilter strips ANSI in file)"
+      echo "  Env: SKIP_TIME=1 SKIP_LLM=1 TEST_EVERYTHING_LOG=/path/to.log"
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 FAILED=0
 

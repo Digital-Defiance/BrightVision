@@ -37,7 +37,10 @@ from bright_vision_core.git_workspace import create_git_workspace
 from bright_vision_core.headless_args import default_headless_args
 from bright_vision_core.headless_persistence import apply_persistence_to_args
 from bright_vision_core.ears.prompt import requirements_pass_ears
-from bright_vision_core.spec_steering import build_spec_focus_preamble
+from bright_vision_core.spec_focus import (
+    build_user_message_with_spec_context,
+    spec_focus_requested,
+)
 from bright_vision_core.spec_layers import normalize_spec_layer_traceability
 from bright_vision_core.roadmap_hints import maybe_append_roadmap_hint
 from bright_vision_core.slash_helpers import (
@@ -58,7 +61,7 @@ from bright_vision_core.model_router import (
 )
 from bright_vision_core.model_router_apply import apply_route_to_coder
 from bright_vision_core.llm_progress import llm_wait_messages
-from bright_vision_core.workspace_todos import WorkspaceTodos, format_todo_context
+from bright_vision_core.workspace_todos import WorkspaceTodos
 
 
 def _edited_files(coder) -> list[str]:
@@ -372,17 +375,19 @@ class Session:
         self,
         user_message: str,
         *,
+        intent_message: str | None = None,
         force_tier: str | None = None,
     ) -> RouteDecision | None:
         router = self._model_router
         if not router or not router.enabled:
             return None
         heavy = router.heavy_model or self._router_heavy_model_name
-        message_tokens = estimate_message_tokens(user_message)
+        routing_text = (intent_message if intent_message is not None else user_message).strip()
+        message_tokens = estimate_message_tokens(routing_text)
         context_tokens = self._estimate_turn_tokens(user_message)
         tier_force = force_tier if force_tier in ("fast", "heavy") else None
         decision = classify_prompt(
-            user_message,
+            routing_text,
             message_tokens=message_tokens,
             context_tokens=context_tokens,
             router=router,
@@ -405,19 +410,26 @@ class Session:
         force_tier: str | None = None,
         escalate_from_last: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        turn_todo_id: str | None = None
         user_text = maybe_append_roadmap_hint(message, self.coder)
-        focus = spec_focus or self.spec_focus or self.session_mode == "spec"
+        focus_requested = spec_focus_requested(
+            message_spec_focus=spec_focus,
+            session_spec_focus=self.spec_focus,
+            session_mode=self.session_mode,
+        )
+        item = None
+        store = None
         if active_todo_id:
             todos = WorkspaceTodos(self.coder.root)
             store = todos.load()
             item = todos.find(store, active_todo_id)
-            if item:
-                turn_todo_id = item.id
-                if inject_todo_spec or focus:
-                    user_text = format_todo_context(item, store=store) + message
-        if focus:
-            user_text = build_spec_focus_preamble(self.coder.root) + user_text
+        user_text, _spec_active, turn_todo_id = build_user_message_with_spec_context(
+            self.coder.root,
+            user_text,
+            item=item,
+            store=store,
+            focus_requested=focus_requested,
+            inject_todo_spec=inject_todo_spec,
+        )
 
         self.io.emit("user_message", text=user_text)
         for event in self.io.drain_events():
@@ -522,23 +534,30 @@ class Session:
 
             route_decision: RouteDecision | None = None
             if escalate_from_last and self._model_router and self._model_router.enabled:
-                route_decision = self._route_and_apply(user_msg, force_tier="heavy")
+                route_decision = self._route_and_apply(
+                    user_msg, intent_message=message, force_tier="heavy"
+                )
                 if route_decision:
                     yield self._emit_model_route(route_decision, escalated=True)
                     for event in self.io.drain_events():
                         yield event
             elif self._model_router and self._model_router.enabled:
-                route_decision = self._route_and_apply(user_msg, force_tier=force_tier)
+                route_decision = self._route_and_apply(
+                    user_msg, intent_message=message, force_tier=force_tier
+                )
                 if route_decision:
                     yield self._emit_model_route(route_decision)
                     for event in self.io.drain_events():
                         yield event
 
             turn_had_tool_error = False
+            turn_tool_error_text = ""
             max_attempts = 2 if self._model_router and self._model_router.escalate_on_failure else 1
             for attempt in range(max_attempts):
                 if attempt > 0 and route_decision:
-                    route_decision = self._route_and_apply(user_msg, force_tier="heavy")
+                    route_decision = self._route_and_apply(
+                        user_msg, intent_message=message, force_tier="heavy"
+                    )
                     yield self._emit_model_route(route_decision, escalated=True)
                     for event in self.io.drain_events():
                         yield event
@@ -559,6 +578,7 @@ class Session:
                     for event in self.io.drain_events():
                         if event.get("type") == "tool_error":
                             turn_had_tool_error = True
+                            turn_tool_error_text += str(event.get("text") or "")
                         yield event
                     if piece is HEARTBEAT_PULSE:
                         continue
@@ -570,6 +590,7 @@ class Session:
                 for event in self.io.drain_events():
                     if event.get("type") == "tool_error":
                         turn_had_tool_error = True
+                        turn_tool_error_text += str(event.get("text") or "")
                     yield event
 
                 edited = _edited_files(self.coder)
@@ -580,10 +601,11 @@ class Session:
                     and should_escalate_fast_turn(
                         route_decision,
                         router=self._model_router,
-                        user_message=user_msg,
+                        user_message=message,
                         edited_files=edited,
                         assistant_text="".join(attempt_text),
                         had_tool_error=turn_had_tool_error,
+                        tool_error_text=turn_tool_error_text,
                     )
                 ):
                     assistant_text.clear()

@@ -54,7 +54,13 @@ export interface VisionConfig {
   chatHistoryFile: boolean
   /** Default session mode when starting Vision API (vibe = code chat, spec = spec-first). */
   sessionMode: 'vibe' | 'spec'
+  /** LAN Link proxy for BrightVision Remote (desktop Tauri). */
+  lanRemoteEnabled: boolean
+  /** Port phones use on LAN (forwards to loopback Vision API). */
+  lanProxyPort: number
 }
+
+export const DEFAULT_LAN_PROXY_PORT = 8742
 
 export const DEFAULT_CONFIG: VisionConfig = {
   model: 'ollama_chat/qwen3.6:27b-q4_K_M',
@@ -77,6 +83,8 @@ export const DEFAULT_CONFIG: VisionConfig = {
   autoSaveSessionName: 'brightvision',
   chatHistoryFile: true,
   sessionMode: 'vibe',
+  lanRemoteEnabled: false,
+  lanProxyPort: DEFAULT_LAN_PROXY_PORT,
 }
 
 export function parseContextFilesInput(raw: string): string[] {

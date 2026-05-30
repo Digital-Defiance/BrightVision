@@ -24,7 +24,12 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { DISPLAY_CORE, ErrorSource, prefixForTechnicalLog, prefixForUserFacing } from './brand'
 import { AppChrome } from './components/layout/AppChrome'
 import { ResourceOverlay } from './components/layout/ResourceOverlay'
-import { DEFAULT_CONFIG, defaultCoreApiUrl, type VisionConfig } from './ipc/config'
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_LAN_PROXY_PORT,
+  defaultCoreApiUrl,
+  type VisionConfig,
+} from './ipc/config'
 import {
   applyLocalLlmToConfig,
   isOllamaVisionModel,
@@ -266,6 +271,12 @@ function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): Vi
   }
   if (merged.sessionMode !== 'vibe' && merged.sessionMode !== 'spec') {
     merged.sessionMode = 'vibe'
+  }
+  if (typeof merged.lanRemoteEnabled !== 'boolean') {
+    merged.lanRemoteEnabled = false
+  }
+  if (typeof merged.lanProxyPort !== 'number' || merged.lanProxyPort < 1024) {
+    merged.lanProxyPort = DEFAULT_LAN_PROXY_PORT
   }
   if (merged.coreEnginePath === 'bright-vision-core' || merged.coreEnginePath === 'BrightVision-core') {
     merged.coreEnginePath = '.'
@@ -2073,12 +2084,12 @@ function AppShell({
       let merged: SendMessageOptions | undefined = todoOptions
         ? { activeTodoId: todoOptions.activeTodoId, injectTodoSpec: todoOptions.injectTodoSpec }
         : undefined
-      if (specFocusMode) {
+      if (specFocusMode && activeTodo) {
         merged = {
           ...merged,
           specFocus: true,
-          activeTodoId: merged?.activeTodoId ?? activeTodo?.id,
-          injectTodoSpec: true,
+          activeTodoId: merged?.activeTodoId ?? activeTodo.id,
+          injectTodoSpec: Boolean(merged?.injectTodoSpec ?? todoOptions?.injectTodoSpec),
         }
       }
       const result = await send(text, { ...merged, ...sendExtras })
@@ -3189,6 +3200,26 @@ function AppShell({
                 gitLoading={gitLoading}
                 onRefreshGit={refreshGit}
                 onUndo={handleUndo}
+                onOpenInEditor={
+                  isTauriRuntime() ? (path) => handleOpenInEditor(path) : undefined
+                }
+                onRevertFile={
+                  isTauriRuntime()
+                    ? async (path) => {
+                        const { gitRestoreWorktreePaths } = await import('./ipc/gitStatus')
+                        try {
+                          await gitRestoreWorktreePaths(savedConfig.workingDir, [path])
+                          bumpGitRefresh()
+                          setSnackbar({ message: `Reverted ${path}`, severity: 'info' })
+                        } catch (err) {
+                          setSnackbar({
+                            message: err instanceof Error ? err.message : String(err),
+                            severity: 'error',
+                          })
+                        }
+                      }
+                    : undefined
+                }
                 isRunning={isRunning}
                 refreshToken={gitRefreshKey}
               />

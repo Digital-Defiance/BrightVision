@@ -170,6 +170,54 @@ def test_escalate_when_fast_no_edits():
     )
 
 
+def test_escalate_on_context_limit_tool_error():
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/deepseek-coder:6.7b",
+        heavy_model="ollama_chat/big",
+    )
+    decision = classify_prompt(
+        "tweak git tab",
+        message_tokens=200,
+        context_tokens=5_000,
+        router=router,
+        heavy_model_name="ollama_chat/big",
+        force_tier="fast",
+    )
+    err = (
+        "Your estimated chat context of 32,672 tokens exceeds the "
+        "16,384 token limit for ollama_chat/deepseek-coder:6.7b!"
+    )
+    assert should_escalate_fast_turn(
+        decision,
+        router=router,
+        user_message="tweak git tab",
+        edited_files=[],
+        assistant_text="",
+        had_tool_error=True,
+        tool_error_text=err,
+    )
+
+
+def test_lint_in_long_message_not_used_when_routing_short_intent():
+    """Spec preamble 'EARS lint' must not force fast when user message is unrelated."""
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/small",
+        heavy_model="ollama_chat/big",
+    )
+    preamble = "## Spec-focus mode\nEARS lint requirements\n" + ("x" * 5000)
+    short = "In the Git tab, add revert and open-in-editor cues."
+    d = classify_prompt(
+        short,
+        message_tokens=estimate_message_tokens(short),
+        context_tokens=estimate_prompt_tokens(preamble + short, files_in_chat=0),
+        router=router,
+        heavy_model_name="ollama_chat/big",
+    )
+    assert d.tier != "fast" or "keyword:lint" not in " ".join(d.reasons)
+
+
 def test_estimate_tokens_with_files_capped():
     bare = estimate_prompt_tokens("hello")
     with_files = estimate_prompt_tokens("hello", files_in_chat=10)

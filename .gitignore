@@ -67,6 +67,9 @@ e2e/fixtures/integration-workspace/.cecli/
 local-llm.env
 cloud-llm.env
 
+# Full-suite transcript (scripts/test-everything.sh --logged)
+test-everything-log.txt
+
 
 #Ignore cursor AI rules
 .cursor/rules/codacy.mdc

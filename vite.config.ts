@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { e2ePreviewCoreStub } from "./vite.e2e-preview";
@@ -5,6 +6,14 @@ import { e2ePreviewCoreStub } from "./vite.e2e-preview";
 const host = process.env.TAURI_DEV_HOST || "localhost";
 
 export default defineConfig(async () => ({
+  resolve: {
+    alias: {
+      "@brightvision/vision-client": path.resolve(
+        __dirname,
+        "packages/vision-client/src/index.ts"
+      ),
+    },
+  },
   plugins: [react(), e2ePreviewCoreStub()],
   define: {
     'import.meta.env.E2E': JSON.stringify(process.env.E2E === '1'),

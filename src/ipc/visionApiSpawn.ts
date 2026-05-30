@@ -28,6 +28,7 @@ export async function spawnDesktopVisionApi(cfg: VisionConfig): Promise<string> 
       ollamaApiBase: cfg.ollamaApiBase,
       port: VISION_API_DEFAULT_PORT,
       sessionEncrypt: cfg.sessionEncrypt,
+      apiToken: cfg.coreApiToken?.trim() || null,
     },
     90_000
   )

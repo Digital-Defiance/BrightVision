@@ -339,6 +339,12 @@ def classify_prompt(
     )
 
 
+_CONTEXT_LIMIT_RE = re.compile(
+    r"exceeds the\s+[\d,]+\s+token limit",
+    re.IGNORECASE,
+)
+
+
 def should_escalate_fast_turn(
     decision: RouteDecision,
     *,
@@ -347,11 +353,14 @@ def should_escalate_fast_turn(
     edited_files: list[str],
     assistant_text: str,
     had_tool_error: bool = False,
+    tool_error_text: str = "",
 ) -> bool:
     if not router.escalate_on_failure or decision.tier != "fast":
         return False
     if edited_files:
         return False
+    if had_tool_error and _CONTEXT_LIMIT_RE.search(tool_error_text):
+        return True
     if had_tool_error:
         return _CODE_TASK_STRONG.search(user_message) is not None
     if len(assistant_text.strip()) > 400:

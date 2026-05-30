@@ -44,6 +44,7 @@ import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 import { AppVersionSection } from './AppVersionSection'
 import { SessionPersistenceSection } from './SessionPersistenceSection'
 import { NtfyAlertsSection } from './NtfyAlertsSection'
+import { MobileRemoteSection } from './MobileRemoteSection'
 import { AgentsSection } from './AgentsSection'
 import type { AppVersions } from '../../hooks/useAppVersions'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
@@ -64,7 +65,7 @@ interface SettingsPanelProps {
   thinkingStatsStore: ThinkingStatsStore
   onClearThinkingStatsForModel: () => void
   onClearAllThinkingStats: () => void
-  onTimingStatsMessage?: (message: string, severity: 'info' | 'warning') => void
+  onTimingStatsMessage?: (message: string, severity: 'info' | 'warning' | 'error') => void
   resourceOverlayPrefs: ResourceOverlayPrefs
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
   ntfyAlertsPrefs: NtfyAlertsPrefs
@@ -474,6 +475,13 @@ export function SettingsPanel({
       <ResourceOverlaySection
         prefs={resourceOverlayPrefs}
         onChange={onResourceOverlayPrefsChange}
+      />
+
+      <MobileRemoteSection
+        config={config}
+        onChange={onChange}
+        visionApiRunning={visionApiControls.apiReachable === true}
+        onMessage={onTimingStatsMessage}
       />
 
       <NtfyAlertsSection
