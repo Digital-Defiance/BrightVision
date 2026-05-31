@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ntfy_notify;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
@@ -285,6 +287,7 @@ fn main() {
             get_engine_root,
             get_orchestrator_error,
             restart_orchestrator,
+            ntfy_notify::ntfy_send_push,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

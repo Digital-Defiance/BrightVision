@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -35,7 +35,18 @@ import {
   type SuiteStepPlan,
   type TestSuiteEvent,
 } from './testSuiteClient'
-import { stepTimingLabels, type StepMedian } from './stepTiming'
+import { NtfyLabSettings } from './NtfyLabSettings'
+import { maybeNotifySuiteRunFinished } from './ntfyLab'
+import {
+  loadTestLabNtfyPrefs,
+  saveTestLabNtfyPrefs,
+  type TestLabNtfyPrefs,
+} from './ntfyLabPrefs'
+import {
+  stepTimingLabels,
+  suiteRunningTimingSummary,
+  type StepMedian,
+} from './stepTiming'
 
 type StepState = {
   id: string
@@ -77,6 +88,18 @@ export default function App() {
   const [orchLoading, setOrchLoading] = useState(true)
   const [orchPort, setOrchPort] = useState(8743)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [ntfyPrefs, setNtfyPrefs] = useState<TestLabNtfyPrefs>(() => loadTestLabNtfyPrefs())
+  const ntfyPrefsRef = useRef(ntfyPrefs)
+  const [ntfyMsg, setNtfyMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    ntfyPrefsRef.current = ntfyPrefs
+  }, [ntfyPrefs])
+
+  const handleNtfyPrefsChange = (next: TestLabNtfyPrefs) => {
+    setNtfyPrefs(next)
+    saveTestLabNtfyPrefs(next)
+  }
 
   const refreshMeta = useCallback(async () => {
     setOrchLoading(true)
@@ -177,6 +200,22 @@ export default function App() {
     return Math.min(99, Math.round((prog / etaTotal) * 100))
   }, [etaTotal, progress])
 
+  const runningPlanIndex = useMemo(
+    () => steps.findIndex((s) => s.status === 'running'),
+    [steps]
+  )
+
+  const activeStepTiming = useMemo(() => {
+    if (!running || runningPlanIndex < 0) return null
+    return suiteRunningTimingSummary({
+      runningPlanIndex,
+      plan,
+      steps,
+      medians: stepMedians,
+      runningStepElapsed: progress.stepElapsed,
+    })
+  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed])
+
   const handleRun = async () => {
     setError(null)
     setRunOk(null)
@@ -275,6 +314,18 @@ export default function App() {
       setRunning(false)
       setRunClockStartedAt(null)
       setActiveRunId(null)
+      const elapsedSeconds = ev.elapsedSeconds ?? 0
+      const totalSeconds = ev.totalSeconds ?? 0
+      setSteps((prev) => {
+        const failedStepIds = prev.filter((s) => s.status === 'fail').map((s) => s.id)
+        void maybeNotifySuiteRunFinished(ntfyPrefsRef.current, {
+          ok: !!ev.ok,
+          elapsedSeconds,
+          totalSeconds,
+          failedStepIds,
+        })
+        return prev
+      })
     }
     if (ev.type === 'error' && ev.text) {
       setError(ev.text)
@@ -371,6 +422,16 @@ export default function App() {
           {digestMsg}
         </Alert>
       )}
+      {ntfyMsg && (
+        <Alert severity="info" sx={{ mb: 2 }} onClose={() => setNtfyMsg(null)}>
+          {ntfyMsg}
+        </Alert>
+      )}
+      <NtfyLabSettings
+        prefs={ntfyPrefs}
+        onChange={handleNtfyPrefsChange}
+        onMessage={(message) => setNtfyMsg(message)}
+      />
       <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
         <FormControlLabel
           control={<Checkbox checked={skipLlm} onChange={(_, v) => setSkipLlm(v)} disabled={running} />}
@@ -419,12 +480,16 @@ export default function App() {
             <Typography variant="caption">
               Step {progress.index}/{progress.total}
             </Typography>
-            <Typography variant="caption">
+            <Typography variant="caption" component="div" sx={{ textAlign: 'right' }}>
               {fmtDuration(progress.elapsed)}
               {progress.stepElapsed > 0
                 ? ` (step ${fmtDuration(progress.stepElapsed)})`
                 : ''}
-              {etaTotal > 0 ? ` / ETA ~${fmtDuration(etaTotal)}` : ''}
+              {etaTotal > 0 ? ` / suite ETA ~${fmtDuration(etaTotal)}` : ''}
+              {activeStepTiming?.stepLeft != null && ` · step ~${activeStepTiming.stepLeft}`}
+              {activeStepTiming?.stepEtc != null && ` · step ETC ${activeStepTiming.stepEtc}`}
+              {activeStepTiming?.runLeft != null && ` · run ~${activeStepTiming.runLeft}`}
+              {activeStepTiming?.runEtc != null && ` · run ETC ${activeStepTiming.runEtc}`}
             </Typography>
           </Stack>
           <LinearProgress variant={etaTotal > 0 ? 'determinate' : 'indeterminate'} value={pct} />
@@ -459,7 +524,10 @@ export default function App() {
                 <Chip size="small" label={timing.eta} variant="outlined" color="info" />
               )}
               {timing.etc && (
-                <Chip size="small" label={timing.etc} variant="outlined" />
+                <Chip size="small" label={timing.etc} variant="outlined" color="info" />
+              )}
+              {timing.runEtc && (
+                <Chip size="small" label={timing.runEtc} variant="outlined" />
               )}
               {step.seconds != null && (
                 <Chip size="small" label={fmtDuration(step.seconds)} variant="outlined" />

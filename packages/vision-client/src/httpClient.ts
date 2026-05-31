@@ -566,6 +566,19 @@ export class CoreHttpClient {
     }
   }
 
+  /** Poll interval + max wait aligned with `LLM_SPEC_GEN_TIMEOUT_S` (Vite: `VITE_LLM_SPEC_GEN_TIMEOUT_S`). */
+  private specGenPollMaxAttempts(): number {
+    const meta =
+      typeof import.meta !== 'undefined'
+        ? (import.meta as ImportMeta & { env?: { VITE_LLM_SPEC_GEN_TIMEOUT_S?: string } }).env
+            ?.VITE_LLM_SPEC_GEN_TIMEOUT_S
+        : undefined
+    const raw = meta || '1200'
+    const sec = Number(raw)
+    const cap = Number.isFinite(sec) && sec > 0 ? sec : 1200
+    return Math.max(90, Math.ceil(cap * 1.05))
+  }
+
   private async pollSpecGenerateJob(jobId: string, signal?: AbortSignal): Promise<{
     status: string
     error?: string | null
@@ -577,7 +590,8 @@ export class CoreHttpClient {
     ears_blocked?: boolean
   }> {
     const url = `${this.baseUrl}/workspaces/todos/generate-spec/${jobId}`
-    for (let attempt = 0; attempt < 600; attempt++) {
+    const maxAttempts = this.specGenPollMaxAttempts()
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       const res = await fetch(url, { headers: this.headers(false), signal })
       if (!res.ok) throw new Error(`spec job: ${res.status} ${await res.text()}`)
@@ -599,7 +613,9 @@ export class CoreHttpClient {
       }
       await new Promise((r) => setTimeout(r, 1000))
     }
-    throw new Error('Spec generation timed out')
+    throw new Error(
+      `Spec generation timed out after ${maxAttempts}s (set VITE_LLM_SPEC_GEN_TIMEOUT_S / LLM_SPEC_GEN_TIMEOUT_S)`
+    )
   }
 
   async generateWorkspaceTodoSpec(

@@ -2683,8 +2683,10 @@ const RAW_RUNTIME_STATE =
           ["@vitejs/plugin-react", "virtual:44ddceea1d8463d8b8d94fbc425520c82461920f4f0b7649899f7748971002c58b825fd2f4ffe4e5438e10e3d3e26b27da75770af148e50ff2428323c5c8eddd#npm:4.7.0"],\
           ["react", "npm:18.3.1"],\
           ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"],\
+          ["react-qr-code", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:2.0.21"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
-          ["vite", "virtual:84dcff71db8be9cbe950d0756a4f7772695095a485baf88f1cc98436fdd0ea49e9c6ac7f535ec4b7b26fd24d60bd4323cc6ed6d8629d5b2015f92d4613c7ffb6#npm:5.4.21"]\
+          ["vite", "virtual:84dcff71db8be9cbe950d0756a4f7772695095a485baf88f1cc98436fdd0ea49e9c6ac7f535ec4b7b26fd24d60bd4323cc6ed6d8629d5b2015f92d4613c7ffb6#npm:5.4.21"],\
+          ["vitest", "virtual:65071057716c6e2696ebe327c2c40600629ed88ed2bce3e7c12beafd26c55fdd764e9b0627dddecf9bff0b83f5ccf0fefe42f56a3639f90720d3752303316598#npm:2.1.9"]\
         ],\
         "linkType": "SOFT"\
       }]\

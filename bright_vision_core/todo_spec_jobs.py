@@ -6,6 +6,7 @@ Uses a short-lived headless session so the user's chat session stays free.
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import threading
 import time
@@ -110,28 +111,34 @@ class SpecJobStore:
             self._prune()
             self._jobs[job_id] = job
 
+        def _run() -> dict[str, Any]:
+            session = Session.create(
+                workspace,
+                model=model,
+                yes=True,
+                dry_run=True,
+                auto_commits=False,
+                echo_to_console=False,
+                chat_history_file=False,
+                map_tokens=0,
+            )
+            return session.generate_todo_layers(
+                todo_id,
+                prompt,
+                mode=mode,
+                section=section,
+                apply=apply,
+                enforce_ears=enforce_ears,
+                context_paths=context_paths,
+            )
+
         def worker() -> None:
             self._set_status(job_id, "running")
+            wall_s = spec_gen_timeout_s()
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            fut = pool.submit(_run)
             try:
-                session = Session.create(
-                    workspace,
-                    model=model,
-                    yes=True,
-                    dry_run=True,
-                    auto_commits=False,
-                    echo_to_console=False,
-                    chat_history_file=False,
-                    map_tokens=0,
-                )
-                result = session.generate_todo_layers(
-                    todo_id,
-                    prompt,
-                    mode=mode,
-                    section=section,
-                    apply=apply,
-                    enforce_ears=enforce_ears,
-                    context_paths=context_paths,
-                )
+                result = fut.result(timeout=wall_s)
                 with self._lock:
                     j = self._jobs.get(job_id)
                     if not j:
@@ -145,8 +152,15 @@ class SpecJobStore:
                     j.ears_blocked = bool(result.get("ears_blocked"))
                     j.ears_issues = list(result.get("ears_issues") or [])
                     j.updated_at = time.time()
+            except concurrent.futures.TimeoutError:
+                self._set_error(
+                    job_id,
+                    f"Spec generation job timed out after {int(wall_s)}s",
+                )
             except Exception as err:
                 self._set_error(job_id, str(err))
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
 
         threading.Thread(target=worker, daemon=True, name=f"spec-job-{job_id[:8]}").start()
         return job

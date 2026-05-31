@@ -206,7 +206,7 @@ Optional env:
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
-| `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wait (pytest `test_generate_spec_llm`, HTTP sync poll, `spec-generate-llm` e2e; default `900` in `test:llm:core`) |
+| `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Test Lab suite defaults `1200`; `test:llm:core` sets `1200` in `package.json`. |
 | `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; `test:llm:core` / Test Lab suite default `1200`; CLI `900`) |
 | `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
 | `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |

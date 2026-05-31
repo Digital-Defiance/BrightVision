@@ -15,10 +15,11 @@ Separate desktop app for running the full engine confidence suite with live prog
 From repo root:
 
 ```bash
-source activate.sh
-yarn install   # required once so @brightvision/test-lab is linked in yarn.lock
-yarn test-lab:dev
+yarn lab
+# or: source activate.sh && yarn test-lab:dev
 ```
+
+`yarn lab` runs `scripts/lab.sh` (venv + orchestrator port + **Tauri dev window**). First run may need `yarn install` if the workspace link is missing.
 
 If you see `Package for @brightvision/test-lab@workspace:apps/test-lab not found`, run `yarn install` from the repo root.
 
@@ -61,7 +62,9 @@ yarn test-lab:digest .bright-vision/test-suite-runs/run-YYYYMMDD-HHMMSS-xxxxxxxx
 
 The digest collapses heartbeat lines, keeps pytest failures, and truncates to ~120k chars by default.
 
-**Step ETA:** Pending steps show **ETA ~duration** from `.bright-vision/test-everything-timing.json` medians; during a run, **ETC** shows the estimated clock time that step will start.
+**Step ETA / ETC:** Pending steps show **ETA ~duration** and **ETC** (clock time) from `.bright-vision/test-everything-timing.json` medians. The **running** step shows **~Xm left**, **ETC** (step finish), and **Run ETC** (whole suite finish). The progress bar repeats step and run ETC while a step is active.
+
+**Mobile alerts (ntfy):** Expand **Mobile alerts (ntfy)** before a run. Enable notifications, scan the QR code with the [ntfy](https://ntfy.sh) Android app (or paste the topic). A push is sent when the **full suite** finishes (pass/fail, wall time, failed step ids — no log text). Use **Test ping** to verify delivery.
 
 **GPU chips:** Step summary uses heartbeat samples (ioreg/`nvidia-smi`) while running; `bcpucap`/`gpucap` at step end can read 0% on macOS even when Ollama used the GPU — the UI prefers heartbeat peaks.
 

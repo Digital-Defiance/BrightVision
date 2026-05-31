@@ -1,7 +1,32 @@
 #!/usr/bin/env sh
 # Dev: editable Cecli (submodule) + bright_vision_core (parent package).
 # Safe to source: does not enable set -e in your interactive shell.
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+# When sourced from scripts/lab.sh, $0 is lab.sh — use BRIGHT_VISION_ROOT / BV_ROOT / BASH_SOURCE.
+_resolve_repo_root() {
+  if [ -n "${BRIGHT_VISION_ROOT:-}" ] && [ -d "${BRIGHT_VISION_ROOT}/bright_vision_core" ]; then
+    cd "${BRIGHT_VISION_ROOT}" && pwd
+    return 0
+  fi
+  if [ -n "${BV_ROOT:-}" ] && [ -d "${BV_ROOT}/bright_vision_core" ]; then
+    cd "${BV_ROOT}" && pwd
+    return 0
+  fi
+  if [ -n "${BASH_VERSION:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
+    cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
+    return 0
+  fi
+  case "$0" in
+    */activate.sh | ./activate.sh | activate.sh)
+      cd "$(dirname "$0")" && pwd
+      return 0
+      ;;
+  esac
+  return 1
+}
+ROOT="$(_resolve_repo_root)" || {
+  echo "activate.sh: set BRIGHT_VISION_ROOT to the repo root, or run: source ./activate.sh from that directory" >&2
+  return 1 2>/dev/null || exit 1
+}
 VENV="${ROOT}/.venv"
 
 die() {

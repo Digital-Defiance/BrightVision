@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -102,6 +103,42 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         self.assertEqual(finished.status, "completed", finished.error)
         create.assert_called_once()
         self.assertIs(create.call_args.kwargs.get("chat_history_file"), False)
+
+    def test_background_spec_job_wall_timeout_marks_error(self):
+        from bright_vision_core.todo_spec_jobs import spec_job_store
+
+        def slow_layers(*_args, **_kwargs):
+            time.sleep(3)
+            return {
+                "requirements": "",
+                "design": "",
+                "tasks_md": "",
+                "raw": "",
+                "item": None,
+                "ears_blocked": False,
+                "ears_issues": [],
+            }
+
+        mock_session = MagicMock()
+        mock_session.generate_todo_layers.side_effect = slow_layers
+
+        with patch.object(Session, "create", return_value=mock_session):
+            with patch(
+                "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
+                return_value=1.0,
+            ):
+                job = spec_job_store.start(
+                    "/tmp/workspace",
+                    "todo-id",
+                    "ping",
+                    mode="generate",
+                    apply=True,
+                    enforce_ears=True,
+                )
+                finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+
+        self.assertEqual(finished.status, "error", finished.error)
+        self.assertIn("timed out", (finished.error or "").lower())
 
 
 if __name__ == "__main__":

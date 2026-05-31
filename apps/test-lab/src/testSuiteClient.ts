@@ -22,6 +22,7 @@ export type TestSuiteEvent = {
   stepIndex?: number
   totalSteps?: number
   elapsedSeconds?: number
+  totalSeconds?: number
   stepElapsedSeconds?: number
   text?: string
   stepIds?: string[]

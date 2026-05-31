@@ -17,6 +17,9 @@ export default defineConfig(async () => ({
   plugins: [react(), e2ePreviewCoreStub()],
   define: {
     'import.meta.env.E2E': JSON.stringify(process.env.E2E === '1'),
+    'import.meta.env.VITE_LLM_SPEC_GEN_TIMEOUT_S': JSON.stringify(
+      process.env.LLM_SPEC_GEN_TIMEOUT_S || process.env.VITE_LLM_SPEC_GEN_TIMEOUT_S || '1200'
+    ),
   },
 
   css: {
