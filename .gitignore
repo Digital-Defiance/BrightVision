@@ -67,8 +67,11 @@ e2e/fixtures/integration-workspace/.cecli/
 local-llm.env
 cloud-llm.env
 
-# Full-suite transcript (scripts/test-everything.sh --logged)
+# Full-suite transcript (CLI --logged / Test Lab)
 test-everything-log.txt
+.bright-vision/test-suite-runs/
+# Local timing history (scripts/test-everything.sh)
+.bright-vision/test-everything-timing.json
 
 
 #Ignore cursor AI rules

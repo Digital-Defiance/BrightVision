@@ -19,110 +19,166 @@ _SECTION_HEADERS = {
     "## implementation tasks": "tasks_md",
 }
 
-_GENERATE_TEMPLATE = """\
-You are writing a spec-driven development plan for this repository. Do not edit any files.
+# --- Kiro-style layer guidance (no curly braces: these are concatenated into
+# --- .format() templates, so any "{" would be parsed as a field). ---
 
-Feature request:
-{prompt}
+_REQUIREMENTS_FORMAT = """\
+Write thorough, Kiro-style requirements:
+- Begin with a `### Introduction` paragraph describing the feature, its users, and scope.
+- Add one `### REQ-NNN: <title>` section per requirement (unique id; a short title may follow the id).
+- Under each requirement, write a `**User Story:** As a <role>, I want <capability>, so that <benefit>.` line.
+- Then an `**Acceptance Criteria**` numbered list of EARS clauses. Each clause uses **THE** system **SHALL** with a trigger: **WHEN** <event>, **IF** <condition> **THEN**, **WHILE** <state>, or **WHERE** <feature> — or a ubiquitous **THE** system **SHALL** statement.
+- Give every requirement at least two acceptance criteria; cover the happy path, edge cases, invalid input / error handling, and relevant non-functional needs (performance, security, accessibility).
+- Prefer at least three requirements unless the feature is genuinely trivial.
+"""
 
-{existing}
-{ears_context}
+_DESIGN_FORMAT = """\
+Be comprehensive and concrete. Use these level-3 (###) subsections:
+- `### Overview` — what is being built and why, tied to the requirements.
+- `### Architecture` — the major pieces and how requests/data flow between them (a diagram is welcome).
+- `### Components and Interfaces` — each component, its responsibility, and key function/endpoint signatures.
+- `### Data Models` — important types, their fields, and how they are persisted.
+- `### Error Handling` — failure modes and how the system responds.
+- `### Testing Strategy` — unit, integration, and e2e coverage.
+Reference concrete modules/files in this repository where relevant, and cite the REQ ids each part satisfies (e.g. REQ-001). Every requirement must be covered.
+"""
 
-Respond with markdown only, using exactly these three level-2 headings (no other top-level structure):
+_TASKS_FORMAT = """\
+Break the work into incremental, test-driven coding steps:
+- Use a numbered checklist; add sub-steps (e.g. 1.1, 1.2) for larger steps.
+- Each step is an actionable coding task (write or change code/tests), not project management.
+- Note the requirement ids each step implements (e.g. `_Requirements: REQ-001, REQ-002_`) and a `(depends: none|N)` marker.
+- Order steps so each builds on previous ones, and wire tests alongside the code they cover.
+"""
+
+_REQUIREMENTS_EXAMPLE = """\
+Format example (replace with the real feature; do not copy this content):
+
+### Introduction
+The health endpoint lets clients confirm the API is reachable before pairing.
+
+### REQ-001: Health check
+**User Story:** As a client app, I want a health endpoint, so that I can confirm the API is up.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status body.
+2. **IF** the core is still starting **THEN THE** system **SHALL** respond with HTTP 503 and a retry hint.
+"""
+
+_DESIGN_EXAMPLE = """\
+Format example (structure only):
+
+### Overview
+Implements REQ-001 as an HTTP route.
+### Architecture
+FastAPI app -> health handler -> status payload.
+### Components and Interfaces
+- `health()` returns the status payload — REQ-001.
+### Data Models
+A Status value with an "ok" boolean field.
+### Error Handling
+Return HTTP 503 while the core is starting (REQ-001).
+### Testing Strategy
+An HTTP test asserts 200 and a JSON body for REQ-001.
+"""
+
+_TASKS_EXAMPLE = """\
+Format example:
+
+- [ ] 1. Add the health route and status payload — _Requirements: REQ-001_ (depends: none)
+  - [ ] 1.1 Return HTTP 503 while the core is starting (depends: none)
+- [ ] 2. Add an HTTP test asserting 200 and a JSON body — _Requirements: REQ-001_ (depends: 1)
+"""
+
+_ALL_EXAMPLE = """\
+Format example (structure only; replace with the real feature):
 
 ## Requirements
-Use EARS-style bullets: **WHEN** … **THE** system **SHALL** …
+### Introduction
+The health endpoint lets clients confirm the API is reachable.
+
+### REQ-001: Health check
+**User Story:** As a client, I want a health endpoint, so that I can confirm the API is up.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status.
+2. **IF** the core is still starting **THEN THE** system **SHALL** respond with HTTP 503.
 
 ## Design
-Overview, architecture, components, and data flow. Cite each requirement id from Requirements (e.g. REQ-001, REQ-002).
+### Overview
+Implements REQ-001 as an HTTP route.
+### Architecture
+FastAPI app -> health handler -> status payload.
+### Components and Interfaces
+- `health()` returns the status payload — REQ-001.
+### Data Models
+A Status value with an "ok" boolean field.
+### Error Handling
+Return HTTP 503 while starting (REQ-001).
+### Testing Strategy
+An HTTP test asserts 200 for REQ-001.
 
 ## Implementation tasks
-Numbered checklist items, one per line, format:
-- [ ] 1. Short title (depends: none)
-- [ ] 2. Next step (depends: 1)
+- [ ] 1. Add the health route — _Requirements: REQ-001_ (depends: none)
+- [ ] 2. Add an HTTP test for the route — _Requirements: REQ-001_ (depends: 1)
 """
 
-_REQUIREMENTS_SECTION_TEMPLATE = """\
-You are writing requirements for a spec-driven task. Do not edit any files.
+_GENERATE_TEMPLATE = (
+    "You are writing a complete spec-driven development plan for this repository. "
+    "Do not edit any files.\n\n"
+    "Feature request:\n{prompt}\n\n"
+    "{existing}{ears_context}\n\n"
+    "Respond with markdown only. Use exactly these three level-2 (##) headings and no other "
+    "level-2 headings; use level-3 (###) for every subsection:\n\n"
+    "## Requirements\n" + _REQUIREMENTS_FORMAT + "\n"
+    "## Design\n" + _DESIGN_FORMAT + "\n"
+    "## Implementation tasks\n" + _TASKS_FORMAT + "\n"
+    + _ALL_EXAMPLE
+)
 
-Feature request:
-{prompt}
+_REQUIREMENTS_SECTION_TEMPLATE = (
+    "You are writing the requirements layer for a spec-driven task. Do not edit any files.\n\n"
+    "Feature request:\n{prompt}\n\n"
+    "{existing_requirements}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Requirements\n" + _REQUIREMENTS_FORMAT + "\n" + _REQUIREMENTS_EXAMPLE
+)
 
-{existing_requirements}
-{ears_context}
+_DESIGN_SECTION_TEMPLATE = (
+    "You are writing the design layer for a spec-driven task. Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements (approved — the design must satisfy every REQ id)\n{requirements}\n\n"
+    "Design note:\n{prompt}\n\n"
+    "{existing_design}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Design\n" + _DESIGN_FORMAT + "\n" + _DESIGN_EXAMPLE
+)
 
-Respond with markdown only, under a single level-2 heading:
+_TASKS_SECTION_TEMPLATE = (
+    "You are writing the implementation tasks layer for a spec-driven task. "
+    "Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements\n{requirements}\n\n"
+    "## Design\n{design}\n\n"
+    "Implementation note:\n{prompt}\n\n"
+    "{existing_tasks}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Implementation tasks\n" + _TASKS_FORMAT + "\n" + _TASKS_EXAMPLE
+)
 
-## Requirements
-Use EARS-style bullets: **WHEN** … **THE** system **SHALL** …
-"""
-
-_DESIGN_SECTION_TEMPLATE = """\
-You are writing the design layer for a spec-driven task. Do not edit any files.
-
-Task title: {title}
-
-## Requirements (approved — design must satisfy these)
-{requirements}
-
-Design note:
-{prompt}
-
-{existing_design}
-{ears_context}
-
-Respond with markdown only, under a single level-2 heading:
-
-## Design
-Overview, architecture, components, and data flow. Cite each requirement id (e.g. REQ-001, REQ-002).
-Keep the section brief (under 15 lines of markdown).
-"""
-
-_TASKS_SECTION_TEMPLATE = """\
-You are writing implementation tasks for a spec-driven task. Do not edit any files.
-
-Task title: {title}
-
-## Requirements
-{requirements}
-
-## Design
-{design}
-
-Implementation note:
-{prompt}
-
-{existing_tasks}
-{ears_context}
-
-Respond with markdown only, under a single level-2 heading:
-
-## Implementation tasks
-Numbered checklist items, one per line, format:
-- [ ] 1. Short title (depends: none)
-- [ ] 2. Next step (depends: 1)
-Each step should trace to requirement ids from Requirements.
-"""
-
-_REFINE_TEMPLATE = """\
-You are reviewing a spec-driven task for consistency. Do not edit any files.
-
-Task title: {title}
-
-## Requirements
-{requirements}
-
-## Design
-{design}
-
-## Implementation tasks
-{tasks_md}
-
-User note: {prompt}
-{ears_context}
-
-Output an improved version with the same three ## headings. Fix contradictions between layers and align implementation tasks with requirements and design. Resolve every EARS error listed above.
-"""
+_REFINE_TEMPLATE = (
+    "You are reviewing and improving a spec-driven task. Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements\n{requirements}\n\n"
+    "## Design\n{design}\n\n"
+    "## Implementation tasks\n{tasks_md}\n\n"
+    "User note: {prompt}\n{ears_context}\n\n"
+    "Output an improved version with the same three level-2 (##) headings "
+    "(## Requirements, ## Design, ## Implementation tasks). Deepen any thin section, fix "
+    "contradictions between layers, ensure every REQ id is covered by the design and tasks, "
+    "and resolve every EARS issue listed above. Follow this structure:\n\n"
+    + _REQUIREMENTS_FORMAT + "\n" + _DESIGN_FORMAT + "\n" + _TASKS_FORMAT
+)
 
 
 def _optional_existing_block(label: str, text: str) -> str:

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import unittest
 
-from bright_vision_core.spec_layers import normalize_spec_layer_traceability
+from bright_vision_core.spec_layers import (
+    assess_spec_richness,
+    normalize_spec_layer_traceability,
+)
 from bright_vision_core.todo_spec_generate import parse_generated_layers
 
 from spec_layer_assertions import (
@@ -43,6 +46,28 @@ class TestGenerateSpecParse(unittest.TestCase):
             out["tasks_md"],
         )
         self.assertTrue(ok, issues)
+
+    def test_sample_is_kiro_rich(self):
+        """The shared fixture should now read as a rich, Kiro-grade spec."""
+        layers = parse_generated_layers(SAMPLE_GENERATED_MARKDOWN)
+        rich, suggestions = assess_spec_richness(
+            layers.get("requirements", ""),
+            layers.get("design", ""),
+            layers.get("tasks_md", ""),
+        )
+        self.assertTrue(rich, suggestions)
+
+    def test_richness_flags_thin_spec(self):
+        rich, suggestions = assess_spec_richness(
+            requirements="### REQ-001\n**WHEN** x\n**THE** system **SHALL** y.\n",
+            design="## Overview\nshort",
+            tasks_md="- [ ] 1. Do it (depends: none)",
+        )
+        self.assertFalse(rich)
+        joined = " ".join(suggestions)
+        self.assertIn("User Story", joined)
+        self.assertIn("design:", joined)
+        self.assertIn("tasks:", joined)
 
     def test_normalize_after_merge_for_phased_design(self):
         """Phased design parse omits requirements; merge must precede normalize."""

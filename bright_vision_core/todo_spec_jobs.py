@@ -19,7 +19,9 @@ JobStatus = Literal["pending", "running", "completed", "error"]
 
 _MAX_JOBS = 64
 _JOB_TTL_S = 3600
-_DEFAULT_WAIT_S = 900.0
+# Kiro-grade specs are longer to generate; give local models headroom so a single
+# rich section (intro + user stories + acceptance criteria) does not hit the turn cap.
+_DEFAULT_WAIT_S = 1200.0
 
 
 def spec_gen_timeout_s() -> float:
@@ -46,8 +48,9 @@ def spec_gen_turn_timeout_s() -> float:
             chat_cap = 300.0
     else:
         chat_cap = 300.0
-    # Phased design/tasks prompts are larger than a chat turn; scale with job cap.
-    scaled = min(job_cap - 60.0, max(chat_cap, job_cap * 0.5))
+    # Phased requirements/design/tasks prompts are larger than a chat turn (Kiro
+    # structure + few-shot exemplar) and produce longer output; scale with job cap.
+    scaled = min(job_cap - 60.0, max(chat_cap, job_cap * 0.6))
     return max(60.0, scaled)
 
 

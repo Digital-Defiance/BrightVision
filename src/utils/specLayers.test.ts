@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   assessGeneratedSpecLayers,
+  assessSpecRichness,
   designReferencesRequirements,
   MOCK_SANE_SPEC_LAYERS,
+  normalizeSpecLayerTraceability,
 } from './specLayers'
 
 describe('assessGeneratedSpecLayers', () => {
@@ -30,6 +32,17 @@ describe('assessGeneratedSpecLayers', () => {
     expect(r.ok).toBe(true)
   })
 
+  it('normalize adds REQ traceability for thin design', () => {
+    const req = `### REQ-001\n**WHEN** x\n**THE** system **SHALL** do a.\n### REQ-002\n**WHEN** y\n**THE** system **SHALL** do b.\n`
+    const normalized = normalizeSpecLayerTraceability({
+      requirements: req,
+      design: '## Overview\nHTTP API only.',
+      tasks_md: '- [ ] 1. Step (depends: none)',
+    })
+    const r = assessGeneratedSpecLayers(normalized)
+    expect(r.ok).toBe(true)
+  })
+
   it('rejects requirements without SHALL', () => {
     const r = assessGeneratedSpecLayers({
       requirements: '### REQ-001\n**WHEN** x\n**THE** system shows y.\n',
@@ -38,5 +51,24 @@ describe('assessGeneratedSpecLayers', () => {
     })
     expect(r.ok).toBe(false)
     expect(r.issues).toContain('requirements missing SHALL')
+  })
+})
+
+describe('assessSpecRichness', () => {
+  it('treats the mock fixture as Kiro-rich', () => {
+    expect(assessSpecRichness(MOCK_SANE_SPEC_LAYERS).ok).toBe(true)
+  })
+
+  it('flags thin specs with deepen suggestions', () => {
+    const r = assessSpecRichness({
+      requirements: '### REQ-001\n**WHEN** x\n**THE** system **SHALL** y.\n',
+      design: '## Overview\nshort',
+      tasks_md: '- [ ] 1. Do it (depends: none)',
+    })
+    expect(r.ok).toBe(false)
+    const joined = r.issues.join(' ')
+    expect(joined).toMatch(/User Story/i)
+    expect(joined).toMatch(/design:/)
+    expect(joined).toMatch(/tasks:/)
   })
 })

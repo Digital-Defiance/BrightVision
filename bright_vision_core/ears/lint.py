@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from bright_vision_core.ears.model import EarsClause, EarsIssue, EarsLintResult, Severity
 from bright_vision_core.ears.parse import parse_requirements_markdown
 from bright_vision_core.ears.patterns import classify_clause, has_shall, has_the_system_shall
+
+_REQ_HEADING = re.compile(r"^###\s+(REQ-\d+)\b", re.I | re.M)
 
 
 def _issue(
@@ -26,7 +29,11 @@ def _issue(
     )
 
 
-def lint_clauses(clauses: list[EarsClause]) -> list[EarsIssue]:
+def lint_clauses(
+    clauses: list[EarsClause],
+    *,
+    heading_ids: list[str] | None = None,
+) -> list[EarsIssue]:
     issues: list[EarsIssue] = []
 
     if not clauses:
@@ -39,13 +46,16 @@ def lint_clauses(clauses: list[EarsClause]) -> list[EarsIssue]:
         )
         return issues
 
-    id_counts = Counter(c.req_id for c in clauses if c.req_id)
+    # Duplicates are repeated requirement *headings*, not multiple acceptance
+    # criteria sharing one heading (Kiro-style requirements have several ACs per id).
+    dup_source = heading_ids if heading_ids is not None else [c.req_id for c in clauses if c.req_id]
+    id_counts = Counter(rid for rid in dup_source if rid)
     for req_id, count in id_counts.items():
         if count > 1:
             issues.append(
                 _issue(
                     "EARS_DUP_ID",
-                    f"Duplicate requirement id {req_id} ({count} clauses).",
+                    f"Duplicate requirement id {req_id} ({count} headings).",
                     "error",
                     req_id=req_id,
                 )
@@ -124,7 +134,8 @@ def analyze_requirements(
 ) -> EarsLintResult:
     """Lint a requirements markdown string (Tasks layer or .cecli/specs/.../requirements.md)."""
     clauses = parse_requirements_markdown(text)
-    issues = lint_clauses(clauses)
+    heading_ids = [m.group(1).upper() for m in _REQ_HEADING.finditer(text or "")]
+    issues = lint_clauses(clauses, heading_ids=heading_ids)
     return EarsLintResult(
         issues=issues,
         clauses=clauses,

@@ -18,8 +18,10 @@ All checks run on **your machine**. Nothing here requires GitHub Actions — wor
 | Full dogfood gate only | `yarn dogfood:gate` | release tier; optional `DOGFOOD_LLM=1` |
 | Scenario matrix (all registered SSE outputs) | `yarn test:e2e shipped-scenarios` | ~2–3 min |
 | Fixture-pack structure preflight | `yarn test:e2e:fixtures` | ~1s |
-| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` / `bash scripts/test-everything.sh` | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures` |
-| Same, tee to terminal + `test-everything-log.txt` | `yarn test:everything:logged` / `bash scripts/test-everything.sh --logged` | Requires `tee` + `ansifilter`; optional `TEST_EVERYTHING_LOG` |
+| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` (`bright_vision_core.test_suite` CLI) | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures`. Timing history in `.bright-vision/test-everything-timing.json`; optional [`gpucap`](https://github.com/Digital-Defiance/gpucap) per step (`SKIP_GPU=1` to skip). |
+| **Test Lab UI** (desktop) | `yarn test-lab:dev` | Separate Tauri app (`apps/test-lab`): progress bar, GitHub-style step accordions, GPU chips; orchestrator default **:8743** (`BV_TEST_ORCHESTRATOR_PORT`; LAN proxy stays :8742). See [apps/test-lab/README.md](../apps/test-lab/README.md). |
+| Full transcript on disk | `yarn test:everything -- --logged` or Test Lab **Save full transcript** | `.bright-vision/test-suite-runs/run-*.log` (or `TEST_EVERYTHING_LOG` / `test-everything-log.txt`) |
+| Legacy shell wrapper | `yarn test:everything:shell` / `yarn test:everything:logged` | Same Python CLI; `:logged` passes `--logged` |
 | Cloud / custom OpenAI base URL smoke | `yarn test:cloud-llm` (needs `cloud-llm.env`, `E2E_CLOUD_LLM=1` inside script) | ~15–45 s when passing |
 
 Same tiers via shell:
@@ -205,10 +207,11 @@ Optional env:
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
 | `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wait (pytest `test_generate_spec_llm`, HTTP sync poll, `spec-generate-llm` e2e; default `900` in `test:llm:core`) |
-| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; `test:llm:core` sets `600`; else `max(LLM_TEST_TURN_TIMEOUT_S, LLM_SPEC_GEN_TIMEOUT_S/2)`) |
-| `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in `test:llm:core` (default `300`; `/agent` uses max with `VISION_AGENT_PREPROC_TIMEOUT_S`) |
-| `VISION_AGENT_PREPROC_TIMEOUT_S` | Wall-clock cap for `/agent` preproc in core + pytest (default `480` in `test:llm:core`; `0` = no cap in dev) |
-| `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (default `240` in `test:llm:core`, `300` in product) |
+| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; `test:llm:core` / Test Lab suite default `1200`; CLI `900`) |
+| `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
+| `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
+| `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |
+| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/ollama-warmup-for-tests.sh` before suite `llm:core` |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
 | `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |

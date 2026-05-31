@@ -33,6 +33,20 @@ DUP_ID = """\
 **THE** system **SHALL** do B.
 """
 
+# Kiro-style: one titled requirement with a User Story and several acceptance criteria.
+KIRO_MULTI_AC = """\
+### Introduction
+The feature exposes a health endpoint.
+
+### REQ-001: Health check
+**User Story:** As a client, I want a health endpoint, so that I can confirm the API is up.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200.
+2. **IF** the core is starting **THEN THE** system **SHALL** respond with HTTP 503.
+3. **WHILE** running **THE** system **SHALL** report uptime.
+"""
+
 
 class TestEarsLint(unittest.TestCase):
     def test_good_requirements_ok(self):
@@ -50,6 +64,20 @@ class TestEarsLint(unittest.TestCase):
         r = analyze_requirements(DUP_ID)
         self.assertFalse(r.ok)
         self.assertTrue(any(i.code == "EARS_DUP_ID" for i in r.issues))
+
+    def test_kiro_multi_acceptance_criteria_ok(self):
+        """One titled requirement with several ACs must not trip EARS_DUP_ID."""
+        r = analyze_requirements(KIRO_MULTI_AC)
+        self.assertTrue(r.ok, [i.to_dict() for i in r.issues])
+        self.assertFalse(any(i.code == "EARS_DUP_ID" for i in r.issues))
+        # Three acceptance criteria → three clauses, all under REQ-001.
+        self.assertEqual(len([c for c in r.clauses if c.req_id == "REQ-001"]), 3)
+        # The descriptive User Story line is not linted as a normative clause.
+        self.assertFalse(any("User Story" in c.text for c in r.clauses))
+
+    def test_titled_heading_carries_req_id(self):
+        r = analyze_requirements(KIRO_MULTI_AC)
+        self.assertTrue(all(c.req_id == "REQ-001" for c in r.clauses))
 
     def test_to_dict_serializable(self):
         r = analyze_requirements(GOOD)

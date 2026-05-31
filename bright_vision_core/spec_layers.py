@@ -29,7 +29,9 @@ def normalize_spec_layer_traceability(layers: dict[str, str]) -> dict[str, str]:
     req = (layers.get("requirements") or "").strip()
     design = (layers.get("design") or "").strip()
     ids = requirement_ids(req)
-    if not ids or design_references_requirements(req, design):
+    if not ids:
+        return layers
+    if all(re.search(rf"\b{re.escape(rid)}\b", design, re.I) for rid in ids):
         return layers
     trace = "Covers " + ", ".join(ids) + "."
     out = dict(layers)
@@ -38,6 +40,58 @@ def normalize_spec_layer_traceability(layers: dict[str, str]) -> dict[str, str]:
     else:
         out["design"] = f"{design.rstrip()}\n\n## Traceability\n{trace}"
     return out
+
+
+_DESIGN_SUBSECTIONS = (
+    ("architecture", "Architecture"),
+    ("component", "Components and Interfaces"),
+    ("data model", "Data Models"),
+    ("error", "Error Handling"),
+    ("testing", "Testing Strategy"),
+)
+
+
+def assess_spec_richness(
+    requirements: str,
+    design: str,
+    tasks_md: str,
+) -> tuple[bool, list[str]]:
+    """Non-gating depth check — suggestions to make a spec Kiro-grade.
+
+    Unlike :func:`assess_generated_spec_layers` (a hard usability gate), this only
+    returns advisory suggestions so a thin-but-valid spec can be deepened.
+    """
+    suggestions: list[str] = []
+    req = (requirements or "").strip()
+    des = (design or "").strip()
+    tasks = (tasks_md or "").strip()
+
+    if req:
+        if "user story" not in req.lower():
+            suggestions.append(
+                "requirements: add a **User Story** line to each requirement"
+            )
+        criteria = len(re.findall(r"(?m)^\s*\d+\.\s+", req))
+        if len(requirement_ids(req)) < 2 and criteria < 2:
+            suggestions.append(
+                "requirements: add more requirements and acceptance criteria "
+                "(happy path, edge cases, errors)"
+            )
+
+    if des:
+        low = des.lower()
+        missing = [label for key, label in _DESIGN_SUBSECTIONS if key not in low]
+        if missing:
+            suggestions.append("design: add subsections (" + ", ".join(missing) + ")")
+
+    if tasks:
+        steps = re.findall(r"(?m)^\s*(?:-\s*\[[ xX]\]\s*)?\d+\.", tasks)
+        if len(steps) < 3:
+            suggestions.append(
+                "tasks: break the work into more incremental, test-driven steps"
+            )
+
+    return len(suggestions) == 0, suggestions
 
 
 def assess_generated_spec_layers(

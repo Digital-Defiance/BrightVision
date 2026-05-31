@@ -18,6 +18,8 @@ Repository = "https://github.com/Digital-Defiance/BrightVision"
 
 [project.scripts]
 bright-vision-core-serve = "bright_vision_core.cli_serve:main"
+bright-vision-test-suite-serve = "bright_vision_core.cli_test_suite_serve:main"
+bright-vision-test-everything = "bright_vision_core.cli_test_suite:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]

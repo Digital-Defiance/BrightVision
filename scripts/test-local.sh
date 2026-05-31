@@ -31,21 +31,25 @@ case "$TIER" in
     yarn tsc --noEmit
     yarn test
     yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
     yarn test:e2e
     ;;
   integration)
     yarn tsc --noEmit
     yarn test
     yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
     yarn test:e2e:integration
     ;;
   release)
     yarn tsc --noEmit
     yarn test
     yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
     yarn test:e2e
     if [ -x ".venv/bin/python3" ]; then
       yarn test:bright-core
+      sh scripts/free-e2e-preview-port.sh
       yarn test:e2e:integration
       yarn verify:submodule
     else

@@ -5,6 +5,7 @@ from __future__ import annotations
 from bright_vision_core.ears.lint import analyze_requirements
 from bright_vision_core.ears.report import format_lint_summary, format_trace_summary
 from bright_vision_core.ears.trace import analyze_traceability
+from bright_vision_core.spec_layers import assess_spec_richness
 
 
 def format_spec_quality_for_prompt(
@@ -27,9 +28,14 @@ def format_spec_quality_for_prompt(
         parts.append(format_trace_summary(trace))
         for issue in trace.issues[:8]:
             parts.append(f"- [{issue.severity}] {issue.code}: {issue.message}")
+    _, depth = assess_spec_richness(req, des, tsk)
+    if depth:
+        parts.append("Deepen the spec (Kiro-grade):")
+        for hint in depth:
+            parts.append(f"- {hint}")
     parts.append(
-        "Use ### REQ-### headings and EARS clauses (**WHEN** … **THE** system **SHALL** …). "
-        "Align design and implementation tasks with every REQ id."
+        "Use ### REQ-### headings with a **User Story** and numbered EARS acceptance criteria "
+        "(**WHEN** … **THE** system **SHALL** …). Align design and implementation tasks with every REQ id."
     )
     return "\n".join(parts)
 

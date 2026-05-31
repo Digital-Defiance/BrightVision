@@ -7,8 +7,11 @@ import re
 from bright_vision_core.ears.model import EarsClause
 from bright_vision_core.ears.patterns import classify_clause
 
-_REQ_HEADING = re.compile(r"^###\s+(REQ-\d+)\s*$", re.I)
+# Allow an optional title after the id (Kiro-style: "### REQ-001: Health check").
+_REQ_HEADING = re.compile(r"^###\s+(REQ-\d+)\b.*$", re.I)
 _BULLET = re.compile(r"^(\s*[-*]|\s*\d+\.)\s+")
+# Lines that read like normative EARS prose (vs. descriptive User Story text).
+_EARS_KEYWORD = re.compile(r"\b(SHALL|WHEN|WHILE|WHERE)\b|\bIF\b", re.I)
 
 
 def parse_requirements_markdown(text: str) -> list[EarsClause]:
@@ -56,7 +59,9 @@ def parse_requirements_markdown(text: str) -> list[EarsClause]:
         if buf:
             buf.append(stripped)
             continue
-        if current_req_id and stripped:
+        if current_req_id and stripped and _EARS_KEYWORD.search(stripped):
+            # Only start a clause for normative prose; descriptive lines such as
+            # "**User Story:** As a …" or an "**Acceptance Criteria**" label are skipped.
             buf_line = i
             buf = [stripped]
 

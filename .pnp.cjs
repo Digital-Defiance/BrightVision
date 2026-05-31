@@ -19,6 +19,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:apps/remote"\
     },\
     {\
+      "name": "@brightvision/test-lab",\
+      "reference": "workspace:apps/test-lab"\
+    },\
+    {\
       "name": "@brightvision/vision-client",\
       "reference": "workspace:packages/vision-client"\
     }\
@@ -28,6 +32,7 @@ const RAW_RUNTIME_STATE =
   "pnpZipBackend": "libzip",\
   "fallbackExclusionList": [\
     ["@brightvision/remote", ["workspace:apps/remote"]],\
+    ["@brightvision/test-lab", ["workspace:apps/test-lab"]],\
     ["@brightvision/vision-client", ["workspace:packages/vision-client"]],\
     ["bright-vision", ["workspace:."]]\
   ],\
@@ -2658,6 +2663,28 @@ const RAW_RUNTIME_STATE =
           ["react", "npm:18.3.1"],\
           ["react-native", "virtual:529cb2938491a521fa51e26241d84035a3c0864ae7913906b035720b9e4c91c8ead5d41512f281f40baa9dc4053f891e460e41a8cd1c452109cc3e56ee5f9d4a#npm:0.76.3"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@brightvision/test-lab", [\
+      ["workspace:apps/test-lab", {\
+        "packageLocation": "./apps/test-lab/",\
+        "packageDependencies": [\
+          ["@brightvision/test-lab", "workspace:apps/test-lab"],\
+          ["@emotion/react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.0"],\
+          ["@emotion/styled", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.1"],\
+          ["@mui/icons-material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
+          ["@mui/material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
+          ["@tauri-apps/api", "npm:2.11.0"],\
+          ["@tauri-apps/cli", "npm:2.11.2"],\
+          ["@types/react", "npm:18.3.29"],\
+          ["@types/react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.7"],\
+          ["@vitejs/plugin-react", "virtual:44ddceea1d8463d8b8d94fbc425520c82461920f4f0b7649899f7748971002c58b825fd2f4ffe4e5438e10e3d3e26b27da75770af148e50ff2428323c5c8eddd#npm:4.7.0"],\
+          ["react", "npm:18.3.1"],\
+          ["react-dom", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:18.3.1"],\
+          ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
+          ["vite", "virtual:84dcff71db8be9cbe950d0756a4f7772695095a485baf88f1cc98436fdd0ea49e9c6ac7f535ec4b7b26fd24d60bd4323cc6ed6d8629d5b2015f92d4613c7ffb6#npm:5.4.21"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -6323,6 +6350,25 @@ const RAW_RUNTIME_STATE =
           ["@vitejs/plugin-react", "npm:4.7.0"]\
         ],\
         "linkType": "SOFT"\
+      }],\
+      ["virtual:44ddceea1d8463d8b8d94fbc425520c82461920f4f0b7649899f7748971002c58b825fd2f4ffe4e5438e10e3d3e26b27da75770af148e50ff2428323c5c8eddd#npm:4.7.0", {\
+        "packageLocation": "./.yarn/__virtual__/@vitejs-plugin-react-virtual-a92927a189/4/Users/jessica/.yarn/berry/cache/@vitejs-plugin-react-npm-4.7.0-650e714693-10c0.zip/node_modules/@vitejs/plugin-react/",\
+        "packageDependencies": [\
+          ["@babel/core", "npm:7.29.0"],\
+          ["@babel/plugin-transform-react-jsx-self", "virtual:39eccb12e822024b26dabc6e73fc19762656636bf04ae87ce4632a6c9a0fbbc044044ac4f4640f344734afbc68c7eea9e3c96f0b42e591ac63f25254b03a9385#npm:7.27.1"],\
+          ["@babel/plugin-transform-react-jsx-source", "virtual:39eccb12e822024b26dabc6e73fc19762656636bf04ae87ce4632a6c9a0fbbc044044ac4f4640f344734afbc68c7eea9e3c96f0b42e591ac63f25254b03a9385#npm:7.27.1"],\
+          ["@rolldown/pluginutils", "npm:1.0.0-beta.27"],\
+          ["@types/babel__core", "npm:7.20.5"],\
+          ["@types/vite", null],\
+          ["@vitejs/plugin-react", "virtual:44ddceea1d8463d8b8d94fbc425520c82461920f4f0b7649899f7748971002c58b825fd2f4ffe4e5438e10e3d3e26b27da75770af148e50ff2428323c5c8eddd#npm:4.7.0"],\
+          ["react-refresh", "npm:0.17.0"],\
+          ["vite", "virtual:84dcff71db8be9cbe950d0756a4f7772695095a485baf88f1cc98436fdd0ea49e9c6ac7f535ec4b7b26fd24d60bd4323cc6ed6d8629d5b2015f92d4613c7ffb6#npm:5.4.21"]\
+        ],\
+        "packagePeers": [\
+          "@types/vite",\
+          "vite"\
+        ],\
+        "linkType": "HARD"\
       }],\
       ["virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:4.7.0", {\
         "packageLocation": "./.yarn/__virtual__/@vitejs-plugin-react-virtual-39eccb12e8/4/Users/jessica/.yarn/berry/cache/@vitejs-plugin-react-npm-4.7.0-650e714693-10c0.zip/node_modules/@vitejs/plugin-react/",\

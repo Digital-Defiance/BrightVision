@@ -1,0 +1,37 @@
+{
+  "productName": "BrightVision Test Lab",
+  "mainBinaryName": "BrightVision Test Lab",
+  "version": "0.1.0",
+  "identifier": "com.digitaldefiance.bright-vision-test-lab",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:1421",
+    "beforeDevCommand": "yarn dev",
+    "beforeBuildCommand": "yarn build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "BrightVision Test Lab",
+        "width": 1000,
+        "height": 720,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

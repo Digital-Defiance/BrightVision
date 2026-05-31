@@ -74,6 +74,12 @@ test.describe('Tasks generate/refine spec layers (roadmap #18)', () => {
       tasks_md: tasksMd,
     })
     expect(assessment.ok, assessment.issues.join('; ')).toBe(true)
+
+    // Kiro-grade structure flows through to the UI.
+    expect(requirements).toMatch(/User Story/i)
+    expect(requirements).toMatch(/Acceptance Criteria/i)
+    expect(design).toMatch(/Architecture/i)
+    expect(design).toMatch(/Testing Strategy/i)
   })
 
   test('refine spec keeps sane layers', async ({ page }) => {

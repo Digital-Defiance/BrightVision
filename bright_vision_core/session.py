@@ -831,6 +831,11 @@ class Session:
                 self.interrupt_turn()
             except Exception:
                 pass
+            # Let the worker unwind after interrupt (reduces pending asyncio task warnings).
+            try:
+                fut.result(timeout=15)
+            except Exception:
+                pass
             raise TimeoutError(f"One-shot turn timed out after {int(timeout_s)}s") from err
         finally:
             pool.shutdown(wait=False, cancel_futures=True)

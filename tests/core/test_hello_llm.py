@@ -60,7 +60,10 @@ class TestHelloLlm(unittest.TestCase):
             session_id = res.json()["session_id"]
 
             events = stream_session_message(
-                client, session_id, "Reply with exactly: hello from pytest"
+                client,
+                session_id,
+                "Reply with exactly: hello from pytest",
+                preproc=False,
             )
             types = [e.get("type") for e in events]
             errors = [e for e in events if e.get("type") == "error"]
@@ -72,9 +75,10 @@ class TestHelloLlm(unittest.TestCase):
             done = next(e for e in events if e.get("type") == "done")
             if not assistant:
                 assistant = done.get("assistant_text") or ""
+            needle = "hello from pytest"
             self.assertTrue(
-                len(assistant.strip()) > 3,
-                f"expected non-empty assistant text, got {assistant!r}",
+                needle in assistant.lower(),
+                f"expected reply containing {needle!r}, got {assistant[:500]!r}",
             )
             self.assertFalse(done.get("error"), done)
 

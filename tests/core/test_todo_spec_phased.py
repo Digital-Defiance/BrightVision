@@ -77,6 +77,33 @@ class TestTodoSpecPhased(unittest.TestCase):
         layers = parse_generated_layers(text, section="design")
         self.assertIn("Overview", layers["design"])
 
+    def test_requirements_prompt_uses_kiro_structure(self):
+        item = self._item()
+        msg = build_generate_message("New feature", item=item, section="requirements")
+        self.assertIn("User Story", msg)
+        self.assertIn("Acceptance Criteria", msg)
+        self.assertIn("### Introduction", msg)
+
+    def test_design_prompt_requests_full_subsections(self):
+        item = self._item()
+        msg = build_generate_message("Design it", item=item, section="design")
+        for label in ("Architecture", "Components and Interfaces", "Data Models",
+                      "Error Handling", "Testing Strategy"):
+            self.assertIn(label, msg)
+
+    def test_tasks_prompt_requests_requirement_traceability(self):
+        item = self._item()
+        msg = build_generate_message("Plan it", item=item, section="tasks_md")
+        self.assertIn("_Requirements:", msg)
+        self.assertIn("depends:", msg)
+
+    def test_all_layers_prompt_keeps_three_headings(self):
+        msg = build_generate_message("Build a thing", section="all")
+        self.assertIn("## Requirements", msg)
+        self.assertIn("## Design", msg)
+        self.assertIn("## Implementation tasks", msg)
+        self.assertIn("User Story", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

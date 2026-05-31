@@ -105,7 +105,7 @@ test.describe('Spec generate LLM (real Ollama + Vision API) @spec-gen', () => {
 
     await runAllLayersGenerateSpecDialog(
       page,
-      'Feature: minimal health ping endpoint. Use REQ-001 and REQ-002 with WHEN and SHALL. Two numbered implementation tasks.',
+      'Feature: minimal health ping endpoint. REQ-001 and REQ-002 with WHEN and SHALL. Design must cite REQ-001 and REQ-002 by id. Two numbered implementation tasks.',
       SPEC_GEN_MS
     )
     const requirements = await expectRequirementsPopulated(page, LAYER_WAIT_MS)

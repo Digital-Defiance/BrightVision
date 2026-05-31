@@ -4,16 +4,8 @@
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+sh "$(dirname "$0")/free-e2e-preview-port.sh"
 PORT="${E2E_PREVIEW_PORT:-4173}"
-if command -v lsof >/dev/null 2>&1; then
-  PIDS=$(lsof -ti "tcp:${PORT}" -sTCP:LISTEN 2>/dev/null || true)
-  if [ -n "$PIDS" ]; then
-    echo "e2e-preview: freeing port ${PORT} (stale process)" >&2
-    # shellcheck disable=SC2086
-    kill -9 $PIDS 2>/dev/null || true
-    sleep 0.3
-  fi
-fi
 export E2E=1
 yarn build
 exec yarn vite preview --host 127.0.0.1 --port "$PORT"

@@ -156,12 +156,12 @@ class TestGenerateSpecLlm(unittest.TestCase):
                 (
                     "requirements",
                     (
-                        "Health ping API. Exactly REQ-001 and REQ-002 with WHEN and SHALL. "
-                        "One sentence each."
+                        "Minimal health ping API. Only REQ-001 and REQ-002; each one short "
+                        "WHEN/SHALL acceptance line. No introduction essay."
                     ),
                 ),
-                ("design", "Brief design citing REQ-001 and REQ-002."),
-                ("tasks_md", "Two numbered implementation tasks with dependencies."),
+                ("design", "Short design; cite REQ-001 and REQ-002 by id."),
+                ("tasks_md", "Two numbered tasks with (depends: none|1)."),
             ]
             for section, prompt in phases:
                 try:
