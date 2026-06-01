@@ -29,11 +29,11 @@ const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434'
 export const DEFAULT_E2E_OLLAMA_MODEL = 'ollama_chat/llama3.2:3b'
 
 export function isLlmE2eEnabled(): boolean {
-  return process.env.E2E_LLM === '1'
+  return process.env['E2E_LLM'] === '1'
 }
 
 export function isRouterLlmE2eEnabled(): boolean {
-  const v = process.env.E2E_MODEL_ROUTER?.trim().toLowerCase()
+  const v = process.env['E2E_MODEL_ROUTER']?.trim().toLowerCase()
   return v === '1' || v === 'true' || v === 'yes' || v === 'on'
 }
 

@@ -5,9 +5,10 @@ Separate desktop app for running the full engine confidence suite with live prog
 ## Prerequisites
 
 - BrightVision repo with `source activate.sh` (editable `bright_vision_core`)
-- `btime` on PATH (Homebrew)
-- Optional: `bcpucap` for GPU capture (`gpucap` still works as an alias)
-- **Ollama** reachable when **Skip LLM** is unchecked — the orchestrator sets `E2E_LLM=1` on `llm:core`, `e2e:llm`, and `e2e:llm:superproject` (logged as `suite env:` on stderr). You do not need to export it in your shell.
+- `btime` on PATH (required for step timing unless **Skip time**)
+- Optional: `bgpucap` on **Apple Silicon** for GPU/RAM/pressure (`sh scripts/install-bgpucap.sh`). On Linux/Intel Mac the suite uses **btime-only** dumb mode automatically. See [docs/BRIGHT_UTILS.md](../../docs/BRIGHT_UTILS.md).
+- **Ollama** reachable when **Skip LLM** is unchecked — the orchestrator sets `E2E_LLM=1` on `llm:core`, `e2e:llm`, and `e2e:llm:superproject` (logged as `suite env:` on stderr, including `BV_COMPACT_SPEC_GEN=1` and `LLM_SPEC_GEN_TIMEOUT_S=1800`). Same behavior as `yarn test:everything`; no separate Lab-only LLM path.
+- **LLM spec-gen in Lab:** shorter prompts (`BV_COMPACT_SPEC_GEN=1`). Default **Run suite** = all-layers only (~1 min on `e2e:llm`). **Optional diagnostic lanes** (checkboxes): phased spec-gen (`E2E_SPEC_GEN_PHASED=1`), model router e2e, cloud LLM smoke (`cloud-llm.env`), `verify:ears`, shipped scenario matrix, strict phased pytest (fail instead of skip on EARS). Plan/ETA refresh when toggles change.
 - **`test-local:release`** intentionally runs **mocked** Playwright only (`*-llm.spec.ts` and `integration/` excluded). Real LLM e2e runs in the later **`e2e:llm`** step — seeing ~18 “skipped” LLM tests in release used to mean “wrong step,” not missing env.
 
 ## Run
@@ -66,7 +67,7 @@ The digest collapses heartbeat lines, keeps pytest failures, and truncates to ~1
 
 **Mobile alerts (ntfy):** Expand **Mobile alerts (ntfy)** before a run. Enable notifications, scan the QR code with the [ntfy](https://ntfy.sh) Android app (or paste the topic). A push is sent when the **full suite** finishes (pass/fail, wall time, failed step ids — no log text). Use **Test ping** to verify delivery.
 
-**GPU chips:** Step summary uses heartbeat samples (ioreg/`nvidia-smi`) while running; `bcpucap`/`gpucap` at step end can read 0% on macOS even when Ollama used the GPU — the UI prefers heartbeat peaks.
+**Resource chips:** Step summary uses heartbeat samples (ioreg/`nvidia-smi`, `vm.memory_pressure`) while running; `bgpucap` JSON at step end adds RAM %, **memory pressure** (0–2), and swap. End-of-step GPU can read 0% on macOS even when Ollama used the GPU — the UI prefers heartbeat GPU peaks when higher.
 
 **Dock icon:** Separate from main BrightVision. From repo root:
 

@@ -140,6 +140,65 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         self.assertEqual(finished.status, "error", finished.error)
         self.assertIn("timed out", (finished.error or "").lower())
 
+    def test_background_spec_job_late_finish_does_not_overwrite_error(self):
+        from bright_vision_core.todo_spec_jobs import spec_job_store
+
+        def slow_layers(*_args, **_kwargs):
+            time.sleep(2.5)
+            return {
+                "requirements": "x",
+                "design": "",
+                "tasks_md": "",
+                "raw": "",
+                "item": None,
+                "ears_blocked": False,
+                "ears_issues": [],
+            }
+
+        mock_session = MagicMock()
+        mock_session.generate_todo_layers.side_effect = slow_layers
+
+        with patch.object(Session, "create", return_value=mock_session):
+            with patch(
+                "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
+                return_value=1.0,
+            ):
+                job = spec_job_store.start(
+                    "/tmp/workspace",
+                    "todo-id",
+                    "ping",
+                    mode="generate",
+                    apply=True,
+                    enforce_ears=True,
+                )
+                finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+
+        self.assertEqual(finished.status, "error", finished.error)
+        time.sleep(3.0)
+        after = spec_job_store.get(job.job_id)
+        self.assertIsNotNone(after)
+        self.assertEqual(after.status, "error", after.error)
+
+    def test_stale_running_job_reconciled_on_get(self):
+        from bright_vision_core.todo_spec_jobs import SpecGenerationJob, spec_job_store
+
+        job = SpecGenerationJob(
+            job_id="stale-job",
+            workspace="/tmp",
+            todo_id="t1",
+            status="running",
+        )
+        job.updated_at = time.time() - 2000.0
+        with patch(
+            "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
+            return_value=60.0,
+        ):
+            with patch.object(spec_job_store, "_jobs", {"stale-job": job}):
+                got = spec_job_store.get("stale-job")
+        self.assertIsNotNone(got)
+        self.assertEqual(got.status, "error")
+        self.assertIn("timed out", (got.error or "").lower())
+
 
 if __name__ == "__main__":
     unittest.main()

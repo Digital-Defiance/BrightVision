@@ -179,9 +179,13 @@ class TestGenerateSpecLlm(unittest.TestCase):
                         "try LLM_SPEC_GEN_TURN_TIMEOUT_S or a faster Ollama model"
                     )
                 if result.get("ears_blocked"):
-                    self.skipTest(
-                        f"section={section} failed EARS gate: {result.get('ears_issues')}"
+                    msg = (
+                        f"section={section} failed EARS gate: "
+                        f"{result.get('ears_issues')}"
                     )
+                    if os.environ.get("BV_SUITE_STRICT_PHASED_PYTEST") == "1":
+                        self.fail(msg)
+                    self.skipTest(msg)
 
             item = WorkspaceTodos(temp_dir).get(todo_id)
             self.assertRegex(item.requirements or "", r"REQ-\d+")

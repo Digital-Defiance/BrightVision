@@ -9,11 +9,25 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class SuiteRunOptions:
+    """Optional diagnostic lanes (Test Lab checkboxes / CLI flags)."""
+
+    skip_llm: bool = False
+    spec_gen_phased: bool = False
+    llm_router: bool = False
+    cloud_llm: bool = False
+    verify_ears: bool = False
+    shipped_scenarios: bool = False
+    strict_phased_pytest: bool = False
+
+
+@dataclass(frozen=True)
 class SuiteStep:
     id: str
     label: str
     argv: tuple[str, ...]
     requires_ollama: bool = False
+    requires_cloud_config: bool = False
     touches_core_port: bool = False
 
 
@@ -75,6 +89,12 @@ def llm_core_step_env(*, suite_run: bool = False) -> dict[str, str]:
             return default
         return os.environ.get(key, default)
 
+    use_env_model = os.environ.get("BV_SUITE_USE_ENV_MODEL") == "1"
+    if in_suite and not use_env_model:
+        e2e_model = "ollama_chat/llama3.2:3b"
+    else:
+        e2e_model = os.environ.get("E2E_OLLAMA_MODEL", "ollama_chat/llama3.2:3b")
+
     return {
         "PYTHONSAFEPATH": "1",
         "PYTHONUNBUFFERED": "1",
@@ -85,15 +105,17 @@ def llm_core_step_env(*, suite_run: bool = False) -> dict[str, str]:
             "VISION_SLASH_PREPROC_TIMEOUT_S", pick_slash
         ),
         "LLM_TEST_TURN_TIMEOUT_S": _timeout("LLM_TEST_TURN_TIMEOUT_S", pick_turn),
+        "BV_COMPACT_SPEC_GEN": os.environ.get("BV_COMPACT_SPEC_GEN", "1"),
         "LLM_SPEC_GEN_TURN_TIMEOUT_S": _timeout(
-            "LLM_SPEC_GEN_TURN_TIMEOUT_S", "1200" if in_suite else "900"
+            "LLM_SPEC_GEN_TURN_TIMEOUT_S", "1800" if in_suite else "900"
         ),
         "LLM_SPEC_GEN_TIMEOUT_S": _timeout(
-            "LLM_SPEC_GEN_TIMEOUT_S", "1200" if in_suite else "900"
+            "LLM_SPEC_GEN_TIMEOUT_S", "1800" if in_suite else "900"
         ),
-        "E2E_OLLAMA_MODEL": os.environ.get("E2E_OLLAMA_MODEL", "ollama_chat/llama3.2:3b"),
+        "E2E_OLLAMA_MODEL": e2e_model,
         "E2E_LLM": "1",
         "BV_TEST_SUITE_LIVE_OUTPUT": "1",
+        "BV_TEST_SUITE_ACTIVE": "1" if in_suite else os.environ.get("BV_TEST_SUITE_ACTIVE", ""),
     }
 
 
@@ -120,6 +142,33 @@ _LLM_STEPS: tuple[SuiteStep, ...] = (
     ),
 )
 
+_OPTIONAL_LLM_ROUTER = SuiteStep(
+    "e2e:llm:router",
+    "yarn test:e2e:llm:router",
+    ("yarn", "test:e2e:llm:router"),
+    requires_ollama=True,
+    touches_core_port=True,
+)
+
+_OPTIONAL_CLOUD_LLM = SuiteStep(
+    "cloud-llm",
+    "yarn test:cloud-llm",
+    ("yarn", "test:cloud-llm"),
+    requires_cloud_config=True,
+)
+
+_OPTIONAL_VERIFY_EARS = SuiteStep(
+    "verify:ears",
+    "yarn verify:ears",
+    ("yarn", "verify:ears"),
+)
+
+_OPTIONAL_SHIPPED_SCENARIOS = SuiteStep(
+    "e2e:shipped-scenarios",
+    "yarn test:e2e shipped-scenarios",
+    ("yarn", "test:e2e", "shipped-scenarios"),
+)
+
 
 def ollama_reachable() -> bool:
     host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -130,12 +179,24 @@ def ollama_reachable() -> bool:
         return False
 
 
-def plan_steps(*, skip_llm: bool = False) -> list[SuiteStep]:
+def plan_steps(
+    *,
+    skip_llm: bool = False,
+    options: SuiteRunOptions | None = None,
+) -> list[SuiteStep]:
+    opts = options or SuiteRunOptions()
+    effective_skip_llm = skip_llm or opts.skip_llm
     steps = list(_BASE_STEPS)
-    if skip_llm:
-        return steps
-    if ollama_reachable():
+    if not effective_skip_llm and ollama_reachable():
         steps.extend(_LLM_STEPS)
+    if opts.llm_router and not effective_skip_llm and ollama_reachable():
+        steps.append(_OPTIONAL_LLM_ROUTER)
+    if opts.cloud_llm:
+        steps.append(_OPTIONAL_CLOUD_LLM)
+    if opts.verify_ears:
+        steps.append(_OPTIONAL_VERIFY_EARS)
+    if opts.shipped_scenarios:
+        steps.append(_OPTIONAL_SHIPPED_SCENARIOS)
     return steps
 
 

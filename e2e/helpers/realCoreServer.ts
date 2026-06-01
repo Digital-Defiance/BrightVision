@@ -6,10 +6,18 @@ import { buildVisionCoreEnv, coreHealthUrl, ollamaEnvForCore, REPO_ROOT } from '
 const PID_FILE = path.join(REPO_ROOT, '.e2e-llm-core.pid')
 const CORE_PORT = 8741
 
-/** Free :8741 so integration tests load the current ``bright_vision_core`` (not a stale desktop serve). */
+/**
+ * Free listeners on ``port`` only (not clients). Broad ``lsof -ti tcp:PORT`` also
+ * matches Vite preview proxy connections to :8741 and kills :4173 (ERR_CONNECTION_REFUSED).
+ * Same filter as ``scripts/free-core-port.sh``.
+ */
 function killListenersOnPort(port: number): void {
   try {
-    const out = execFileSync('lsof', ['-ti', `tcp:${port}`], { encoding: 'utf8' }).trim()
+    const out = execFileSync(
+      'lsof',
+      ['-ti', `tcp:${port}`, '-sTCP:LISTEN'],
+      { encoding: 'utf8' }
+    ).trim()
     if (!out) return
     for (const pidStr of out.split(/\s+/)) {
       const pid = Number(pidStr)
@@ -118,6 +126,9 @@ export async function startRealCoreServer(): Promise<void> {
     // Cap /agent preproc during LLM e2e (default product: unlimited). Override via env.
     VISION_AGENT_PREPROC_TIMEOUT_S: process.env.VISION_AGENT_PREPROC_TIMEOUT_S ?? '600',
     VISION_SLASH_PREPROC_TIMEOUT_S: process.env.VISION_SLASH_PREPROC_TIMEOUT_S ?? '300',
+    BV_COMPACT_SPEC_GEN: process.env.BV_COMPACT_SPEC_GEN ?? '1',
+    LLM_SPEC_GEN_TIMEOUT_S: process.env.LLM_SPEC_GEN_TIMEOUT_S ?? '1800',
+    LLM_SPEC_GEN_TURN_TIMEOUT_S: process.env.LLM_SPEC_GEN_TURN_TIMEOUT_S ?? '1800',
   })
 
   const serveCli = path.join(repoRoot, '.venv', 'bin', 'bright-vision-core-serve')
@@ -185,4 +196,12 @@ export async function stopRealCoreServer(): Promise<void> {
   } catch {
     /* already stopped */
   }
+}
+
+/** Recover :8741 after a wedged spec-gen or long LLM turn (serial e2e suite). */
+export async function restartRealCoreServer(): Promise<void> {
+  await stopRealCoreServer()
+  killListenersOnPort(CORE_PORT)
+  await new Promise((r) => setTimeout(r, 500))
+  await startRealCoreServer()
 }

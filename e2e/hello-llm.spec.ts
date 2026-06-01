@@ -54,7 +54,6 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
 
 test.describe('Hello LLM metadata', () => {
   test('documents resolved model for operators', () => {
-    test.skip(!isLlmE2eEnabled())
     expect(resolveVisionModel() || 'ollama_chat/x').toMatch(/^ollama_chat\//)
   })
 })

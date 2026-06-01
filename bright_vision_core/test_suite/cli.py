@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from bright_vision_core.test_suite.manifest import SuiteRunOptions
 from bright_vision_core.test_suite.runner import run_suite
 from bright_vision_core.test_suite.timing import repo_root
 from bright_vision_core.test_suite.log_digest import agent_digest_file
@@ -42,6 +43,42 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-llm", action="store_true")
     parser.add_argument("--skip-gpu", action="store_true")
     parser.add_argument("--skip-time", action="store_true")
+    parser.add_argument(
+        "--use-brightdate",
+        action="store_true",
+        help="Show step/run durations and ETC in BrightDate (BD/md); bgpucap uses %%Ws/%%Wt.",
+    )
+    parser.add_argument(
+        "--spec-gen-phased",
+        action="store_true",
+        help="Run phased spec-generate LLM e2e (3 jobs; slow on llama3.2:3b). "
+        "Same as E2E_SPEC_GEN_PHASED=1 for the e2e:llm step.",
+    )
+    parser.add_argument(
+        "--llm-router",
+        action="store_true",
+        help="Add yarn test:e2e:llm:router (fast+heavy model turns; slow).",
+    )
+    parser.add_argument(
+        "--cloud-llm",
+        action="store_true",
+        help="Add yarn test:cloud-llm (needs cloud-llm.env).",
+    )
+    parser.add_argument(
+        "--verify-ears",
+        action="store_true",
+        help="Add yarn verify:ears.",
+    )
+    parser.add_argument(
+        "--shipped-scenarios",
+        action="store_true",
+        help="Add Playwright shipped-scenarios matrix.",
+    )
+    parser.add_argument(
+        "--strict-phased-pytest",
+        action="store_true",
+        help="Fail llm:core if phased pytest hits EARS gate (default: skip).",
+    )
     parser.add_argument(
         "--logged",
         action="store_true",
@@ -81,6 +118,15 @@ def main(argv: list[str] | None = None) -> int:
             gp = event.get("gpuPeak")
             if ga is not None:
                 print(f"gpu     avg {ga}%  peak {gp}%", file=sys.stderr)
+            mp = event.get("memPeak")
+            if mp is not None:
+                print(
+                    f"memory  avg {event.get('memAvg', '?')}%  peak {mp}%",
+                    file=sys.stderr,
+                )
+            pr = event.get("memPressurePeak")
+            if pr is not None:
+                print(f"pressure peak {pr}", file=sys.stderr)
         elif t == "run_finished":
             if event.get("ok"):
                 print("\n> ALL TEST SUITES SUCCESSFUL <", file=sys.stderr)
@@ -88,10 +134,21 @@ def main(argv: list[str] | None = None) -> int:
                 print("\nOne or more steps failed.", file=sys.stderr)
 
     try:
+        run_options = SuiteRunOptions(
+            skip_llm=args.skip_llm,
+            spec_gen_phased=args.spec_gen_phased,
+            llm_router=args.llm_router,
+            cloud_llm=args.cloud_llm,
+            verify_ears=args.verify_ears,
+            shipped_scenarios=args.shipped_scenarios,
+            strict_phased_pytest=args.strict_phased_pytest,
+        )
         ok = run_suite(
             skip_llm=args.skip_llm,
             skip_gpu=args.skip_gpu,
             skip_time=args.skip_time,
+            use_brightdate=args.use_brightdate,
+            run_options=run_options,
             on_event=on_event,
         )
     finally:

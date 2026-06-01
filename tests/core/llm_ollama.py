@@ -38,6 +38,11 @@ def resolve_ollama_tag() -> str:
     explicit = (os.environ.get("E2E_OLLAMA_MODEL") or "").strip()
     if explicit:
         return _strip_ollama_prefix(explicit)
+    if (
+        os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+        and os.environ.get("BV_SUITE_USE_ENV_MODEL") != "1"
+    ):
+        return _strip_ollama_prefix(DEFAULT_E2E_OLLAMA_MODEL)
     for key in ("DATA_MODEL", "LLM_MODEL", "CHAT_MODEL"):
         raw = (os.environ.get(key) or "").strip()
         if raw:

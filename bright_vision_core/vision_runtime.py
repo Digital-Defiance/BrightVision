@@ -86,6 +86,10 @@ def configure_vision_runtime(*, force: bool = False) -> None:
         return
     _runtime_configured = True
 
+    from bright_vision_core.litellm_ollama_patch import apply_litellm_ollama_tool_argument_patch
+
+    apply_litellm_ollama_tool_argument_patch()
+
     if not headless_enabled():
         return
 

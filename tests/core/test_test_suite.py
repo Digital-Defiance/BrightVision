@@ -7,11 +7,13 @@ import tempfile
 from pathlib import Path
 
 from bright_vision_core.test_suite.manifest import (
+    SuiteRunOptions,
     SuiteStep,
     llm_core_pytest_argv,
     plan_steps,
 )
-from bright_vision_core.test_suite.runner import build_step_env, gpu_capture_bin
+from bright_vision_core.test_suite.capture_mode import gpu_capture_bin
+from bright_vision_core.test_suite.runner import build_step_env
 from bright_vision_core.test_suite.timing import (
     GPUCAP_FMT,
     expectations_for_steps,
@@ -56,24 +58,24 @@ def test_build_step_env_release_smoke_unsets_e2e_llm():
     assert env["BV_TEST_SUITE_ACTIVE"] == "1"
 
 
-def test_gpu_capture_bin_prefers_bcpucap(monkeypatch):
+def test_gpu_capture_bin_prefers_bgpucap(monkeypatch):
     def which(name: str) -> str | None:
-        if name == "bcpucap":
-            return "/usr/local/bin/bcpucap"
+        if name == "bgpucap":
+            return "/usr/local/bin/bgpucap"
         if name == "gpucap":
             return "/usr/local/bin/gpucap"
         return None
 
-    monkeypatch.setattr("bright_vision_core.test_suite.runner.shutil.which", which)
-    assert gpu_capture_bin() == "bcpucap"
+    monkeypatch.setattr("bright_vision_core.test_suite.capture_mode.shutil.which", which)
+    assert gpu_capture_bin() == "/usr/local/bin/bgpucap"
 
 
 def test_gpu_capture_bin_falls_back_to_gpucap(monkeypatch):
     monkeypatch.setattr(
-        "bright_vision_core.test_suite.runner.shutil.which",
+        "bright_vision_core.test_suite.capture_mode.shutil.which",
         lambda name: "/usr/local/bin/gpucap" if name == "gpucap" else None,
     )
-    assert gpu_capture_bin() == "gpucap"
+    assert gpu_capture_bin() == "/usr/local/bin/gpucap"
 
 
 def test_llm_core_step_env_longer_timeouts_in_suite(monkeypatch):
@@ -83,7 +85,26 @@ def test_llm_core_step_env_longer_timeouts_in_suite(monkeypatch):
     env = llm_core_step_env(suite_run=True)
     assert env["LLM_TEST_TURN_TIMEOUT_S"] == "1200"
     assert env["VISION_AGENT_PREPROC_TIMEOUT_S"] == "0"
-    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "1200"
+    assert env["BV_COMPACT_SPEC_GEN"] == "1"
+    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "1800"
+    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "1800"
+
+
+def test_llm_core_step_env_pins_default_model_in_suite(monkeypatch):
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    monkeypatch.setenv("E2E_OLLAMA_MODEL", "ollama_chat/qwen3.6:27b-q4_K_M")
+    env = llm_core_step_env(suite_run=True)
+    assert env["E2E_OLLAMA_MODEL"] == "ollama_chat/llama3.2:3b"
+
+
+def test_llm_core_step_env_uses_env_model_when_flag_set(monkeypatch):
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    monkeypatch.setenv("BV_SUITE_USE_ENV_MODEL", "1")
+    monkeypatch.setenv("E2E_OLLAMA_MODEL", "ollama_chat/qwen3.6:27b-q4_K_M")
+    env = llm_core_step_env(suite_run=True)
+    assert env["E2E_OLLAMA_MODEL"] == "ollama_chat/qwen3.6:27b-q4_K_M"
 
 
 def test_llm_core_step_env_respects_explicit_timeout_override(monkeypatch):
@@ -110,6 +131,62 @@ def test_plan_steps_includes_base():
     assert "dogfood:check" in ids
     assert "test-local:release" in ids
     assert "llm:core" not in ids
+
+
+def test_plan_steps_optional_lanes():
+    opts = SuiteRunOptions(
+        skip_llm=True,
+        cloud_llm=True,
+        verify_ears=True,
+        shipped_scenarios=True,
+    )
+    ids = [s.id for s in plan_steps(skip_llm=True, options=opts)]
+    assert "cloud-llm" in ids
+    assert "verify:ears" in ids
+    assert "e2e:shipped-scenarios" in ids
+    assert "e2e:llm:router" not in ids
+
+
+def test_router_lane_ready_requires_distinct_tags(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import router_preflight as rp
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text("FAST_MODEL=qwen2.5-coder:7b\nHEAVY_MODEL=llama3.2:3b\n", encoding="utf-8")
+    monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
+    monkeypatch.delenv("E2E_FAST_MODEL", raising=False)
+    monkeypatch.delenv("E2E_HEAVY_MODEL", raising=False)
+    monkeypatch.delenv("FAST_MODEL", raising=False)
+    monkeypatch.delenv("HEAVY_MODEL", raising=False)
+    ok, _ = rp.router_lane_ready()
+    assert ok is True
+
+
+def test_router_lane_ready_rejects_missing_fast(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import router_preflight as rp
+
+    monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
+    monkeypatch.delenv("E2E_FAST_MODEL", raising=False)
+    monkeypatch.delenv("FAST_MODEL", raising=False)
+    ok, msg = rp.router_lane_ready()
+    assert ok is False
+    assert "FAST_MODEL" in msg
+
+
+def test_build_step_env_router_and_cloud():
+    router = SuiteStep(
+        "e2e:llm:router",
+        "router",
+        ("yarn", "test:e2e:llm:router"),
+        requires_ollama=True,
+    )
+    cloud = SuiteStep(
+        "cloud-llm",
+        "cloud",
+        ("yarn", "test:cloud-llm"),
+        requires_cloud_config=True,
+    )
+    assert build_step_env(router, suite_run=True)["E2E_MODEL_ROUTER"] == "1"
+    assert build_step_env(cloud, suite_run=True)["E2E_CLOUD_LLM"] == "1"
 
 
 def test_expectations_empty_history(tmp_path, monkeypatch):

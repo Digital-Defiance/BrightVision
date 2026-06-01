@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Thin wrapper — source of truth is bright_vision_core.test_suite (CLI + Test Lab).
-# GPU timing: prefers bcpucap (legacy gpucap alias). History: .bright-vision/test-everything-timing.json
+# GPU/RAM/pressure: .bright-vision/bin/bgpucap, then bgpucap/gpucap on PATH (scripts/install-bgpucap.sh).
+# History: .bright-vision/test-everything-timing.json
 # Usage: source activate.sh && yarn test:everything
 #   --logged   Full transcript under .bright-vision/test-suite-runs/ (or TEST_EVERYTHING_LOG)
 set -u

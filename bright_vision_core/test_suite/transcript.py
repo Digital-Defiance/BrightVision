@@ -63,6 +63,14 @@ def format_event_line(event: dict[str, Any]) -> str | None:
             parts.append(
                 f"  gpu: avg {event['gpuAvg']}% peak {event.get('gpuPeak', '?')}%"
             )
+        if event.get("memPeak") is not None:
+            parts.append(
+                f"  mem: avg {event.get('memAvg', '?')}% peak {event['memPeak']}%"
+            )
+        if event.get("memPressurePeak") is not None:
+            parts.append(f"  mem pressure peak: {event['memPressurePeak']}")
+        if event.get("swapPeakGb") is not None:
+            parts.append(f"  swap peak: {event['swapPeakGb']} GiB")
         return "\n".join(parts)
     if t == "run_finished":
         mark = "ALL TEST SUITES SUCCESSFUL" if event.get("ok") else "RUN FAILED"

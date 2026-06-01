@@ -4,6 +4,7 @@ LLM-assisted three-layer todo spec generation and parsing.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Literal
 
@@ -51,6 +52,96 @@ Break the work into incremental, test-driven coding steps:
 - Order steps so each builds on previous ones, and wire tests alongside the code they cover.
 """
 
+# Shorter prompts for LLM e2e / dogfood on small Ollama models (BV_COMPACT_SPEC_GEN=1).
+# Product UI keeps full Kiro-grade prompts unless the env is set.
+_REQUIREMENTS_FORMAT_COMPACT = """\
+Write concise requirements only:
+- `### Introduction` — 2-3 sentences.
+- Exactly **two** `### REQ-NNN` sections; each with one short **User Story** and **two** numbered acceptance lines.
+- Every acceptance line MUST include both **WHEN** and **THE** system **SHALL** (copy the example shape exactly).
+"""
+
+_REQUIREMENTS_EXAMPLE_COMPACT = """\
+Format example (replace feature text; keep the EARS shape):
+
+### Introduction
+Clients need a minimal health check before pairing.
+
+### REQ-001: Liveness
+**User Story:** As a client, I want a health endpoint, so that I can detect uptime.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status field.
+2. **WHEN** the core is starting **THE** system **SHALL** respond with HTTP 503 until ready.
+
+### REQ-002: Payload
+**User Story:** As a client, I want a stable body shape, so that parsers do not break.
+
+**Acceptance Criteria**
+1. **WHEN** the health endpoint returns 200 **THE** system **SHALL** include a `status` string in the JSON body.
+2. **WHEN** the status is ok **THE** system **SHALL** use the literal value `ok`.
+"""
+
+_DESIGN_FORMAT_COMPACT = """\
+Keep the design under 35 lines. Use only these subsections:
+- `### Overview` — 2-4 sentences citing REQ ids.
+- `### Architecture` — a short bullet list citing REQ ids.
+Do not add Components, Data Models, Error Handling, or Testing Strategy sections.
+"""
+
+_TASKS_FORMAT_COMPACT = """\
+Exactly **two** numbered checklist items with `(depends: none|1)`; cite REQ ids in each line.
+"""
+
+
+def compact_spec_gen_enabled() -> bool:
+    """True when LLM lanes should use shorter generate-spec prompts (faster 3b runs)."""
+    return os.environ.get("BV_COMPACT_SPEC_GEN", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _requirements_format() -> str:
+    return _REQUIREMENTS_FORMAT_COMPACT if compact_spec_gen_enabled() else _REQUIREMENTS_FORMAT
+
+
+def _requirements_example() -> str:
+    return (
+        _REQUIREMENTS_EXAMPLE_COMPACT
+        if compact_spec_gen_enabled()
+        else _REQUIREMENTS_EXAMPLE
+    )
+
+
+def _design_format() -> str:
+    return _DESIGN_FORMAT_COMPACT if compact_spec_gen_enabled() else _DESIGN_FORMAT
+
+
+def _tasks_format() -> str:
+    return _TASKS_FORMAT_COMPACT if compact_spec_gen_enabled() else _TASKS_FORMAT
+
+
+def _design_example() -> str:
+    return _DESIGN_EXAMPLE_COMPACT if compact_spec_gen_enabled() else _DESIGN_EXAMPLE
+
+
+def _generate_all_layers_body() -> str:
+    return (
+        "## Requirements\n"
+        + _requirements_format()
+        + "\n"
+        "## Design\n"
+        + _design_format()
+        + "\n"
+        "## Implementation tasks\n"
+        + _tasks_format()
+        + "\n"
+        + _ALL_EXAMPLE
+    )
+
 _REQUIREMENTS_EXAMPLE = """\
 Format example (replace with the real feature; do not copy this content):
 
@@ -80,6 +171,15 @@ A Status value with an "ok" boolean field.
 Return HTTP 503 while the core is starting (REQ-001).
 ### Testing Strategy
 An HTTP test asserts 200 and a JSON body for REQ-001.
+"""
+
+_DESIGN_EXAMPLE_COMPACT = """\
+Format example (structure only):
+
+### Overview
+Implements REQ-001 as an HTTP route (REQ-001).
+### Architecture
+- FastAPI route `GET /health` — REQ-001.
 """
 
 _TASKS_EXAMPLE = """\
@@ -123,38 +223,34 @@ An HTTP test asserts 200 for REQ-001.
 - [ ] 2. Add an HTTP test for the route — _Requirements: REQ-001_ (depends: 1)
 """
 
-_GENERATE_TEMPLATE = (
+_GENERATE_TEMPLATE_PREFIX = (
     "You are writing a complete spec-driven development plan for this repository. "
     "Do not edit any files.\n\n"
     "Feature request:\n{prompt}\n\n"
     "{existing}{ears_context}\n\n"
     "Respond with markdown only. Use exactly these three level-2 (##) headings and no other "
     "level-2 headings; use level-3 (###) for every subsection:\n\n"
-    "## Requirements\n" + _REQUIREMENTS_FORMAT + "\n"
-    "## Design\n" + _DESIGN_FORMAT + "\n"
-    "## Implementation tasks\n" + _TASKS_FORMAT + "\n"
-    + _ALL_EXAMPLE
 )
 
-_REQUIREMENTS_SECTION_TEMPLATE = (
+_REQUIREMENTS_SECTION_PREFIX = (
     "You are writing the requirements layer for a spec-driven task. Do not edit any files.\n\n"
     "Feature request:\n{prompt}\n\n"
     "{existing_requirements}{ears_context}\n\n"
     "Respond with markdown only, under a single level-2 heading:\n\n"
-    "## Requirements\n" + _REQUIREMENTS_FORMAT + "\n" + _REQUIREMENTS_EXAMPLE
+    "## Requirements\n"
 )
 
-_DESIGN_SECTION_TEMPLATE = (
+_DESIGN_SECTION_PREFIX = (
     "You are writing the design layer for a spec-driven task. Do not edit any files.\n\n"
     "Task title: {title}\n\n"
     "## Requirements (approved — the design must satisfy every REQ id)\n{requirements}\n\n"
     "Design note:\n{prompt}\n\n"
     "{existing_design}{ears_context}\n\n"
     "Respond with markdown only, under a single level-2 heading:\n\n"
-    "## Design\n" + _DESIGN_FORMAT + "\n" + _DESIGN_EXAMPLE
+    "## Design\n"
 )
 
-_TASKS_SECTION_TEMPLATE = (
+_TASKS_SECTION_PREFIX = (
     "You are writing the implementation tasks layer for a spec-driven task. "
     "Do not edit any files.\n\n"
     "Task title: {title}\n\n"
@@ -163,10 +259,10 @@ _TASKS_SECTION_TEMPLATE = (
     "Implementation note:\n{prompt}\n\n"
     "{existing_tasks}{ears_context}\n\n"
     "Respond with markdown only, under a single level-2 heading:\n\n"
-    "## Implementation tasks\n" + _TASKS_FORMAT + "\n" + _TASKS_EXAMPLE
+    "## Implementation tasks\n"
 )
 
-_REFINE_TEMPLATE = (
+_REFINE_TEMPLATE_PREFIX = (
     "You are reviewing and improving a spec-driven task. Do not edit any files.\n\n"
     "Task title: {title}\n\n"
     "## Requirements\n{requirements}\n\n"
@@ -177,7 +273,6 @@ _REFINE_TEMPLATE = (
     "(## Requirements, ## Design, ## Implementation tasks). Deepen any thin section, fix "
     "contradictions between layers, ensure every REQ id is covered by the design and tasks, "
     "and resolve every EARS issue listed above. Follow this structure:\n\n"
-    + _REQUIREMENTS_FORMAT + "\n" + _DESIGN_FORMAT + "\n" + _TASKS_FORMAT
 )
 
 
@@ -203,41 +298,47 @@ def build_generate_message(
             item.tasks_md,
         )
     if mode == "refine" and item:
-        return _REFINE_TEMPLATE.format(
+        return _REFINE_TEMPLATE_PREFIX.format(
             title=item.title,
             requirements=item.requirements.strip() or "(empty)",
             design=item.design.strip() or "(empty)",
             tasks_md=item.tasks_md.strip() or "(empty)",
             prompt=prompt.strip() or "Review for consistency.",
             ears_context=ears_context,
+        ) + (
+            _requirements_format()
+            + "\n"
+            + _design_format()
+            + "\n"
+            + _tasks_format()
         )
     if section == "requirements":
         existing = _optional_existing_block(
             "requirements draft",
             item.requirements if item else "",
         )
-        return _REQUIREMENTS_SECTION_TEMPLATE.format(
+        return _REQUIREMENTS_SECTION_PREFIX.format(
             prompt=prompt.strip(),
             existing_requirements=existing,
             ears_context=ears_context,
-        )
+        ) + (_requirements_format() + "\n" + _requirements_example())
     if section == "design" and item:
-        return _DESIGN_SECTION_TEMPLATE.format(
+        return _DESIGN_SECTION_PREFIX.format(
             title=item.title,
             requirements=item.requirements.strip() or "(empty)",
             prompt=prompt.strip(),
             existing_design=_optional_existing_block("design draft", item.design),
             ears_context=ears_context,
-        )
+        ) + (_design_format() + "\n" + _design_example())
     if section == "tasks_md" and item:
-        return _TASKS_SECTION_TEMPLATE.format(
+        return _TASKS_SECTION_PREFIX.format(
             title=item.title,
             requirements=item.requirements.strip() or "(empty)",
             design=item.design.strip() or "(empty)",
             prompt=prompt.strip(),
             existing_tasks=_optional_existing_block("implementation tasks draft", item.tasks_md),
             ears_context=ears_context,
-        )
+        ) + (_tasks_format() + "\n" + _TASKS_EXAMPLE)
     existing = ""
     if item and (item.requirements or item.design or item.tasks_md):
         existing = (
@@ -246,11 +347,11 @@ def build_generate_message(
             f"Design:\n{item.design}\n\n"
             f"Implementation tasks:\n{item.tasks_md}\n"
         )
-    return _GENERATE_TEMPLATE.format(
+    return _GENERATE_TEMPLATE_PREFIX.format(
         prompt=prompt.strip(),
         existing=existing,
         ears_context=ears_context,
-    )
+    ) + _generate_all_layers_body()
 
 
 def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[str, str]:

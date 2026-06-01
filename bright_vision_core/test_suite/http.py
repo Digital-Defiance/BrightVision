@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 from typing import Any
 
@@ -13,7 +14,16 @@ from pydantic import BaseModel, Field
 
 from bright_vision_core.test_suite.jobs import job_store, sse_pack
 from bright_vision_core.test_suite.log_digest import agent_digest_file, resolve_transcript_for_digest
-from bright_vision_core.test_suite.manifest import plan_steps
+from bright_vision_core.test_suite.cloud_preflight import (
+    cloud_llm_configured,
+    cloud_llm_env_file_present,
+)
+from bright_vision_core.test_suite.router_preflight import (
+    resolve_router_tags,
+    router_lane_ready,
+)
+from bright_vision_core.test_suite.brightdate_timing import brightdate_enabled
+from bright_vision_core.test_suite.manifest import SuiteRunOptions, plan_steps
 from bright_vision_core.test_suite.ports import orchestrator_port
 from bright_vision_core.test_suite.timing import expectations_for_steps, repo_root
 
@@ -32,8 +42,47 @@ class StartRunRequest(BaseModel):
     skip_llm: bool = False
     skip_gpu: bool = False
     skip_time: bool = False
+    use_brightdate: bool = False
+    spec_gen_phased: bool = False
+    llm_router: bool = False
+    cloud_llm: bool = False
+    verify_ears: bool = False
+    shipped_scenarios: bool = False
+    strict_phased_pytest: bool = False
     save_transcript: bool = False
     transcript_path: str | None = None
+
+
+def _run_options_from_query(
+    skip_llm: bool = False,
+    spec_gen_phased: bool = False,
+    llm_router: bool = False,
+    cloud_llm: bool = False,
+    verify_ears: bool = False,
+    shipped_scenarios: bool = False,
+    strict_phased_pytest: bool = False,
+) -> SuiteRunOptions:
+    return SuiteRunOptions(
+        skip_llm=skip_llm,
+        spec_gen_phased=spec_gen_phased,
+        llm_router=llm_router,
+        cloud_llm=cloud_llm,
+        verify_ears=verify_ears,
+        shipped_scenarios=shipped_scenarios,
+        strict_phased_pytest=strict_phased_pytest,
+    )
+
+
+def _run_options_from_body(body: StartRunRequest) -> SuiteRunOptions:
+    return SuiteRunOptions(
+        skip_llm=body.skip_llm,
+        spec_gen_phased=body.spec_gen_phased,
+        llm_router=body.llm_router,
+        cloud_llm=body.cloud_llm,
+        verify_ears=body.verify_ears,
+        shipped_scenarios=body.shipped_scenarios,
+        strict_phased_pytest=body.strict_phased_pytest,
+    )
 
 
 class StartRunResponse(BaseModel):
@@ -63,8 +112,25 @@ def health() -> dict[str, str | bool | int]:
 
 
 @app.get("/test-suite/plan")
-def get_plan(skip_llm: bool = False) -> dict[str, Any]:
-    steps = plan_steps(skip_llm=skip_llm)
+def get_plan(
+    skip_llm: bool = False,
+    spec_gen_phased: bool = False,
+    llm_router: bool = False,
+    cloud_llm: bool = False,
+    verify_ears: bool = False,
+    shipped_scenarios: bool = False,
+    strict_phased_pytest: bool = False,
+) -> dict[str, Any]:
+    opts = _run_options_from_query(
+        skip_llm=skip_llm,
+        spec_gen_phased=spec_gen_phased,
+        llm_router=llm_router,
+        cloud_llm=cloud_llm,
+        verify_ears=verify_ears,
+        shipped_scenarios=shipped_scenarios,
+        strict_phased_pytest=strict_phased_pytest,
+    )
+    steps = plan_steps(skip_llm=skip_llm, options=opts)
     return {
         "repoRoot": str(repo_root()),
         "steps": [
@@ -72,6 +138,7 @@ def get_plan(skip_llm: bool = False) -> dict[str, Any]:
                 "id": s.id,
                 "label": s.label,
                 "requiresOllama": s.requires_ollama,
+                "requiresCloudConfig": s.requires_cloud_config,
                 "touchesCorePort": s.touches_core_port,
             }
             for s in steps
@@ -109,8 +176,25 @@ def get_transcript_digest(
 
 
 @app.get("/test-suite/expectations")
-def get_expectations(skip_llm: bool = False) -> dict[str, Any]:
-    step_ids = [s.id for s in plan_steps(skip_llm=skip_llm)]
+def get_expectations(
+    skip_llm: bool = False,
+    spec_gen_phased: bool = False,
+    llm_router: bool = False,
+    cloud_llm: bool = False,
+    verify_ears: bool = False,
+    shipped_scenarios: bool = False,
+    strict_phased_pytest: bool = False,
+) -> dict[str, Any]:
+    opts = _run_options_from_query(
+        skip_llm=skip_llm,
+        spec_gen_phased=spec_gen_phased,
+        llm_router=llm_router,
+        cloud_llm=cloud_llm,
+        verify_ears=verify_ears,
+        shipped_scenarios=shipped_scenarios,
+        strict_phased_pytest=strict_phased_pytest,
+    )
+    step_ids = [s.id for s in plan_steps(skip_llm=skip_llm, options=opts)]
     return expectations_for_steps(step_ids)
 
 
@@ -127,16 +211,27 @@ def preflight() -> dict[str, Any]:
     job_store.reconcile_active()
     core_port = int(os.environ.get("BV_CORE_PORT", "8741"))
     active = job_store.active_run()
+    router_ready, router_detail = router_lane_ready()
+    fast_tag, heavy_tag = resolve_router_tags()
     return {
         "repoRoot": str(repo_root()),
         "corePortInUse": _port_in_use(core_port),
         "corePort": core_port,
         "orchestratorActive": True,
         "orchestratorPort": orchestrator_port(),
+        "specGenPhasedEnv": os.environ.get("E2E_SPEC_GEN_PHASED") == "1",
+        "cloudLlmConfigured": cloud_llm_configured(),
+        "cloudLlmEnvFilePresent": cloud_llm_env_file_present(),
+        "routerLaneReady": router_ready,
+        "routerLaneDetail": router_detail,
+        "routerFastModel": fast_tag or None,
+        "routerHeavyModel": heavy_tag or None,
         "activeRunInProgress": bool(
             active and active.status in ("pending", "running")
         ),
         "activeRunId": active.run_id if active else None,
+        "btimeOnPath": bool(shutil.which("btime")),
+        "brightDateDefaultEnv": brightdate_enabled(),
     }
 
 
@@ -148,6 +243,8 @@ def start_run(body: StartRunRequest) -> StartRunResponse:
             skip_llm=body.skip_llm,
             skip_gpu=body.skip_gpu,
             skip_time=body.skip_time,
+            use_brightdate=body.use_brightdate,
+            run_options=_run_options_from_body(body),
             save_transcript=body.save_transcript,
             transcript_path=body.transcript_path,
         )

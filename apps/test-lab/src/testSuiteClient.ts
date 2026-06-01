@@ -1,10 +1,35 @@
+import { fmtDurationBrightDate } from './brightdateTiming'
+
 const DEFAULT_ORCH_PORT = '8743'
 
 export type SuiteStepPlan = {
   id: string
   label: string
   requiresOllama: boolean
+  requiresCloudConfig?: boolean
   touchesCorePort: boolean
+}
+
+/** Optional diagnostic lanes (must match orchestrator query/body). */
+export type SuiteLaneOptions = {
+  specGenPhased?: boolean
+  llmRouter?: boolean
+  cloudLlm?: boolean
+  verifyEars?: boolean
+  shippedScenarios?: boolean
+  strictPhasedPytest?: boolean
+}
+
+function laneQueryParams(skipLlm: boolean, lanes: SuiteLaneOptions): string {
+  const q = new URLSearchParams()
+  q.set('skip_llm', skipLlm ? 'true' : 'false')
+  if (lanes.specGenPhased) q.set('spec_gen_phased', 'true')
+  if (lanes.llmRouter) q.set('llm_router', 'true')
+  if (lanes.cloudLlm) q.set('cloud_llm', 'true')
+  if (lanes.verifyEars) q.set('verify_ears', 'true')
+  if (lanes.shippedScenarios) q.set('shipped_scenarios', 'true')
+  if (lanes.strictPhasedPytest) q.set('strict_phased_pytest', 'true')
+  return q.toString()
 }
 
 export type TestSuiteEvent = {
@@ -17,6 +42,13 @@ export type TestSuiteEvent = {
   seconds?: number
   gpuAvg?: number
   gpuPeak?: number
+  memAvg?: number
+  memPeak?: number
+  memPressureAvg?: number
+  memPressurePeak?: number
+  swapPeakGb?: number
+  cpuAvg?: number
+  cpuPeak?: number
   cpuPct?: number
   gpuPct?: number
   stepIndex?: number
@@ -28,6 +60,11 @@ export type TestSuiteEvent = {
   stepIds?: string[]
   repoRoot?: string
   path?: string
+  captureMode?: 'off' | 'bgpucap' | 'btime_only'
+  captureNote?: string
+  useBrightDate?: boolean
+  startBd?: number
+  endBd?: number
 }
 
 let resolvedBase: string | null = null
@@ -118,15 +155,20 @@ export async function waitForOrchestrator(
   )
 }
 
-export async function fetchPlan(skipLlm: boolean): Promise<{ repoRoot: string; steps: SuiteStepPlan[] }> {
-  const res = await fetch(`${suiteBaseUrl()}/test-suite/plan?skip_llm=${skipLlm ? 'true' : 'false'}`)
+export async function fetchPlan(
+  skipLlm: boolean,
+  lanes: SuiteLaneOptions = {}
+): Promise<{ repoRoot: string; steps: SuiteStepPlan[] }> {
+  const res = await fetch(
+    `${suiteBaseUrl()}/test-suite/plan?${laneQueryParams(skipLlm, lanes)}`
+  )
   if (!res.ok) throw new Error(`plan failed: ${res.status}`)
   return res.json()
 }
 
-export async function fetchExpectations(skipLlm: boolean) {
+export async function fetchExpectations(skipLlm: boolean, lanes: SuiteLaneOptions = {}) {
   const res = await fetch(
-    `${suiteBaseUrl()}/test-suite/expectations?skip_llm=${skipLlm ? 'true' : 'false'}`
+    `${suiteBaseUrl()}/test-suite/expectations?${laneQueryParams(skipLlm, lanes)}`
   )
   if (!res.ok) throw new Error(`expectations failed: ${res.status}`)
   return res.json() as Promise<{
@@ -145,8 +187,16 @@ export async function fetchPreflight() {
     corePortInUse: boolean
     corePort: number
     orchestratorPort: number
+    specGenPhasedEnv?: boolean
+    cloudLlmConfigured?: boolean
+    cloudLlmEnvFilePresent?: boolean
+    routerLaneReady?: boolean
+    routerLaneDetail?: string
+    routerFastModel?: string | null
+    routerHeavyModel?: string | null
     activeRunInProgress?: boolean
     activeRunId?: string | null
+    btimeOnPath?: boolean
   }>
 }
 
@@ -205,7 +255,8 @@ export async function startRun(opts: {
   skipLlm: boolean
   skipGpu: boolean
   saveTranscript?: boolean
-}): Promise<{ run_id: string; transcript_path?: string | null }> {
+  useBrightDate?: boolean
+} & SuiteLaneOptions): Promise<{ run_id: string; transcript_path?: string | null }> {
   const res = await fetch(`${suiteBaseUrl()}/test-suite/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -213,6 +264,13 @@ export async function startRun(opts: {
       skip_llm: opts.skipLlm,
       skip_gpu: opts.skipGpu,
       skip_time: false,
+      use_brightdate: Boolean(opts.useBrightDate),
+      spec_gen_phased: Boolean(opts.specGenPhased),
+      llm_router: Boolean(opts.llmRouter),
+      cloud_llm: Boolean(opts.cloudLlm),
+      verify_ears: Boolean(opts.verifyEars),
+      shipped_scenarios: Boolean(opts.shippedScenarios),
+      strict_phased_pytest: Boolean(opts.strictPhasedPytest),
       save_transcript: Boolean(opts.saveTranscript),
     }),
   })
@@ -280,7 +338,8 @@ export function streamRunEvents(
   return () => ac.abort()
 }
 
-export function fmtDuration(sec: number): string {
+export function fmtDuration(sec: number, useBrightDate = false): string {
+  if (useBrightDate) return fmtDurationBrightDate(sec)
   if (sec < 60) return `${sec.toFixed(0)}s`
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)

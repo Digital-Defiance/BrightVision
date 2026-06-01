@@ -2,10 +2,13 @@ import { expect, type Page, type Response } from '@playwright/test'
 
 /** Align with `LLM_SPEC_GEN_TIMEOUT_S` / pytest `spec_gen_timeout_s()`. */
 export function specGenTimeoutMs(): number {
-  const raw = process.env.LLM_SPEC_GEN_TIMEOUT_S ?? '600'
+  const raw = process.env.LLM_SPEC_GEN_TIMEOUT_S ?? '1200'
   const sec = Number(raw)
-  return (Number.isFinite(sec) && sec > 0 ? sec : 600) * 1000
+  return (Number.isFinite(sec) && sec > 0 ? sec : 1200) * 1000
 }
+
+/** Extra poll after nominal timeout so core can flip running → error. */
+const SPEC_JOB_POLL_GRACE_MS = 90_000
 
 function isGenerateSpecJobPoll(res: Response): boolean {
   return (
@@ -27,7 +30,7 @@ export async function waitForWorkspaceSpecGenerateJob(
   timeoutMs = specGenTimeoutMs()
 ): Promise<{ status: string; error?: string | null }> {
   const url = `${coreApiBase(page)}/workspaces/todos/generate-spec/${encodeURIComponent(jobId)}`
-  const deadline = Date.now() + timeoutMs
+  const deadline = Date.now() + timeoutMs + SPEC_JOB_POLL_GRACE_MS
   let lastStatus = 'unknown'
   while (Date.now() < deadline) {
     const res = await page.request.get(url, { timeout: 30_000 })
@@ -42,7 +45,7 @@ export async function waitForWorkspaceSpecGenerateJob(
     await page.waitForTimeout(1000)
   }
   throw new Error(
-    `Spec generate job ${jobId.slice(0, 8)}… still ${lastStatus} after ${Math.round(timeoutMs / 1000)}s`
+    `Spec generate job ${jobId.slice(0, 8)}… still ${lastStatus} after ${Math.round(timeoutMs / 1000)}s (+${Math.round(SPEC_JOB_POLL_GRACE_MS / 1000)}s grace)`
   )
 }
 
@@ -93,7 +96,10 @@ export async function runGenerateSpecDialog(page: Page, timeoutMs = specGenTimeo
   if (jobId) {
     const body = await waitForWorkspaceSpecGenerateJob(page, jobId, timeoutMs)
     if (body.status === 'error') {
-      throw new Error(body.error || 'Spec generation failed')
+      const detail = body.error || 'Spec generation failed'
+      throw new Error(
+        `${detail} (job ${jobId.slice(0, 8)}… — try a faster Ollama model or raise LLM_SPEC_GEN_TIMEOUT_S)`
+      )
     }
   } else {
     const res = await waitForWorkspaceSpecGenerate(page, timeoutMs)

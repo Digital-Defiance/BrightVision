@@ -92,6 +92,32 @@ class SpecJobStore:
             oldest = min(self._jobs.values(), key=lambda j: j.updated_at)
             del self._jobs[oldest.job_id]
 
+    def _reconcile_stale_running(self, job: SpecGenerationJob) -> None:
+        """Mark jobs stuck in running past the wall clock (poll may beat worker timeout)."""
+        if job.status != "running":
+            return
+        wall_s = spec_gen_timeout_s()
+        if time.time() - job.updated_at <= wall_s + 30.0:
+            return
+        job.status = "error"
+        job.error = f"Spec generation job timed out after {int(wall_s)}s"
+        job.updated_at = time.time()
+
+    def _complete_job(self, job_id: str, result: dict[str, Any]) -> None:
+        with self._lock:
+            j = self._jobs.get(job_id)
+            if not j or j.status != "running":
+                return
+            j.status = "completed"
+            j.requirements = result.get("requirements", "")
+            j.design = result.get("design", "")
+            j.tasks_md = result.get("tasks_md", "")
+            j.raw = result.get("raw", "")
+            j.item = result.get("item")
+            j.ears_blocked = bool(result.get("ears_blocked"))
+            j.ears_issues = list(result.get("ears_issues") or [])
+            j.updated_at = time.time()
+
     def start(
         self,
         workspace: str,
@@ -111,6 +137,8 @@ class SpecJobStore:
             self._prune()
             self._jobs[job_id] = job
 
+        session_holder: dict[str, Session] = {}
+
         def _run() -> dict[str, Any]:
             session = Session.create(
                 workspace,
@@ -122,15 +150,19 @@ class SpecJobStore:
                 chat_history_file=False,
                 map_tokens=0,
             )
-            return session.generate_todo_layers(
-                todo_id,
-                prompt,
-                mode=mode,
-                section=section,
-                apply=apply,
-                enforce_ears=enforce_ears,
-                context_paths=context_paths,
-            )
+            session_holder["session"] = session
+            try:
+                return session.generate_todo_layers(
+                    todo_id,
+                    prompt,
+                    mode=mode,
+                    section=section,
+                    apply=apply,
+                    enforce_ears=enforce_ears,
+                    context_paths=context_paths,
+                )
+            finally:
+                session_holder.pop("session", None)
 
         def worker() -> None:
             self._set_status(job_id, "running")
@@ -139,20 +171,14 @@ class SpecJobStore:
             fut = pool.submit(_run)
             try:
                 result = fut.result(timeout=wall_s)
-                with self._lock:
-                    j = self._jobs.get(job_id)
-                    if not j:
-                        return
-                    j.status = "completed"
-                    j.requirements = result.get("requirements", "")
-                    j.design = result.get("design", "")
-                    j.tasks_md = result.get("tasks_md", "")
-                    j.raw = result.get("raw", "")
-                    j.item = result.get("item")
-                    j.ears_blocked = bool(result.get("ears_blocked"))
-                    j.ears_issues = list(result.get("ears_issues") or [])
-                    j.updated_at = time.time()
+                self._complete_job(job_id, result)
             except concurrent.futures.TimeoutError:
+                sess = session_holder.get("session")
+                if sess is not None:
+                    try:
+                        sess.interrupt_turn()
+                    except Exception:
+                        pass
                 self._set_error(
                     job_id,
                     f"Spec generation job timed out after {int(wall_s)}s",
@@ -175,14 +201,17 @@ class SpecJobStore:
     def _set_error(self, job_id: str, message: str) -> None:
         with self._lock:
             j = self._jobs.get(job_id)
-            if j:
+            if j and j.status == "running":
                 j.status = "error"
                 j.error = message
                 j.updated_at = time.time()
 
     def get(self, job_id: str) -> SpecGenerationJob | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            j = self._jobs.get(job_id)
+            if j:
+                self._reconcile_stale_running(j)
+            return j
 
     def wait(self, job_id: str, *, timeout_s: float | None = None) -> SpecGenerationJob:
         timeout_s = spec_gen_timeout_s() if timeout_s is None else timeout_s

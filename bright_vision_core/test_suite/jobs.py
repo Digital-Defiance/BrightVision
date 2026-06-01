@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from bright_vision_core.test_suite.manifest import SuiteRunOptions
 from bright_vision_core.test_suite.runner import run_suite
 from bright_vision_core.test_suite.transcript import TranscriptWriter, resolve_transcript_path
 
@@ -161,6 +162,8 @@ class TestSuiteJobStore:
         skip_llm: bool = False,
         skip_gpu: bool = False,
         skip_time: bool = False,
+        use_brightdate: bool = False,
+        run_options: SuiteRunOptions | None = None,
         save_transcript: bool = False,
         transcript_path: str | None = None,
     ) -> TestSuiteRun:
@@ -199,6 +202,8 @@ class TestSuiteJobStore:
                     skip_llm=skip_llm,
                     skip_gpu=skip_gpu,
                     skip_time=skip_time,
+                    use_brightdate=use_brightdate,
+                    run_options=run_options,
                     on_event=on_event,
                     cancel_check=run.cancelled,
                 )

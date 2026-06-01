@@ -64,7 +64,7 @@ Kiro-style **Requirements → Design → Tasks** with edit-between steps:
 - **Tasks tab** — wizard nudges on each layer tab; tab switches blocked until prerequisites exist.
 - **Context** — `context_paths` are the session’s `files_in_chat`. Add in the **Spec prompt** with `/add path` (Tab completes on desktop; Enter attaches) or **Add folder** beside the prompt; on **Tasks**, use the context bar or **Open Spec**. Same files as Chat `/add`.
 - **All layers** — `section=all` (or **All layers** button) keeps the original one-shot behavior.
-- **LLM regression** — `yarn test:llm:core` / `yarn test:e2e:llm` (`spec-generate-llm.spec.ts`) run phased `section=requirements` → `design` → `tasks_md` against Ollama.
+- **LLM regression** — `yarn test:llm:core` / `yarn test:e2e:llm` (`spec-generate-all-llm.spec.ts`; optional `spec-generate-phased-llm.spec.ts` when `E2E_SPEC_GEN_PHASED=1`) against Ollama.
 
 ## Spec file sync (shipped)
 

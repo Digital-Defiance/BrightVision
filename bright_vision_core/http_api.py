@@ -28,6 +28,9 @@ from starlette.requests import Request
 
 from bright_vision_core.vision_runtime import configure_vision_runtime
 
+# LiteLLM (via configure_vision_runtime) must not load before cecli — see litellm_ollama_patch.
+import cecli as _cecli_bootstrap  # noqa: F401
+
 configure_vision_runtime()
 
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder

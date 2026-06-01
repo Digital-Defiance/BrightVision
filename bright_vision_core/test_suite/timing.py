@@ -119,7 +119,13 @@ def step_stats(runs: list[dict[str, Any]]) -> dict[str, float | int]:
     }
 
 
-def format_duration(seconds: float) -> str:
+def format_duration(seconds: float, *, use_brightdate: bool | None = None) -> str:
+    if use_brightdate is None:
+        use_brightdate = os.environ.get("BV_SUITE_USE_BRIGHTDATE") == "1"
+    if use_brightdate:
+        from bright_vision_core.test_suite.brightdate_timing import format_elapsed_brightdate
+
+        return format_elapsed_brightdate(seconds)
     if seconds < 0:
         seconds = 0.0
     if seconds < 60:
@@ -160,6 +166,16 @@ def slow_warning(step_id: str, seconds: float, stats: dict[str, float | int]) ->
     )
 
 
+def pressure_warning(step_id: str, mem_pressure_peak: float | None) -> str | None:
+    if mem_pressure_peak is None or mem_pressure_peak < 1.0:
+        return None
+    label = "critical" if mem_pressure_peak >= 2.0 else "elevated"
+    return (
+        f"NOTE: {step_id} memory pressure peaked at {mem_pressure_peak:.0f} ({label}) "
+        "— common cause of LLM suite slowdown on Apple Silicon"
+    )
+
+
 def record_step(
     step_id: str,
     seconds: float,
@@ -167,6 +183,7 @@ def record_step(
     *,
     gpu_avg: float | None = None,
     gpu_peak: float | None = None,
+    metrics: dict[str, Any] | None = None,
 ) -> str | None:
     path = history_path()
     data = load_history(path)
@@ -179,11 +196,17 @@ def record_step(
         entry["gpu_avg"] = gpu_avg
     if gpu_peak is not None:
         entry["gpu_peak"] = gpu_peak
+    if metrics:
+        entry.update(metrics)
     step = data["steps"].setdefault(step_id, {"runs": []})
     append_run(step["runs"], entry)
     save_history(data, path)
     stats = step_stats(step.get("runs", []))
-    return slow_warning(step_id, seconds, stats)
+    warnings = [
+        slow_warning(step_id, seconds, stats),
+        pressure_warning(step_id, (metrics or {}).get("mem_pressure_peak")),
+    ]
+    return "\n".join(w for w in warnings if w) or None
 
 
 def record_total(seconds: float, ok: bool, step_ids: list[str]) -> None:

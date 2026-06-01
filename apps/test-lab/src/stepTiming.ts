@@ -1,8 +1,24 @@
 import { fmtDuration } from './testSuiteClient'
+import {
+  fmtDurationBrightDate,
+  formatEtcBrightDate,
+} from './brightdateTiming'
 
 export type StepMedian = { medianSeconds: number; sampleCount: number }
 
-export function formatEtcClock(secondsFromNow: number): string {
+export type TimingDisplayOptions = {
+  useBrightDate?: boolean
+}
+
+function fmtStepDuration(sec: number, opts?: TimingDisplayOptions): string {
+  return opts?.useBrightDate ? fmtDurationBrightDate(sec) : fmtDuration(sec)
+}
+
+export function formatEtcClock(
+  secondsFromNow: number,
+  opts?: TimingDisplayOptions
+): string {
+  if (opts?.useBrightDate) return formatEtcBrightDate(secondsFromNow)
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
@@ -79,12 +95,14 @@ export function suiteRunningTimingSummary(opts: {
   steps: Array<{ id: string; status: string; seconds?: number }>
   medians: Record<string, StepMedian>
   runningStepElapsed: number
+  useBrightDate?: boolean
 }): {
   stepLeft?: string
   stepEtc?: string
   runEtc?: string
   runLeft?: string
 } {
+  const display: TimingDisplayOptions = { useBrightDate: opts.useBrightDate }
   const idx = opts.runningPlanIndex
   if (idx < 0) return {}
   const left = stepMedianLeft(idx, opts.plan, opts.medians, opts.runningStepElapsed)
@@ -102,14 +120,14 @@ export function suiteRunningTimingSummary(opts: {
     runLeft?: string
   } = {}
   if (left > 0) {
-    out.stepLeft = fmtDuration(left)
-    out.stepEtc = formatEtcClock(left)
+    out.stepLeft = fmtStepDuration(left, display)
+    out.stepEtc = formatEtcClock(left, display)
   } else if (opts.runningStepElapsed > 0) {
     out.stepLeft = 'over median'
   }
   if (suiteLeft > 0) {
-    out.runLeft = fmtDuration(suiteLeft)
-    out.runEtc = formatEtcClock(suiteLeft)
+    out.runLeft = fmtStepDuration(suiteLeft, display)
+    out.runEtc = formatEtcClock(suiteLeft, display)
   }
   return out
 }
@@ -123,7 +141,9 @@ export function stepTimingLabels(opts: {
   running: boolean
   runningPlanIndex?: number
   runningStepElapsed?: number
+  useBrightDate?: boolean
 }): { eta?: string; etc?: string; runEtc?: string } {
+  const display: TimingDisplayOptions = { useBrightDate: opts.useBrightDate }
   const id = opts.plan[opts.planIndex]?.id
   const timing = id ? opts.medians[id] : undefined
   const median = timing?.medianSeconds ?? 0
@@ -131,7 +151,7 @@ export function stepTimingLabels(opts: {
 
   if (opts.status === 'pending') {
     if (!hasHistory || median <= 0) return {}
-    const eta = `ETA ~${fmtDuration(median)}`
+    const eta = `ETA ~${fmtStepDuration(median, display)}`
     if (opts.running) {
       const until = secondsUntilStepStart(
         opts.planIndex,
@@ -141,7 +161,7 @@ export function stepTimingLabels(opts: {
         opts.runningPlanIndex ?? -1,
         opts.runningStepElapsed ?? 0
       )
-      return { eta, etc: `ETC ${formatEtcClock(until)}` }
+      return { eta, etc: `ETC ${formatEtcClock(until, display)}` }
     }
     return { eta }
   }
@@ -161,20 +181,23 @@ export function stepTimingLabels(opts: {
         : 0
     const eta =
       left > 0
-        ? `~${fmtDuration(left)} left`
+        ? `~${fmtStepDuration(left, display)} left`
         : elapsed > 0 && hasHistory
           ? 'over median'
           : undefined
     const etc =
       left > 0
-        ? `ETC ${formatEtcClock(left)}`
+        ? `ETC ${formatEtcClock(left, display)}`
         : elapsed > 0 && hasHistory
           ? 'ETC —'
           : undefined
     const runEtc =
-      suiteLeft > 0 ? `Run ETC ${formatEtcClock(suiteLeft)}` : undefined
+      suiteLeft > 0 ? `Run ETC ${formatEtcClock(suiteLeft, display)}` : undefined
     return { eta, etc, runEtc }
   }
 
   return {}
 }
+
+/** Re-export for step chips when BrightDate mode is on. */
+export { fmtDurationBrightDate, formatBdBounds } from './brightdateTiming'

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
 import { expectNoAgentVerboseCrash } from './helpers/llmChat'
 import { assertOllamaForLlmE2e, isLlmE2eEnabled } from './helpers/llmEnv'
+import { restartRealCoreServer } from './helpers/realCoreServer'
 import { ensureHelloLlmE2eWorkspace } from './helpers/fixtureWorkspaces'
 import { openLlmChat, primeLlmE2eApp, startLlmE2eSession } from './helpers/llmSession'
 import { settleTurnAfterReply } from './helpers/llmTurn'
@@ -24,6 +25,10 @@ test.describe('LLM UpdateTodoList @todo', () => {
   test.beforeAll(async () => {
     await assertOllamaForLlmE2e()
     ensureHelloLlmE2eWorkspace()
+  })
+
+  test.beforeEach(async () => {
+    await restartRealCoreServer()
   })
 
   test('writes magic task to agent todo.txt', async ({ page }) => {

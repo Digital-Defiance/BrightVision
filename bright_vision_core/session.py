@@ -883,6 +883,13 @@ class Session:
         ears_blocked = False
         ears_issues: list[dict] = []
         req_text = merged.get("requirements", "")
+        if req_text.strip() and enforce_ears and sec in ("all", "requirements"):
+            from bright_vision_core.ears.repair import repair_requirements_missing_shall
+            from bright_vision_core.todo_spec_generate import compact_spec_gen_enabled
+
+            if compact_spec_gen_enabled():
+                req_text = repair_requirements_missing_shall(req_text)
+                merged = {**merged, "requirements": req_text}
         if apply and any(merged.values()):
             ok, ears_issues = requirements_pass_ears(req_text)
             ears_gate = sec in ("all", "requirements")

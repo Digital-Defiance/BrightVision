@@ -13,6 +13,7 @@ class UtilizationSample:
     cpu_pct: float | None = None
     gpu_pct: float | None = None
     mem_pct: float | None = None
+    mem_pressure: float | None = None
 
 
 def _clamp_pct(v: float) -> float | None:
@@ -84,6 +85,23 @@ def _sample_cpu_psutil() -> float | None:
         return None
 
 
+def _sample_mem_pressure_darwin() -> float | None:
+    if sys.platform != "darwin":
+        return None
+    try:
+        out = subprocess.run(
+            ["sysctl", "-n", "vm.memory_pressure"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if out.returncode == 0:
+            return float(out.stdout.strip().split()[0])
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError, OSError):
+        pass
+    return None
+
+
 def _sample_cpu_darwin_top() -> float | None:
     try:
         out = subprocess.run(
@@ -119,7 +137,10 @@ def sample_utilization() -> UtilizationSample:
         mem = _clamp_pct(float(vm.percent))
     except Exception:
         pass
-    return UtilizationSample(cpu_pct=cpu, gpu_pct=gpu, mem_pct=mem)
+    pressure = _sample_mem_pressure_darwin()
+    return UtilizationSample(
+        cpu_pct=cpu, gpu_pct=gpu, mem_pct=mem, mem_pressure=pressure
+    )
 
 
 def format_util_suffix(sample: UtilizationSample) -> str:
@@ -130,4 +151,6 @@ def format_util_suffix(sample: UtilizationSample) -> str:
         parts.append(f"GPU {sample.gpu_pct:.0f}%")
     if sample.mem_pct is not None:
         parts.append(f"RAM {sample.mem_pct:.0f}%")
+    if sample.mem_pressure is not None and sample.mem_pressure >= 1:
+        parts.append(f"pressure {sample.mem_pressure:.0f}")
     return f" · {' · '.join(parts)}" if parts else ""

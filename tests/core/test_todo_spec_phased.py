@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import unittest
 
 from bright_vision_core.todo_spec_generate import (
@@ -87,9 +88,28 @@ class TestTodoSpecPhased(unittest.TestCase):
     def test_design_prompt_requests_full_subsections(self):
         item = self._item()
         msg = build_generate_message("Design it", item=item, section="design")
-        for label in ("Architecture", "Components and Interfaces", "Data Models",
-                      "Error Handling", "Testing Strategy"):
+        for label in (
+            "Architecture",
+            "Components and Interfaces",
+            "Data Models",
+            "Error Handling",
+            "Testing Strategy",
+        ):
             self.assertIn(label, msg)
+
+    def test_compact_design_prompt_omits_kiro_subsections(self):
+        item = self._item()
+        prev = os.environ.get("BV_COMPACT_SPEC_GEN")
+        os.environ["BV_COMPACT_SPEC_GEN"] = "1"
+        try:
+            msg = build_generate_message("Design it", item=item, section="design")
+            self.assertIn("under 35 lines", msg)
+            self.assertNotIn("### Data Models", msg)
+        finally:
+            if prev is None:
+                os.environ.pop("BV_COMPACT_SPEC_GEN", None)
+            else:
+                os.environ["BV_COMPACT_SPEC_GEN"] = prev
 
     def test_tasks_prompt_requests_requirement_traceability(self):
         item = self._item()

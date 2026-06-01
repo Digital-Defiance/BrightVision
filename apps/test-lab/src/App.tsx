@@ -32,6 +32,7 @@ import {
   startRun,
   streamRunEvents,
   waitForOrchestrator,
+  type SuiteLaneOptions,
   type SuiteStepPlan,
   type TestSuiteEvent,
 } from './testSuiteClient'
@@ -45,6 +46,8 @@ import {
 import {
   stepTimingLabels,
   suiteRunningTimingSummary,
+  fmtDurationBrightDate,
+  formatBdBounds,
   type StepMedian,
 } from './stepTiming'
 
@@ -56,14 +59,31 @@ type StepState = {
   seconds?: number
   gpuAvg?: number
   gpuPeak?: number
+  memAvg?: number
+  memPeak?: number
+  memPressurePeak?: number
+  swapPeakGb?: number
   /** Live samples from heartbeats while step is running */
   liveGpuAvg?: number
   liveGpuPeak?: number
+  startBd?: number
+  endBd?: number
 }
 
 export default function App() {
   const [skipLlm, setSkipLlm] = useState(false)
+  const [specGenPhased, setSpecGenPhased] = useState(false)
+  const [llmRouter, setLlmRouter] = useState(false)
+  const [cloudLlm, setCloudLlm] = useState(false)
+  const [verifyEars, setVerifyEars] = useState(false)
+  const [shippedScenarios, setShippedScenarios] = useState(false)
+  const [strictPhasedPytest, setStrictPhasedPytest] = useState(false)
+  const [cloudLlmConfigured, setCloudLlmConfigured] = useState(false)
+  const [routerLaneReady, setRouterLaneReady] = useState(false)
+  const [routerLaneDetail, setRouterLaneDetail] = useState('')
   const [skipGpu, setSkipGpu] = useState(false)
+  const [useBrightDate, setUseBrightDate] = useState(false)
+  const [btimeOnPath, setBtimeOnPath] = useState(true)
   const [saveTranscript, setSaveTranscript] = useState(false)
   const [transcriptPath, setTranscriptPath] = useState<string | null>(null)
   const [digestMsg, setDigestMsg] = useState<string | null>(null)
@@ -84,6 +104,9 @@ export default function App() {
   const [runClockStartedAt, setRunClockStartedAt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [runOk, setRunOk] = useState<boolean | null>(null)
+  const [captureMode, setCaptureMode] = useState<string | null>(null)
+  const [captureNote, setCaptureNote] = useState<string | null>(null)
+  const [runUseBrightDate, setRunUseBrightDate] = useState(false)
   const [orchReady, setOrchReady] = useState(false)
   const [orchLoading, setOrchLoading] = useState(true)
   const [orchPort, setOrchPort] = useState(8743)
@@ -101,6 +124,18 @@ export default function App() {
     saveTestLabNtfyPrefs(next)
   }
 
+  const laneOpts: SuiteLaneOptions = useMemo(
+    () => ({
+      specGenPhased,
+      llmRouter,
+      cloudLlm,
+      verifyEars,
+      shippedScenarios,
+      strictPhasedPytest,
+    }),
+    [specGenPhased, llmRouter, cloudLlm, verifyEars, shippedScenarios, strictPhasedPytest]
+  )
+
   const refreshMeta = useCallback(async () => {
     setOrchLoading(true)
     setError(null)
@@ -110,8 +145,8 @@ export default function App() {
       await waitForOrchestrator()
       setOrchReady(true)
       const [p, exp, pre] = await Promise.all([
-        fetchPlan(skipLlm),
-        fetchExpectations(skipLlm),
+        fetchPlan(skipLlm, laneOpts),
+        fetchExpectations(skipLlm, laneOpts),
         fetchPreflight(),
       ])
       setOrchPort(pre.orchestratorPort ?? 8743)
@@ -128,6 +163,11 @@ export default function App() {
       }
       setStepMedians(medMap)
       setCoreWarning(pre.corePortInUse)
+      setCloudLlmConfigured(!!pre.cloudLlmConfigured)
+      setRouterLaneReady(!!pre.routerLaneReady)
+      setRouterLaneDetail(pre.routerLaneDetail ?? '')
+      setBtimeOnPath(pre.btimeOnPath !== false)
+      if (pre.specGenPhasedEnv) setSpecGenPhased(true)
       setSteps(
         p.steps.map((s) => ({
           id: s.id,
@@ -150,7 +190,7 @@ export default function App() {
     } finally {
       setOrchLoading(false)
     }
-  }, [skipLlm])
+  }, [skipLlm, laneOpts])
 
   const handleCopyDigest = async () => {
     if (!transcriptPath) return
@@ -213,8 +253,9 @@ export default function App() {
       steps,
       medians: stepMedians,
       runningStepElapsed: progress.stepElapsed,
+      useBrightDate: runUseBrightDate,
     })
-  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed])
+  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed, runUseBrightDate])
 
   const handleRun = async () => {
     setError(null)
@@ -225,7 +266,14 @@ export default function App() {
     setProgress({ index: 0, total: plan.length, elapsed: 0, stepElapsed: 0 })
     setSteps((prev) => prev.map((s) => ({ ...s, status: 'pending', lines: [] })))
     try {
-      const { run_id, transcript_path } = await startRun({ skipLlm, skipGpu, saveTranscript })
+      const { run_id, transcript_path } = await startRun({
+        skipLlm,
+        skipGpu,
+        saveTranscript,
+        useBrightDate,
+        ...laneOpts,
+      })
+      setRunUseBrightDate(useBrightDate)
       setRunId(run_id)
       if (transcript_path) setTranscriptPath(transcript_path)
       streamRunEvents(
@@ -250,6 +298,11 @@ export default function App() {
   }
 
   const applyEvent = (ev: TestSuiteEvent) => {
+    if (ev.type === 'run_started') {
+      if (ev.captureMode) setCaptureMode(ev.captureMode)
+      if (ev.captureNote) setCaptureNote(ev.captureNote)
+      if (ev.useBrightDate != null) setRunUseBrightDate(ev.useBrightDate)
+    }
     if (ev.type === 'progress') {
       setProgress((p) => ({
         index: ev.stepIndex || p.index,
@@ -299,6 +352,12 @@ export default function App() {
                 seconds: ev.seconds,
                 gpuAvg: ev.gpuAvg ?? s.liveGpuAvg,
                 gpuPeak: ev.gpuPeak ?? s.liveGpuPeak,
+                memAvg: ev.memAvg,
+                memPeak: ev.memPeak,
+                memPressurePeak: ev.memPressurePeak,
+                swapPeakGb: ev.swapPeakGb,
+                startBd: ev.startBd ?? s.startBd,
+                endBd: ev.endBd ?? s.endBd,
                 liveGpuAvg: undefined,
                 liveGpuPeak: undefined,
               }
@@ -363,18 +422,26 @@ export default function App() {
   }
 
   return (
-    <Box sx={{ p: 2, maxWidth: 960, mx: 'auto' }}>
+    <Box sx={{ p: 2, width: '100%', boxSizing: 'border-box' }}>
       <Typography variant="h5" fontWeight={700} gutterBottom>
         BrightVision Test Lab
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Engine self-test from repo root. Orchestrator on :{orchPort} — LAN proxy stays on :8742;
-        main app chat on :8741.
+        main app chat on :8741. Default bar matches <code>yarn test:everything</code> (compact spec,
+        1800s wall). Use <strong>Optional diagnostic lanes</strong> below for router, cloud API,
+        EARS verify, scenario matrix, or strict phased pytest.
       </Typography>
       {repoRoot && (
         <Typography variant="caption" display="block" sx={{ mb: 1, wordBreak: 'break-all' }}>
           {repoRoot}
         </Typography>
+      )}
+      {captureMode && (
+        <Alert severity={captureMode === 'bgpucap' ? 'info' : 'warning'} sx={{ mb: 2 }}>
+          Capture: <strong>{captureMode}</strong>
+          {captureNote ? ` — ${captureNote}` : ''}
+        </Alert>
       )}
       {coreWarning && (
         <Alert severity="warning" sx={{ mb: 2 }}>
@@ -432,7 +499,10 @@ export default function App() {
         onChange={handleNtfyPrefsChange}
         onMessage={(message) => setNtfyMsg(message)}
       />
-      <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+        Run options
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ mb: 1 }} flexWrap="wrap">
         <FormControlLabel
           control={<Checkbox checked={skipLlm} onChange={(_, v) => setSkipLlm(v)} disabled={running} />}
           label="Skip LLM tiers"
@@ -451,6 +521,114 @@ export default function App() {
           }
           label="Save full transcript to disk"
         />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={useBrightDate}
+              onChange={(_, v) => setUseBrightDate(v)}
+              disabled={running || !btimeOnPath}
+            />
+          }
+          label="BrightDate timings (BD / md ETC)"
+        />
+      </Stack>
+      {!btimeOnPath && !running && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          BrightDate timings need <code>btime</code> on PATH (
+          <a href="https://brightdate.org" target="_blank" rel="noopener noreferrer">
+            brightdate.org
+          </a>
+          ).
+        </Typography>
+      )}
+      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+        Optional diagnostic lanes
+      </Typography>
+      <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={specGenPhased}
+              onChange={(_, v) => setSpecGenPhased(v)}
+              disabled={running || skipLlm}
+            />
+          }
+          label="Phased spec-gen LLM (slow)"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={llmRouter}
+              onChange={(_, v) => setLlmRouter(v)}
+              disabled={running || skipLlm || !routerLaneReady}
+            />
+          }
+          label="Model router e2e (slow)"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={cloudLlm}
+              onChange={(_, v) => setCloudLlm(v)}
+              disabled={running || !cloudLlmConfigured}
+            />
+          }
+          label="Cloud LLM smoke"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={verifyEars}
+              onChange={(_, v) => setVerifyEars(v)}
+              disabled={running}
+            />
+          }
+          label="verify:ears"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={shippedScenarios}
+              onChange={(_, v) => setShippedScenarios(v)}
+              disabled={running}
+            />
+          }
+          label="Shipped scenario matrix"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={strictPhasedPytest}
+              onChange={(_, v) => setStrictPhasedPytest(v)}
+              disabled={running || skipLlm}
+            />
+          }
+          label="Strict phased pytest (fail on EARS skip)"
+        />
+      </Stack>
+      {cloudLlm && !cloudLlmConfigured && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Cloud LLM lane is checked but <code>cloud-llm.env</code> is missing or has no API key. Copy{' '}
+          <code>cloud-llm.env.example</code> → <code>cloud-llm.env</code> before Run.
+        </Alert>
+      )}
+      {!cloudLlmConfigured && !running && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+          Cloud LLM smoke: add <code>cloud-llm.env</code> at repo root to enable the checkbox.
+        </Typography>
+      )}
+      {!routerLaneReady && !running && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+          Model router e2e: set <code>FAST_MODEL</code> and <code>HEAVY_MODEL</code> in{' '}
+          <code>local-llm.env</code> (distinct tags). {routerLaneDetail}
+        </Typography>
+      )}
+      {routerLaneReady && routerLaneDetail && !running && (
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+          Router lane: {routerLaneDetail}
+        </Typography>
+      )}
+      <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
         <Button
           variant="contained"
           onClick={handleRun}
@@ -480,12 +658,14 @@ export default function App() {
             <Typography variant="caption">
               Step {progress.index}/{progress.total}
             </Typography>
-            <Typography variant="caption" component="div" sx={{ textAlign: 'right' }}>
-              {fmtDuration(progress.elapsed)}
+            <Typography variant="caption" component="div" sx={{ textAlign: 'right', maxWidth: '70%', lineHeight: 1.4 }}>
+              {fmtDuration(progress.elapsed, runUseBrightDate)}
               {progress.stepElapsed > 0
-                ? ` (step ${fmtDuration(progress.stepElapsed)})`
+                ? ` (step ${fmtDuration(progress.stepElapsed, runUseBrightDate)})`
                 : ''}
-              {etaTotal > 0 ? ` / suite ETA ~${fmtDuration(etaTotal)}` : ''}
+              {etaTotal > 0
+                ? ` / suite ETA ~${fmtDuration(etaTotal, runUseBrightDate)}`
+                : ''}
               {activeStepTiming?.stepLeft != null && ` · step ~${activeStepTiming.stepLeft}`}
               {activeStepTiming?.stepEtc != null && ` · step ETC ${activeStepTiming.stepEtc}`}
               {activeStepTiming?.runLeft != null && ` · run ~${activeStepTiming.runLeft}`}
@@ -506,20 +686,39 @@ export default function App() {
           running,
           runningPlanIndex,
           runningStepElapsed: progress.stepElapsed,
+          useBrightDate: runUseBrightDate,
         })
         return (
         <Accordion
           key={step.id}
           defaultExpanded={step.status === 'running' || step.status === 'fail'}
           disableGutters
-          sx={{ mb: 0.5, '&:before': { display: 'none' } }}
+          sx={{
+            mb: 0.5,
+            '&:before': { display: 'none' },
+            '& .MuiAccordionSummary-content': { my: 1, overflow: 'visible' },
+          }}
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ width: '100%', pr: 1 }}>
-              {statusIcon(step.status)}
-              <Typography variant="body2" sx={{ flex: 1 }}>
-                {step.label}
-              </Typography>
+            <Stack spacing={0.75} sx={{ width: '100%', pr: 1, minWidth: 0 }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+                {statusIcon(step.status)}
+                <Typography variant="body2" sx={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+                  {step.label}
+                </Typography>
+              </Stack>
+              {(timing.eta ||
+                timing.etc ||
+                timing.runEtc ||
+                step.seconds != null ||
+                formatBdBounds(step.startBd, step.endBd) ||
+                step.gpuAvg != null ||
+                step.gpuPeak != null ||
+                step.liveGpuPeak != null ||
+                step.memPeak != null ||
+                (step.memPressurePeak != null && step.memPressurePeak >= 1) ||
+                (step.swapPeakGb != null && step.swapPeakGb > 0.01)) && (
+                <Stack direction="row" alignItems="center" spacing={0.75} useFlexGap flexWrap="wrap">
               {timing.eta && (
                 <Chip size="small" label={timing.eta} variant="outlined" color="info" />
               )}
@@ -530,7 +729,23 @@ export default function App() {
                 <Chip size="small" label={timing.runEtc} variant="outlined" />
               )}
               {step.seconds != null && (
-                <Chip size="small" label={fmtDuration(step.seconds)} variant="outlined" />
+                <Chip
+                  size="small"
+                  label={
+                    runUseBrightDate
+                      ? fmtDurationBrightDate(step.seconds)
+                      : fmtDuration(step.seconds)
+                  }
+                  variant="outlined"
+                />
+              )}
+              {formatBdBounds(step.startBd, step.endBd) && (
+                <Chip
+                  size="small"
+                  label={formatBdBounds(step.startBd, step.endBd)!}
+                  variant="outlined"
+                  title="Wall interval from btime / bgpucap (BrightDate)"
+                />
               )}
               {(step.gpuAvg != null ||
                 step.gpuPeak != null ||
@@ -545,6 +760,32 @@ export default function App() {
                   }
                   variant="outlined"
                 />
+              )}
+              {step.memPeak != null && (
+                <Chip
+                  size="small"
+                  label={`RAM ${Math.round(step.memAvg ?? 0)}% / ${Math.round(step.memPeak)}%`}
+                  color={step.memPeak >= 85 ? 'warning' : 'default'}
+                  variant="outlined"
+                />
+              )}
+              {step.memPressurePeak != null && step.memPressurePeak >= 1 && (
+                <Chip
+                  size="small"
+                  label={`pressure ${step.memPressurePeak.toFixed(0)}`}
+                  color={step.memPressurePeak >= 2 ? 'error' : 'warning'}
+                  variant="outlined"
+                />
+              )}
+              {step.swapPeakGb != null && step.swapPeakGb > 0.01 && (
+                <Chip
+                  size="small"
+                  label={`swap ${step.swapPeakGb}G`}
+                  color="warning"
+                  variant="outlined"
+                />
+              )}
+                </Stack>
               )}
             </Stack>
           </AccordionSummary>

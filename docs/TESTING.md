@@ -18,7 +18,7 @@ All checks run on **your machine**. Nothing here requires GitHub Actions — wor
 | Full dogfood gate only | `yarn dogfood:gate` | release tier; optional `DOGFOOD_LLM=1` |
 | Scenario matrix (all registered SSE outputs) | `yarn test:e2e shipped-scenarios` | ~2–3 min |
 | Fixture-pack structure preflight | `yarn test:e2e:fixtures` | ~1s |
-| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` (`bright_vision_core.test_suite` CLI) | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures`. Timing history in `.bright-vision/test-everything-timing.json`; optional [`gpucap`](https://github.com/Digital-Defiance/gpucap) per step (`SKIP_GPU=1` to skip). |
+| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` (`bright_vision_core.test_suite` CLI) | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures`. **Optional lanes** (Test Lab checkboxes / CLI): `--llm-router`, `--cloud-llm`, `--verify-ears`, `--shipped-scenarios`, `--strict-phased-pytest`. Timing history in `.bright-vision/test-everything-timing.json`; on Apple Silicon, [`bgpucap` 0.1.4+](https://github.com/Digital-Defiance/gpucap) via Homebrew or `yarn install:bgpucap` (`SKIP_GPU=1` to skip; non-AS uses **btime-only** dumb mode). See [BRIGHT_UTILS.md](./BRIGHT_UTILS.md). |
 | **Test Lab UI** (desktop) | `yarn test-lab:dev` | Separate Tauri app (`apps/test-lab`): progress bar, GitHub-style step accordions, GPU chips; orchestrator default **:8743** (`BV_TEST_ORCHESTRATOR_PORT`; LAN proxy stays :8742). See [apps/test-lab/README.md](../apps/test-lab/README.md). |
 | Full transcript on disk | `yarn test:everything -- --logged` or Test Lab **Save full transcript** | `.bright-vision/test-suite-runs/run-*.log` (or `TEST_EVERYTHING_LOG` / `test-everything-log.txt`) |
 | Legacy shell wrapper | `yarn test:everything:shell` / `yarn test:everything:logged` | Same Python CLI; `:logged` passes `--logged` |
@@ -118,7 +118,8 @@ yarn test:e2e
 | `tasks-generate-spec.spec.ts` | Three-layer generate/refine + `ears_blocked` snackbar (mock) |
 | `tasks-spec-wizard.spec.ts` | Phased wizard: tab gates, nudges, per-tab generate labels, `section` POST body, All layers |
 | `tasks-ears.spec.ts` | Validate EARS (mock lint) |
-| `spec-generate-llm.spec.ts` | Real Ollama phased wizard (req → design → tasks) + legacy all-layers (`E2E_LLM=1`, `@spec-gen`) |
+| `spec-generate-all-llm.spec.ts` | Real Ollama all-layers generate-spec (default LLM lane) |
+| `spec-generate-phased-llm.spec.ts` | Real Ollama phased wizard (opt-in: Test Lab checkbox / `E2E_SPEC_GEN_PHASED=1`) |
 | `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
 | `path-completion.spec.ts` | `/add` Tab (desktop vs web) |
@@ -161,7 +162,7 @@ Exercises a **live** `bright-vision-core` on `:8741` and your **Ollama** model (
 1. [Ollama](https://ollama.com/) running (`ollama serve` or the desktop app).
 2. Ollama running (`ollama serve`). LLM tests default to `llama3.2:3b` and run **`ollama pull`** automatically if the model is missing (disable with `E2E_OLLAMA_AUTO_PULL=0`).
 3. Python env: `source activate.sh` from **one** repo path (installs cecli, `bright_vision_core`, uvicorn, pytest). If the repo is reachable as both `/Users/.../BrightVision` and `/Volumes/.../BrightVision`, use the same path for the shell and Playwright (`cd "$(pwd -P)"`).
-4. Port **8741** free (or stop a leftover server: `kill $(lsof -ti tcp:8741)`).
+4. Port **8741** free (or stop a leftover server: `sh scripts/free-core-port.sh`). Use **listeners only** — bare `lsof -ti tcp:8741` can include the Vite preview’s proxy connections and kill **:4173** during `restartRealCoreServer()`.
 
 **Run**
 
@@ -172,6 +173,8 @@ yarn test:llm:core
 # Full UI path (skips @router — two long chat turns, often flaky on one GPU)
 yarn test:e2e:llm
 
+LLM specs run in the order in `e2e/llm-suite-order.ts` (sequential Playwright `projects`). Default lane ends with **`spec-generate-all-llm.spec.ts`** only. **Phased spec-gen LLM** checkbox (or `E2E_SPEC_GEN_PHASED=1`) adds **`spec-generate-phased-llm.spec.ts`** before all-layers. Both use **`BV_COMPACT_SPEC_GEN=1`** and **`LLM_SPEC_GEN_TIMEOUT_S=1800`** on `llama3.2:3b`. Mocked phased UX: `tasks-spec-wizard.spec.ts`. Use `BV_SKIP_SPEC_GEN_E2E=1` to skip both spec files.
+
 # Opt-in router lane (fast + heavy model turns)
 yarn test:e2e:llm:router
 
@@ -180,6 +183,8 @@ E2E_SUPERPROJECT_LLM=1 yarn test:e2e:llm:superproject
 
 # All of the above + dogfood:check + release + fixtures (100% confidence bar)
 source activate.sh && yarn test:everything
+
+# Test Lab GUI (`yarn test-lab:dev`) runs the same manifest and `llm_core_step_env` as CLI; see `apps/test-lab/README.md`.
 
 # Same as test:e2e:llm with explicit default model tag
 yarn test:e2e:llm:single
@@ -201,13 +206,22 @@ Optional env:
 | `E2E_MODEL_ROUTER` | `1` required for `yarn test:e2e:llm:router` (`router-llm.spec.ts`) |
 | `E2E_FAST_MODEL` | Router fast tier model tag/id (falls back to `FAST_MODEL`) |
 | `E2E_HEAVY_MODEL` | Router heavy tier model tag/id (falls back to `HEAVY_MODEL`) |
+| Router lane (Test Lab / suite) | Requires **both** `FAST_MODEL` and `HEAVY_MODEL` in `local-llm.env` (distinct tags). Using only `llama3.2:3b` for both is rejected — not a real router test. `router-llm.spec.ts` asserts chip + reply, then allows **post-answer settle** (60s grace) when SSE `done` lags after the answer is visible. |
+| `BV_SUITE_STRICT_PHASED_PYTEST` | `1` on `llm:core`: phased pytest fails on EARS gate instead of skip. With `BV_COMPACT_SPEC_GEN=1`, deterministic repair adds SHALL to any parsed EARS clause missing normative text (bullets, WHEN/IF/WHERE/WHILE prose) before the gate runs. |
+| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar) |
+| `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |
+| `BV_SUITE_USE_ENV_TIMEOUTS` | `1`: keep your shell `LLM_*_TIMEOUT_S` values instead of suite defaults |
+| `BV_SUITE_USE_BRIGHTDATE` | `1`: step/run durations and ETC in BrightDate (BD/md); `btime --no-color`. BD wall bounds (`start_bd`/`end_bd`) are always parsed from `btime` and saved in timing history; Test Lab shows a BD interval chip when present |
 | `E2E_OLLAMA_AUTO_PULL` | `1` (default): run `ollama pull` when the model is missing; `0` to fail fast |
 | `E2E_OLLAMA_HOST` | Ollama base URL (default `http://127.0.0.1:11434`) |
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
-| `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Test Lab suite defaults `1200`; `test:llm:core` sets `1200` in `package.json`. |
-| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; `test:llm:core` / Test Lab suite default `1200`; CLI `900`) |
+| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. |
+| `E2E_SPEC_GEN_PHASED` | `1` runs phased wizard LLM e2e (3 jobs). Also: `yarn test:e2e:llm:phased`, Test Lab **Phased spec-gen LLM**, `yarn test:everything --spec-gen-phased`. Must appear in `suite env:` on the `e2e:llm` step (export alone is not enough if the orchestrator was started without it). |
+| `BV_SKIP_SPEC_GEN_E2E` | `1` omits both `spec-generate-*-llm.spec.ts` from `yarn test:e2e:llm` (faster iteration; full bar still needs all-layers) |
+| `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Defaults **`1800`** in `yarn test:llm:core`, `yarn test:e2e:llm`, Test Lab `llm:core` / `e2e:llm`, and Vision API spawn (`e2e/helpers/realCoreServer.ts`). |
+| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; same `1200` defaults as above; CLI `900` when unset) |
 | `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
 | `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
 | `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |

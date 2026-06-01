@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
 import { captureSessionIdOnUiStart, fetchSessionTranscript } from './helpers/llmApi'
 import { assertOllamaForLlmE2e, isLlmE2eEnabled } from './helpers/llmEnv'
+import { restartRealCoreServer } from './helpers/realCoreServer'
 import { ensureHelloLlmE2eWorkspace } from './helpers/fixtureWorkspaces'
 import { openLlmChat, primeLlmE2eApp } from './helpers/llmSession'
 import { settleTurnAfterReply } from './helpers/llmTurn'
@@ -14,6 +15,10 @@ test.describe('LLM session transcript @transcript', () => {
   test.beforeAll(async () => {
     await assertOllamaForLlmE2e()
     ensureHelloLlmE2eWorkspace()
+  })
+
+  test.beforeEach(async () => {
+    await restartRealCoreServer()
   })
 
   test('GET /transcript includes user and assistant after a turn', async ({ page }) => {
