@@ -25,6 +25,11 @@ _HEADLESS_ATTRS = (
     "disable_scraping",
     "use_enhanced_map",
     "agent_config",
+    "auto_save",
+    "auto_load",
+    "auto_save_session_name",
+    "session_encrypt",
+    "session_key_file",
 )
 
 

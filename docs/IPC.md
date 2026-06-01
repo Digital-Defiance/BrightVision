@@ -29,7 +29,7 @@ Add images or PDFs to the chat without sending a message:
 
 ```http
 POST /sessions/{session_id}/files
-{"paths": [".aider-vision/attachments/screenshot.png"]}
+{"paths": [".cecli/attachments/screenshot.png"]}
 ```
 
 Browser upload (base64 data URLs accepted):
@@ -41,11 +41,11 @@ POST /sessions/{session_id}/files/upload
 
 Response includes updated `files_in_chat` and `events` (tool_output / errors).
 
-> **Note:** Workspace metadata paths still use `.aider-vision/` under the project root (todos, specs, attachments). Product branding is BrightVision; on-disk layout is unchanged until a dedicated migration.
+> **Note:** Project-local state lives under **`.cecli/`**: Cecli uses `agents/`, `sessions/`, `logs/`, …; BrightVision adds `todos.json`, `specs/`, `attachments/`. Legacy **`.aider-vision/`**, **`.bright-vision/`**, and **`.brightvision/`** are merged into `.cecli/` on first access.
 
 ### Workspace tasks (spec-driven)
 
-Todos live in `.aider-vision/todos.json` under the session workspace.
+Todos live in `.cecli/todos.json` under the session workspace.
 
 ```http
 GET    /sessions/{session_id}/todos
@@ -84,7 +84,7 @@ GET    /workspaces/todos/export?workspace=…
 POST   /workspaces/todos/import   {"workspace", "markdown", "merge": false}
 POST   /workspaces/todos/{id}/generate-spec?workspace=…&session_id=…   same body as session route
 POST   /workspaces/todos/{id}/move?workspace=…   {"direction": "up"|"down"}
-POST   /workspaces/todos/{id}/sync-spec-files?workspace=…   import specs from `.aider-vision/specs/{id}/`
+POST   /workspaces/todos/{id}/sync-spec-files?workspace=…   import specs from `.cecli/specs/{id}/`
 ```
 
 `auto_completed` is true when a PATCH checklist update completes every item (task marked done).

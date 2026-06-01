@@ -121,6 +121,30 @@ class CreateSessionRequest(BaseModel):
     auto_commits: bool = True
     dirty_commits: bool = True
     dry_run: bool = False
+    session_encrypt: bool = Field(
+        False,
+        description="Encrypt saved sessions (requires CECLI_SESSION_KEY from OS keychain on desktop)",
+    )
+    session_key_file: str | None = Field(
+        default=None,
+        description="Optional path to a session encryption key file",
+    )
+    auto_save: bool = Field(
+        False,
+        description="Auto-save session JSON to .cecli/sessions/ (cecli --auto-save)",
+    )
+    auto_load: bool = Field(
+        False,
+        description="Load auto-save session on session create (cecli --auto-load)",
+    )
+    auto_save_session_name: str = Field(
+        "brightvision",
+        description="Basename for auto-save/load under .cecli/sessions/",
+    )
+    chat_history_file: bool = Field(
+        True,
+        description="Append turns to .cecli/chat.history (cecli chat history file)",
+    )
 
 
 class ConfirmRequest(BaseModel):
@@ -357,6 +381,12 @@ def create_session(body: CreateSessionRequest):
             dirty_commits=body.dirty_commits,
             dry_run=body.dry_run,
             model_router=router_payload,
+            session_encrypt=body.session_encrypt,
+            session_key_file=body.session_key_file,
+            auto_save=body.auto_save,
+            auto_load=body.auto_load,
+            auto_save_session_name=body.auto_save_session_name,
+            chat_history_file=body.chat_history_file,
         )
     except FileNotFoundError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
@@ -667,7 +697,7 @@ def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
 
 @app.post("/workspaces/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)
 def sync_workspace_spec_files(workspace: str, todo_id: str):
-    """Import three-layer markdown from ``.aider-vision/specs/{id}/`` into todos.json."""
+    """Import three-layer markdown from ``.brightvision/specs/{id}/`` into todos.json."""
     api = _todos_for_workspace(workspace)
     try:
         item = api.import_spec_files(todo_id)
@@ -798,6 +828,14 @@ def upload_session_files(session_id: str, body: UploadFilesRequest):
         files_in_chat=session.coder.get_inchat_relative_files(),
         events=events,
     )
+
+
+@app.post("/sessions/{session_id}/interrupt")
+def interrupt_session_turn(session_id: str):
+    """Stop an in-flight turn (UI Stop); complements SSE disconnect."""
+    session = _get_session(session_id)
+    session.interrupt_turn()
+    return {"ok": True}
 
 
 @app.post("/sessions/{session_id}/messages")

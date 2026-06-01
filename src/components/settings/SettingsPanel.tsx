@@ -39,6 +39,7 @@ import { ModelRouterSection } from './ModelRouterSection'
 import type { ModelRouterPrefs } from '../../theme/modelRouterPrefs'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 import { AppVersionSection } from './AppVersionSection'
+import { SessionPersistenceSection } from './SessionPersistenceSection'
 import { AgentsSection } from './AgentsSection'
 import type { AppVersions } from '../../hooks/useAppVersions'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
@@ -413,6 +414,8 @@ export function SettingsPanel({
         prefs={resourceOverlayPrefs}
         onChange={onResourceOverlayPrefsChange}
       />
+
+      <SessionPersistenceSection config={config} onChange={onChange} />
 
       <AppVersionSection versions={appVersions} />
 

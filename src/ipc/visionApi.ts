@@ -93,6 +93,9 @@ export function createVisionApiSession(
             detail: cfg.coreEnginePath,
             progress: 0.2,
           })
+          if (cfg.sessionEncrypt) {
+            await invokeWithTimeout<string>('ensure_session_encryption_key', {})
+          }
           url = await invokeWithTimeout<string>('start_core_api', {
             workingDir: cfg.workingDir,
             coreEnginePath: cfg.coreEnginePath,
@@ -100,6 +103,7 @@ export function createVisionApiSession(
             extraParams: cfg.extraParams,
             ollamaApiBase: cfg.ollamaApiBase,
             port: 8741,
+            sessionEncrypt: cfg.sessionEncrypt,
           })
           desktopStartedServe = true
         }
@@ -122,6 +126,11 @@ export function createVisionApiSession(
           files: cfg.contextFiles?.length ? cfg.contextFiles : undefined,
           auto_yes: false,
           auto_commits: !cfg.promptBeforeCommit,
+          session_encrypt: cfg.sessionEncrypt,
+          auto_save: cfg.autoSaveSession,
+          auto_load: cfg.autoLoadSession,
+          auto_save_session_name: cfg.autoSaveSessionName,
+          chat_history_file: cfg.chatHistoryFile,
         })
         sessionId = session.session_id
         sessionInfo = session
@@ -217,6 +226,11 @@ export function createVisionApiSession(
     cancelSend() {
       sendAbort?.abort()
       sendAbort = null
+      const sid = sessionId
+      const c = client
+      if (sid && c) {
+        void c.interruptTurn(sid).catch(() => {})
+      }
     },
 
     async submitConfirm(confirmId, answer) {

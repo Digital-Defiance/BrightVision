@@ -210,6 +210,21 @@ function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): Vi
   if (typeof merged.manageLocalLlm !== 'boolean') {
     merged.manageLocalLlm = true
   }
+  if (typeof merged.sessionEncrypt !== 'boolean') {
+    merged.sessionEncrypt = false
+  }
+  if (typeof merged.autoSaveSession !== 'boolean') {
+    merged.autoSaveSession = false
+  }
+  if (typeof merged.autoLoadSession !== 'boolean') {
+    merged.autoLoadSession = false
+  }
+  if (typeof merged.chatHistoryFile !== 'boolean') {
+    merged.chatHistoryFile = true
+  }
+  if (typeof merged.autoSaveSessionName !== 'string' || !merged.autoSaveSessionName.trim()) {
+    merged.autoSaveSessionName = 'brightvision'
+  }
   if (
     merged.coreEnginePath === 'aider-vision-core' ||
     merged.coreEnginePath === 'bright-vision-core' ||

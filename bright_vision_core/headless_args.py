@@ -31,4 +31,9 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         cost_limit=float("inf"),
         disable_scraping=True,
         use_enhanced_map=False,
+        auto_save=False,
+        auto_load=False,
+        auto_save_session_name="auto-save",
+        session_encrypt=False,
+        session_key_file=None,
     )

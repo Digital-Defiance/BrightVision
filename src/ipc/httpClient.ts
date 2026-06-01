@@ -133,6 +133,11 @@ export class CoreHttpClient {
     auto_commits?: boolean
     dirty_commits?: boolean
     dry_run?: boolean
+    session_encrypt?: boolean
+    auto_save?: boolean
+    auto_load?: boolean
+    auto_save_session_name?: string
+    chat_history_file?: boolean
   }): Promise<CoreSessionInfo> {
     const res = await fetch(`${this.baseUrl}/sessions`, {
       method: 'POST',
@@ -525,6 +530,17 @@ export class CoreHttpClient {
     })
     if (!res.ok) throw new Error(`active todo: ${res.status} ${await res.text()}`)
     return normalizeStore(await res.json())
+  }
+
+  async interruptTurn(sessionId: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/interrupt`, {
+      method: 'POST',
+      headers: this.headers(false),
+    })
+    if (!res.ok) {
+      const detail = await res.text()
+      throw new Error(`interrupt turn: ${res.status} ${detail}`)
+    }
   }
 
   async *sendMessage(

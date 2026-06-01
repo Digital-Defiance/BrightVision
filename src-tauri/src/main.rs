@@ -5,6 +5,7 @@ mod workspace_editor;
 mod local_llm_config;
 mod local_llm_runtime;
 mod resource_monitor;
+mod session_key;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -252,6 +253,7 @@ async fn start_core_api(
     extra_params: String,
     ollama_api_base: String,
     port: u16,
+    session_encrypt: Option<bool>,
 ) -> Result<String, String> {
     let mut guard = state.serve_child.lock().await;
     if let Some(ref mut child) = *guard {
@@ -296,6 +298,10 @@ async fn start_core_api(
     }
     if !ollama_api_base.trim().is_empty() {
         cmd.env("OLLAMA_API_BASE", ollama_api_base.trim());
+    }
+    if session_encrypt.unwrap_or(false) {
+        let key_b64 = session_key::ensure_session_encryption_key()?;
+        cmd.env("CECLI_SESSION_KEY", key_b64);
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -726,6 +732,9 @@ fn estimate_paths_context_chars(working_dir: String, paths: Vec<String>) -> Resu
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "pdf"];
 
+/// Cecli project tree; BrightVision uses ``todos.json``, ``specs/``, ``attachments/`` subtrees.
+const WORKSPACE_META_DIR: &str = ".cecli";
+
 fn is_image_ext(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -735,7 +744,7 @@ fn is_image_ext(path: &Path) -> bool {
 
 fn workspace_todos_path(working_dir: &str) -> PathBuf {
     normalize_project_workspace(working_dir)
-        .join(".aider-vision")
+        .join(WORKSPACE_META_DIR)
         .join("todos.json")
 }
 
@@ -896,12 +905,12 @@ fn write_workspace_todos(working_dir: String, store: TodoStoreJson) -> Result<()
 
 fn todo_specs_dir(working_dir: &str, todo_id: &str) -> PathBuf {
     normalize_project_workspace(working_dir)
-        .join(".aider-vision")
+        .join(WORKSPACE_META_DIR)
         .join("specs")
         .join(todo_id)
 }
 
-/// Load requirements/design/tasks markdown from ``.aider-vision/specs/{id}/`` into todos.json.
+/// Load requirements/design/tasks markdown from ``.brightvision/specs/{id}/`` into todos.json.
 #[tauri::command]
 fn import_todo_spec_files(working_dir: String, todo_id: String) -> Result<TodoItemJson, String> {
     let folder = todo_specs_dir(&working_dir, &todo_id);
@@ -943,7 +952,7 @@ fn import_todo_spec_files(working_dir: String, todo_id: String) -> Result<TodoIt
     Ok(out)
 }
 
-/// Pick image/PDF files and copy into ``.aider-vision/attachments/``; returns workspace-relative paths.
+/// Pick image/PDF files and copy into ``.brightvision/attachments/``; returns workspace-relative paths.
 #[tauri::command]
 async fn pick_and_stage_chat_images(
     app: tauri::AppHandle,
@@ -965,7 +974,7 @@ async fn pick_and_stage_chat_images(
         return Err(format!("Not a directory: {}", workspace.display()));
     }
 
-    let attach_dir = workspace.join(".aider-vision").join("attachments");
+    let attach_dir = workspace.join(WORKSPACE_META_DIR).join("attachments");
     std::fs::create_dir_all(&attach_dir).map_err(|e| e.to_string())?;
 
     let mut rel_paths: Vec<String> = Vec::new();
@@ -1135,6 +1144,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             start_core_api,
+            session_key::ensure_session_encryption_key,
+            session_key::clear_session_encryption_key,
             stop_core_api,
             drain_core_api_logs,
             default_workspace,

@@ -77,6 +77,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | 3 | **Done** | Stop in-flight turn (`cancelSend` + AbortSignal on fetch) |
 | 4 | **Done** | Queue messages while busy (`useVisionSession` queue + Queue button in `ChatPanel`) |
 | 12 | **Done** | `/add` / `/drop` path completion via Tauri `complete_workspace_path` + Tab in chat |
+| **33** | **Partial** | **Cecli session persistence** — `--auto-save` / `--auto-load`, `.cecli/chat.history`, optional AES-256-GCM (`cecli/session_crypto.py`, `CECLI_SESSION_KEY`); BrightVision Settings + keychain (`session_key.rs`). **Tests:** BrightVision `tests/core/test_session_*`, `test_headless_persistence.py`, `test_http_session_persistence.py`, `test_sessions.py`; cecli `tests/basic/test_session_crypto.py`, `test_session_args.py`, `test_sessions_manager.py`; e2e `settings-config.spec.ts`. **Open:** upstream cecli PR; hydrate React chat after `/load-session`; encrypt `chat.history`. |
 | **32** | **Partial** | **Suggested files tray** — parse assistant **Answer** for repo-relative paths (`-` / `*` / `1.` lists + backticks); tray above chat input with **Add all**, **Queue `/add`**, dismiss; uses `addFiles` + message queue (#4). Clearer copy when adds fail (ignore vs wrong workspace): `addFileMessages.ts`, cecli `add.py`. **Open:** e2e polish, tree picker tie-in (#28). See [§ #32 design](#32-suggested-files--queued-add) |
 
 ## Approvals, workspace & engine
@@ -394,7 +395,7 @@ Prefer **permissive licenses** and **small bundle** ([AGENTS.md](../AGENTS.md)).
 2. **Chat** — **Agents** chip row (`ChatAgentBar`): `/agent`, `/invoke-agent`, `/spawn-agent`, `/reap-agent`; registered sub-agent chips (click → invoke, double-click → spawn).
 3. **Settings → Agents & sub-agents** — docs links + loaded registry when session is live.
 4. **Commands** — agent slash commands merged into palette with fallback summaries.
-5. **Headless guardrails** — `VISION_SLASH_PREPROC_TIMEOUT_S` (default 600s) for `/agent` preproc; `interrupt_turn` on SSE disconnect; default `agent_config` JSON (`command_timeout` 45s).
+5. **Headless guardrails** — `VISION_SLASH_PREPROC_TIMEOUT_S` (default 300s) for `/agent` preproc; `POST /sessions/{id}/interrupt` + SSE disconnect → `interrupt_turn`; default `agent_config` JSON (`command_timeout` 45s).
 
 **Open / v2:**
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import base64
 import os
-import shlex
 import threading
 import time
 from collections.abc import Callable
@@ -16,11 +15,14 @@ from typing import Any, Iterator, TypeVar
 _T = TypeVar("_T")
 
 # Wall-clock cap for slash/preproc (e.g. `/agent` on a local model looping on tools).
-SLASH_PREPROC_TIMEOUT_S = float(os.environ.get("VISION_SLASH_PREPROC_TIMEOUT_S", "600"))
+SLASH_PREPROC_TIMEOUT_S = float(os.environ.get("VISION_SLASH_PREPROC_TIMEOUT_S", "300"))
 
 from cecli import models
 from cecli.coders import Coder
-from cecli.commands import Commands
+from cecli.commands import Commands, SwitchCoderSignal
+from cecli.commands.add import AddCommand
+from cecli.commands.utils.helpers import quote_filename
+from cecli.utils import is_image_file
 
 from bright_vision_core.async_bridge import (
     HEARTBEAT_PULSE,
@@ -33,8 +35,10 @@ from bright_vision_core.event_io import EventIO
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder
 from bright_vision_core.git_workspace import create_git_workspace
 from bright_vision_core.headless_args import default_headless_args
+from bright_vision_core.headless_persistence import apply_persistence_to_args
 from bright_vision_core.todo_spec_generate import build_generate_message, parse_generated_layers
 from bright_vision_core.slash_helpers import is_switch_coder_signal, run_slash_command_sync
+from bright_vision_core.workspace_paths import attachments_dir, attachments_prefix
 from bright_vision_core.model_router import (
     ModelRouterConfig,
     RouteDecision,
@@ -125,6 +129,7 @@ def _run_blocking_with_sse_pulses(
         if timeout_s is not None and time.monotonic() - started > timeout_s:
             if on_timeout:
                 on_timeout()
+            done.wait(timeout=3.0)
             raise TimeoutError(f"{message} timed out after {int(timeout_s)}s")
         pulse += 1
         emit_progress(io, label=label, message=f"{message} ({int(pulse * wait_s)}s)")
@@ -190,6 +195,12 @@ class Session:
         on_event=None,
         echo_to_console: bool = False,
         model_router: ModelRouterConfig | dict[str, Any] | None = None,
+        session_encrypt: bool = False,
+        session_key_file: str | None = None,
+        auto_save: bool = False,
+        auto_load: bool = False,
+        auto_save_session_name: str = "brightvision",
+        chat_history_file: bool | str | None = True,
     ) -> Session:
         workspace = Path(workspace_dir).resolve()
         if not workspace.is_dir():
@@ -203,7 +214,22 @@ class Session:
         prev_cwd = os.getcwd()
         os.chdir(workspace)
         try:
-            io = EventIO(yes=yes, pretty=False, on_event=on_event, echo_to_console=echo_to_console)
+            cecli_meta = workspace / ".cecli"
+            if chat_history_file is True:
+                chat_hist_path = str(cecli_meta / "chat.history")
+            elif chat_history_file:
+                chat_hist_path = str(Path(chat_history_file).expanduser())
+            else:
+                chat_hist_path = None
+            io_kwargs: dict[str, Any] = {
+                "yes": yes,
+                "pretty": False,
+                "on_event": on_event,
+                "echo_to_console": echo_to_console,
+            }
+            if chat_hist_path:
+                io_kwargs["chat_history_file"] = chat_hist_path
+            io = EventIO(**io_kwargs)
             model_name = model or models.DEFAULT_MODEL_NAME
             router_cfg = (
                 ModelRouterConfig.from_payload(model_router)
@@ -237,6 +263,14 @@ class Session:
                 map_tokens = main_model.get_repo_map_tokens()
 
             commands = Commands(io, None)
+            headless_args = apply_persistence_to_args(
+                default_headless_args(yes=yes),
+                session_encrypt=session_encrypt,
+                session_key_file=session_key_file,
+                auto_save=auto_save,
+                auto_load=auto_load,
+                auto_save_session_name=auto_save_session_name,
+            )
             coder = run(
                 Coder.create(
                     main_model=main_model,
@@ -250,11 +284,20 @@ class Session:
                     map_tokens=map_tokens,
                     commands=commands,
                     use_git=repo is not None,
-                    args=default_headless_args(yes=yes),
+                    args=headless_args,
                 )
             )
             commands.coder = coder
             rebind_coder_loop_primitives(coder)
+            if headless_args.auto_load:
+                from cecli.sessions import SessionManager
+
+                manager = SessionManager(coder, io)
+                name = headless_args.auto_save_session_name or "auto-save"
+                try:
+                    run(manager.load_session(name, switch=False))
+                except Exception:
+                    pass
             return cls(coder, io, model_router=router_cfg if router_cfg and router_cfg.enabled else None)
         finally:
             os.chdir(prev_cwd)
@@ -391,8 +434,9 @@ class Session:
                     yield self.io.emit(
                         "error",
                         text=(
-                            f"{err}. Stop the turn or retry with a simpler prompt. "
-                            "Local agent mode may loop on tools (e.g. repeated ls)."
+                            f"{err}. Use Stop, then retry without /agent for quick edits. "
+                            "Local agent mode may loop on tools (e.g. repeated ls). "
+                            f"Cap: VISION_SLASH_PREPROC_TIMEOUT_S (default {int(SLASH_PREPROC_TIMEOUT_S)}s)."
                         ),
                     )
                     yield self.io.emit(
@@ -518,35 +562,120 @@ class Session:
                 return
             raise
 
+    def _resolve_workspace_file(self, raw: str) -> str | None:
+        """Return workspace-relative posix path for an on-disk file, or None after tool_error."""
+        workspace = Path(self.coder.root).resolve()
+        p = Path(raw.strip().lstrip("@"))
+        if not p.is_absolute():
+            p = workspace / p
+        p = p.resolve()
+        if not p.is_file():
+            self.io.tool_error(f"Not a file: {p}")
+            return None
+        try:
+            return p.relative_to(workspace).as_posix()
+        except ValueError:
+            self.io.tool_error(f"File outside workspace: {p}")
+            return None
+
+    def _add_matched_file_to_chat(self, rel: str) -> bool:
+        """Add one file like cecli ``/add`` without create-file confirms."""
+        coder = self.coder
+        io = self.io
+        abs_file_path = coder.abs_root_path(rel)
+
+        blocked = AddCommand._add_blocked_message(coder, rel)
+        if blocked:
+            io.tool_error(blocked)
+            return False
+
+        if abs_file_path in coder.abs_fnames:
+            io.tool_output(f"{rel} is already in the chat")
+            return True
+        if abs_file_path in coder.abs_read_only_stubs_fnames:
+            if coder.repo and coder.repo.path_in_repo(rel):
+                coder.abs_read_only_stubs_fnames.remove(abs_file_path)
+                coder.abs_fnames.add(abs_file_path)
+                io.tool_output(f"Moved {rel} from read-only (stub) to editable files in the chat")
+            else:
+                io.tool_error(f"Cannot add {rel} as it's not part of the repository")
+                return False
+        elif abs_file_path in coder.abs_read_only_fnames:
+            if coder.repo and coder.repo.path_in_repo(rel):
+                coder.abs_read_only_fnames.remove(abs_file_path)
+                coder.abs_fnames.add(abs_file_path)
+                io.tool_output(f"Moved {rel} from read-only to editable files in the chat")
+            else:
+                io.tool_error(f"Cannot add {rel} as it's not part of the repository")
+                return False
+        else:
+            if is_image_file(rel) and not coder.main_model.info.get("supports_vision"):
+                io.tool_error(
+                    f"Cannot add image file {rel} as the {coder.main_model.name} "
+                    "does not support images."
+                )
+                return False
+            content = io.read_text(abs_file_path)
+            if content is None:
+                io.tool_error(f"Unable to read {rel}")
+                return False
+            coder.abs_fnames.add(abs_file_path)
+            io.tool_output(f"Added {rel} to the chat")
+            coder.check_added_files()
+            if hasattr(coder, "use_enhanced_context") and coder.use_enhanced_context:
+                if hasattr(coder, "_calculate_context_block_tokens"):
+                    coder._calculate_context_block_tokens()
+        return True
+
+    def _finish_file_adds_like_slash_add(self) -> None:
+        """Match cecli ``/add`` post-success coder refresh (SwitchCoderSignal)."""
+        coder = self.coder
+        if coder.repo_map:
+            map_tokens = coder.repo_map.max_map_tokens
+            map_mul_no_files = coder.repo_map.map_mul_no_files
+        else:
+            map_tokens = 0
+            map_mul_no_files = 1
+        raise SwitchCoderSignal(
+            edit_format=coder.edit_format,
+            summarize_from_coder=False,
+            from_coder=coder,
+            map_tokens=map_tokens,
+            map_mul_no_files=map_mul_no_files,
+            show_announcements=False,
+        )
+
     def add_files(self, paths: list[str]) -> list[dict[str, Any]]:
         if not paths:
             return []
 
-        workspace = Path(self.coder.root).resolve()
+        attach_prefix = attachments_prefix()
         quoted: list[str] = []
+        direct_added = False
         for raw in paths:
-            raw = raw.strip().lstrip("@")
-            p = Path(raw)
-            if not p.is_absolute():
-                p = workspace / p
-            p = p.resolve()
-            if not p.is_file():
-                self.io.tool_error(f"Not a file: {p}")
+            rel = self._resolve_workspace_file(raw)
+            if rel is None:
                 continue
-            try:
-                rel = p.relative_to(workspace)
-                quoted.append(shlex.quote(str(rel).replace("\\", "/")))
-            except ValueError:
-                quoted.append(shlex.quote(str(p)))
+            if rel.startswith(attach_prefix):
+                if self._add_matched_file_to_chat(rel):
+                    direct_added = True
+                continue
+            quoted.append(quote_filename(rel))
 
-        if quoted:
-            run_slash_command_sync(self.coder, "add", " ".join(quoted))
+        try:
+            if quoted:
+                run_slash_command_sync(self.coder, "add", " ".join(quoted))
+            elif direct_added:
+                self._finish_file_adds_like_slash_add()
+        except BaseException as exc:
+            if not is_switch_coder_signal(exc):
+                raise
 
         return self.io.drain_events()
 
     def stage_uploaded_file(self, filename: str, content: bytes) -> Path:
         workspace = Path(self.coder.root).resolve()
-        attach_dir = workspace / ".aider-vision" / "attachments"
+        attach_dir = attachments_dir(workspace)
         attach_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = Path(filename).name or "upload"

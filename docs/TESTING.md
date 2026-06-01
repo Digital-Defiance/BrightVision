@@ -43,6 +43,24 @@ yarn test:watch
 
 Covers chat stream parsing (including optimistic user-message reconcile), commit graph layout, auto-stage policy, session lifecycle, git labels.
 
+**Cecli session persistence / encryption** (run with activated venv):
+
+```bash
+source activate.sh
+# Cecli submodule (upstream PR surface)
+python -m pytest cecli/tests/basic/test_session_crypto.py \
+  cecli/tests/basic/test_session_args.py \
+  cecli/tests/basic/test_sessions_manager.py -q
+# BrightVision integration
+python -m pytest \
+  tests/core/test_session_crypto.py \
+  tests/core/test_headless_persistence.py \
+  tests/core/test_sessions.py \
+  tests/core/test_http_session_persistence.py -q
+```
+
+Or `yarn test:bright-core` (BrightVision `tests/core/*` modules; run cecli tests before upstream PR).
+
 ## Rust (Tauri git_ops)
 
 ```bash
@@ -72,7 +90,7 @@ yarn test:e2e
 | `confirm-flow.spec.ts` | Confirm banner |
 | `chat-context.spec.ts` | Folder attach |
 | `tasks-workspace.spec.ts` | Tasks + generate-spec |
-| `settings-config.spec.ts` | Settings persistence |
+| `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
 | `path-completion.spec.ts` | `/add` Tab (desktop vs web) |
 | `file-upload.spec.ts` | Upload + native attach mock |

@@ -1,16 +1,57 @@
+import base64
 import json
 import os
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from cecli import session_crypto
 from cecli.io import InputOutput
 from cecli.sessions import SessionManager
 
 
+@pytest.fixture(autouse=True)
+def _clear_mock_coder_args(mock_coder):
+    """Reset args after tests that replace them (e.g. encrypt_coder)."""
+    yield
+    mock_coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=False,
+        session_key_file=None,
+    )
+
+
+def _prepare_workspace(mock_coder, tmp_path) -> None:
+    """Point coder at tmp_path and create session dir + files referenced in saves."""
+    root = Path(tmp_path)
+    mock_coder.abs_root_path.side_effect = lambda x: str(root / x)
+    (root / ".cecli" / "sessions").mkdir(parents=True, exist_ok=True)
+    (root / "file1.py").write_text("", encoding="utf-8")
+    (root / "file2.py").write_text("", encoding="utf-8")
+
+
 @pytest.fixture
-def mock_coder():
+def mock_coder(monkeypatch):
     """Fixture to create a mock coder with necessary attributes."""
+    conv_manager = MagicMock()
+    conv_manager.get_messages_dict.return_value = []
+    files_manager = MagicMock()
+    monkeypatch.setattr(
+        "cecli.sessions.ConversationService.get_manager",
+        lambda _coder: conv_manager,
+    )
+    monkeypatch.setattr(
+        "cecli.sessions.ConversationService.get_files",
+        lambda _coder: files_manager,
+    )
+
     coder = MagicMock()
     coder.abs_fnames = {"/path/to/file1.py"}
     coder.abs_read_only_fnames = {"/path/to/file2.py"}
@@ -32,13 +73,13 @@ def mock_coder():
     main_model.agent_model.name = "test_agent_model"
     main_model.editor_edit_format = "editor-diff"
     coder.main_model = main_model
-
-    # Mock ConversationService methods
-    mock_conversation_service = MagicMock()
-    mock_conversation_service.get_manager.return_value.get_messages_dict.return_value = []
-    coder.conversation_service = mock_conversation_service
+    monkeypatch.setattr(
+        "cecli.sessions.models.Model",
+        lambda *args, **kwargs: main_model,
+    )
 
     # Mock other necessary methods and attributes
+    coder.format_chat_chunks = MagicMock()
     coder.get_rel_fname.side_effect = lambda x: os.path.basename(x)
     coder.abs_root_path.side_effect = lambda x: f"/test/root/{x}"
     coder.local_agent_folder.side_effect = lambda x: f".cecli/{x}"
@@ -47,6 +88,17 @@ def mock_coder():
     coder.mcp_manager = None
     coder.skills_manager = None
     coder.io.read_text.return_value = "some todo content"
+    # None avoids MagicMock inventing session_encrypt=True; load needs real fields.
+    coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=False,
+        session_key_file=None,
+    )
 
     return coder
 
@@ -57,11 +109,41 @@ def session_manager(mock_coder):
     return SessionManager(mock_coder, mock_coder.io)
 
 
+@pytest.fixture
+def session_key32():
+    return os.urandom(32)
+
+
+@pytest.fixture
+def session_key_env(monkeypatch, session_key32):
+    b64 = base64.urlsafe_b64encode(session_key32).decode().rstrip("=")
+    monkeypatch.setenv(session_crypto.KEY_ENV, b64)
+    return session_key32
+
+
+@pytest.fixture
+def encrypt_coder(mock_coder, session_key_env, monkeypatch):
+    mock_coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=True,
+        session_key_file=None,
+    )
+    monkeypatch.setattr(
+        "cecli.sessions.models.Model",
+        lambda *args, **kwargs: mock_coder.main_model,
+    )
+    return mock_coder
+
+
 def test_save_session(session_manager, mock_coder, tmp_path):
     """Test saving a session."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     session_name = "test_session"
     success = session_manager.save_session(session_name, output=False)
@@ -82,9 +164,8 @@ def test_save_session(session_manager, mock_coder, tmp_path):
 @pytest.mark.asyncio
 async def test_load_session_restores_edit_format(session_manager, mock_coder, tmp_path):
     """Test that loading a session restores the edit_format."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # 1. Save a session with a specific edit_format
     mock_coder.edit_format = "agent"
@@ -97,7 +178,6 @@ async def test_load_session_restores_edit_format(session_manager, mock_coder, tm
     # 3. Load the session
     session_file = session_dir / f"{session_name}.json"
 
-    # Mock the SwitchCoderSignal to capture the edit_format it's called with
     from cecli import commands
 
     original_switch_coder_signal = commands.SwitchCoderSignal
@@ -117,16 +197,14 @@ async def test_load_session_restores_edit_format(session_manager, mock_coder, tm
         assert excinfo.value.edit_format == "agent"
 
     finally:
-        # Restore the original SwitchCoderSignal
         commands.SwitchCoderSignal = original_switch_coder_signal
 
 
 @pytest.mark.asyncio
 async def test_load_session_restores_architect_mode(session_manager, mock_coder, tmp_path):
     """Test that loading a session restores architect mode."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # 1. Save a session with architect mode
     mock_coder.edit_format = "architect"
@@ -157,16 +235,14 @@ async def test_load_session_restores_architect_mode(session_manager, mock_coder,
         # 4. Assert that the SwitchCoderSignal was raised with the correct edit_format
         assert excinfo.value.edit_format == "architect"
     finally:
-        # Restore the original SwitchCoderSignal
         commands.SwitchCoderSignal = original_switch_coder_signal
 
 
 @pytest.mark.asyncio
 async def test_load_session_restores_ask_mode(session_manager, mock_coder, tmp_path):
     """Test that loading a session restores ask mode."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # 1. Save a session with ask mode
     mock_coder.edit_format = "ask"
@@ -197,16 +273,14 @@ async def test_load_session_restores_ask_mode(session_manager, mock_coder, tmp_p
         # 4. Assert that the SwitchCoderSignal was raised with the correct edit_format
         assert excinfo.value.edit_format == "ask"
     finally:
-        # Restore the original SwitchCoderSignal
         commands.SwitchCoderSignal = original_switch_coder_signal
 
 
 @pytest.mark.asyncio
 async def test_load_session_backwards_compatible(session_manager, mock_coder, tmp_path):
     """Test that loading an old session (without edit_format) uses current mode."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # 1. Create a session file without edit_format (old format)
     session_name = "old_session"
@@ -248,16 +322,14 @@ async def test_load_session_backwards_compatible(session_manager, mock_coder, tm
         # 4. Assert that the SwitchCoderSignal was raised with the current mode (not None)
         assert excinfo.value.edit_format == "agent"
     finally:
-        # Restore the original SwitchCoderSignal
         commands.SwitchCoderSignal = original_switch_coder_signal
 
 
 @pytest.mark.asyncio
 async def test_load_session_with_agent_mode_and_mcp_skills(session_manager, mock_coder, tmp_path):
     """Test that loading a session with agent mode restores MCP servers and skills."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # 1. Save a session with agent mode and MCP servers/skills
     mock_coder.edit_format = "agent"
@@ -303,7 +375,6 @@ async def test_load_session_with_agent_mode_and_mcp_skills(session_manager, mock
         # 4. Assert that the SwitchCoderSignal was raised with the correct edit_format
         assert excinfo.value.edit_format == "agent"
     finally:
-        # Restore the original SwitchCoderSignal
         commands.SwitchCoderSignal = original_switch_coder_signal
 
 
@@ -311,9 +382,8 @@ async def test_load_session_with_agent_mode_and_mcp_skills(session_manager, mock
 @pytest.mark.parametrize("edit_format", ["diff", "architect", "ask", "agent"])
 def test_save_session_saves_edit_format(session_manager, mock_coder, tmp_path, edit_format):
     """Test that save_session correctly saves the edit_format for all modes."""
-    session_dir = tmp_path / ".cecli" / "sessions"
-    os.makedirs(session_dir, exist_ok=True)
-    mock_coder.abs_root_path.side_effect = lambda x: str(tmp_path / x)
+    _prepare_workspace(mock_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
 
     # Set the edit_format
     mock_coder.edit_format = edit_format
@@ -332,3 +402,114 @@ def test_save_session_saves_edit_format(session_manager, mock_coder, tmp_path, e
 
     # Verify edit_format was saved correctly
     assert session_data["edit_format"] == edit_format
+
+
+def test_save_session_encrypted_on_disk(encrypt_coder, session_key32, tmp_path):
+    session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
+    _prepare_workspace(encrypt_coder, tmp_path)
+    session_dir = Path(tmp_path) / ".cecli" / "sessions"
+
+    assert session_manager.save_session("secret", output=False)
+    path = session_dir / "secret.json"
+    raw = path.read_bytes()
+    assert session_crypto.is_encrypted_payload(raw)
+    data = session_crypto.decrypt_session_bytes(raw, session_key32)
+    assert data["session_name"] == "secret"
+    assert data["model"] == "test_model"
+
+
+def test_save_session_encrypt_without_key_fails(mock_coder, monkeypatch, tmp_path):
+    monkeypatch.delenv(session_crypto.KEY_ENV, raising=False)
+    _prepare_workspace(mock_coder, tmp_path)
+    mock_coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=True,
+        session_key_file=None,
+    )
+    manager = SessionManager(mock_coder, mock_coder.io)
+    assert manager.save_session("nope", output=False) is False
+
+
+@pytest.mark.asyncio
+async def test_load_encrypted_session_switch_false(encrypt_coder, session_key32, tmp_path):
+    session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
+    _prepare_workspace(encrypt_coder, tmp_path)
+    encrypt_coder.edit_format = "ask"
+    assert session_manager.save_session("enc-load", output=False)
+
+    encrypt_coder.edit_format = "diff"
+    path = Path(tmp_path) / ".cecli" / "sessions" / "enc-load.json"
+    applied = await session_manager.load_session(str(path), switch=False)
+    assert applied is True
+    # switch=False applies messages/files but leaves edit_format for SwitchCoderSignal path
+    loaded = session_crypto.decrypt_session_bytes(path.read_bytes(), session_key32)
+    assert loaded["edit_format"] == "ask"
+
+
+def test_list_sessions_encrypted_with_key(encrypt_coder, tmp_path):
+    session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
+    _prepare_workspace(encrypt_coder, tmp_path)
+    session_manager.save_session("listed", output=False)
+
+    sessions = session_manager.list_sessions()
+    assert len(sessions) == 1
+    assert sessions[0]["name"] == "listed"
+    assert sessions[0]["model"] == "test_model"
+    assert sessions[0].get("encrypted") is True
+
+
+def test_list_sessions_encrypted_without_key(encrypt_coder, monkeypatch, tmp_path):
+    """Encrypted files list as placeholders when CECLI_SESSION_KEY is unset."""
+    _prepare_workspace(encrypt_coder, tmp_path)
+    session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
+    session_manager.save_session("locked", output=False)
+
+    monkeypatch.delenv(session_crypto.KEY_ENV, raising=False)
+    encrypt_coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=False,
+        session_key_file=None,
+    )
+    sessions = session_manager.list_sessions()
+    assert len(sessions) == 1
+    assert sessions[0]["encrypted"] is True
+    assert sessions[0]["model"] == "encrypted"
+
+
+@pytest.mark.asyncio
+async def test_load_encrypted_file_with_env_key_only(encrypt_coder, session_key_env, tmp_path):
+    """Decrypt on load uses CECLI_SESSION_KEY even when session_encrypt is false on args."""
+    _prepare_workspace(encrypt_coder, tmp_path)
+    encrypt_coder.edit_format = "architect"
+    SessionManager(encrypt_coder, encrypt_coder.io).save_session("env-load", output=False)
+
+    encrypt_coder.args = SimpleNamespace(
+        model="test_model",
+        weak_model="test_weak_model",
+        editor_model="test_editor_model",
+        agent_model="test_agent_model",
+        editor_edit_format="editor-diff",
+        verbose=False,
+        session_encrypt=False,
+        session_key_file=None,
+    )
+    encrypt_coder.edit_format = "diff"
+    path = Path(tmp_path) / ".cecli" / "sessions" / "env-load.json"
+    applied = await SessionManager(encrypt_coder, encrypt_coder.io).load_session(
+        str(path), switch=False
+    )
+    assert applied is True
+    loaded = session_crypto.decrypt_session_bytes(
+        path.read_bytes(), session_crypto.resolve_key()
+    )
+    assert loaded["edit_format"] == "architect"

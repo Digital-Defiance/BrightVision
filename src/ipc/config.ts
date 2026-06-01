@@ -42,6 +42,16 @@ export interface VisionConfig {
   coreApiToken: string
   /** Optional paths (relative to workspace) added to the core session. */
   contextFiles: string[]
+  /** Encrypt `.cecli/sessions/` via cecli (desktop: key in OS keychain). */
+  sessionEncrypt: boolean
+  /** Cecli `--auto-save` for `.cecli/sessions/<autoSaveSessionName>.json`. */
+  autoSaveSession: boolean
+  /** Cecli `--auto-load` on session start. */
+  autoLoadSession: boolean
+  /** Basename under `.cecli/sessions/` (default brightvision). */
+  autoSaveSessionName: string
+  /** Append chat transcript to `.cecli/chat.history`. */
+  chatHistoryFile: boolean
 }
 
 export const DEFAULT_CONFIG: VisionConfig = {
@@ -59,6 +69,11 @@ export const DEFAULT_CONFIG: VisionConfig = {
   coreApiUrl: 'http://127.0.0.1:8741',
   coreApiToken: '',
   contextFiles: [],
+  sessionEncrypt: false,
+  autoSaveSession: false,
+  autoLoadSession: false,
+  autoSaveSessionName: 'brightvision',
+  chatHistoryFile: true,
 }
 
 export function parseContextFilesInput(raw: string): string[] {
