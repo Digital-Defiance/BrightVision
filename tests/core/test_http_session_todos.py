@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -55,6 +56,26 @@ class TestHttpSessionTodos(unittest.TestCase):
             store = WorkspaceTodos(temp_dir).load()
             item = next(t for t in store.todos if t.id == todo_id)
             self.assertEqual(item.status, "in_progress")
+
+    def test_import_agent_todo_plan_endpoint(self):
+        with GitTemporaryDirectory() as temp_dir:
+            make_repo(temp_dir)
+            client = TestClient(app)
+            missing = client.post(f"/workspaces/todos/import-agent-plan?workspace={temp_dir}")
+            self.assertEqual(missing.status_code, 404)
+
+            agents = Path(temp_dir) / ".cecli" / "agents" / "2026-05-27" / "abc"
+            agents.mkdir(parents=True)
+            (agents / "todo.txt").write_text(
+                "Remaining:\n→ Draft roadmap\n○ Write tests\n",
+                encoding="utf-8",
+            )
+            imported = client.post(f"/workspaces/todos/import-agent-plan?workspace={temp_dir}")
+            self.assertEqual(imported.status_code, 200, imported.text)
+            body = imported.json()
+            self.assertEqual(len(body["todos"]), 1)
+            self.assertEqual(body["todos"][0]["title"], "Draft roadmap")
+            self.assertEqual(len(body["todos"][0]["checklist"]), 2)
 
 
 if __name__ == "__main__":

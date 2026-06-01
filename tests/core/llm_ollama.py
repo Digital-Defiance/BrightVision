@@ -38,6 +38,11 @@ def resolve_ollama_tag() -> str:
     explicit = (os.environ.get("E2E_OLLAMA_MODEL") or "").strip()
     if explicit:
         return _strip_ollama_prefix(explicit)
+    if (
+        os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+        and os.environ.get("BV_SUITE_USE_ENV_MODEL") != "1"
+    ):
+        return _strip_ollama_prefix(DEFAULT_E2E_OLLAMA_MODEL)
     for key in ("DATA_MODEL", "LLM_MODEL", "CHAT_MODEL"):
         raw = (os.environ.get(key) or "").strip()
         if raw:
@@ -46,12 +51,17 @@ def resolve_ollama_tag() -> str:
 
 
 def vision_model_from_tag(tag: str) -> str:
-    if tag.startswith("ollama_chat/") or tag.startswith("ollama/"):
-        return tag
-    return f"ollama_chat/{tag}"
+    from llm_model_resolve import normalize_vision_model_for_e2e
+
+    return normalize_vision_model_for_e2e(tag)
 
 
 def resolve_vision_model() -> str:
+    explicit = (
+        os.environ.get("E2E_VISION_MODEL") or os.environ.get("E2E_OLLAMA_MODEL") or ""
+    ).strip()
+    if explicit:
+        return vision_model_from_tag(explicit)
     return vision_model_from_tag(resolve_ollama_tag())
 
 

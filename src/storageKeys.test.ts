@@ -1,24 +1,26 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   APPEARANCE_STORAGE_KEY,
   CONFIG_STORAGE_KEY,
   migrateLegacyStorageKeys,
   readStorageItem,
+  removeStorageKeys,
 } from './storageKeys'
 
 function mockLocalStorage() {
   const store = new Map<string, string>()
-  const ls = {
-    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => store.get(key) ?? null,
     setItem: (key: string, value: string) => {
       store.set(key, value)
     },
     removeItem: (key: string) => {
       store.delete(key)
     },
-    clear: () => store.clear(),
-  }
-  vi.stubGlobal('localStorage', ls)
+    clear: () => {
+      store.clear()
+    },
+  })
 }
 
 describe('storageKeys', () => {
@@ -26,21 +28,22 @@ describe('storageKeys', () => {
     mockLocalStorage()
   })
 
-  it('migrates legacy config key', () => {
-    localStorage.setItem('aider-vision-config', '{"model":"x"}')
+  it('migrateLegacyStorageKeys is safe to call', () => {
+    localStorage.setItem(CONFIG_STORAGE_KEY, '{"model":"x"}')
     migrateLegacyStorageKeys()
     expect(localStorage.getItem(CONFIG_STORAGE_KEY)).toBe('{"model":"x"}')
-    expect(localStorage.getItem('aider-vision-config')).toBeNull()
   })
 
-  it('readStorageItem returns current without touching legacy', () => {
+  it('readStorageItem returns stored value', () => {
     localStorage.setItem(CONFIG_STORAGE_KEY, '{"ok":true}')
-    expect(readStorageItem(CONFIG_STORAGE_KEY, 'aider-vision-config')).toBe('{"ok":true}')
+    expect(readStorageItem(CONFIG_STORAGE_KEY)).toBe('{"ok":true}')
   })
 
-  it('migrates appearance on read', () => {
-    localStorage.setItem('aider-vision-appearance', '{}')
-    readStorageItem(APPEARANCE_STORAGE_KEY, 'aider-vision-appearance')
-    expect(localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBe('{}')
+  it('removeStorageKeys clears keys', () => {
+    localStorage.setItem(CONFIG_STORAGE_KEY, '{}')
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, '{}')
+    removeStorageKeys([CONFIG_STORAGE_KEY, APPEARANCE_STORAGE_KEY])
+    expect(localStorage.getItem(CONFIG_STORAGE_KEY)).toBeNull()
+    expect(localStorage.getItem(APPEARANCE_STORAGE_KEY)).toBeNull()
   })
 })

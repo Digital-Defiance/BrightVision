@@ -23,26 +23,46 @@ describe('sessionStall', () => {
     expect(isLikelyStalled(a)).toBe(false)
   })
 
-  it('does not flag stall while waiting for the model with recent progress', () => {
+  it('flags stall after long wait for Ollama with no tokens', () => {
     const now = 100_000
     const a = buildTurnActivity(
       true,
-      now - 60_000,
+      now - 9 * 60_000,
       null,
-      'Waiting for Ollama (16s)',
+      'Waiting for Ollama (5104s)',
       now
     )
     expect(a.kind).toBe('waiting_model')
-    expect(isLikelyStalled(a)).toBe(false)
+    expect(isLikelyStalled(a)).toBe(true)
+    expect(turnActivityHint(a, 0)).toContain('Force FAST')
   })
 
-  it('flags stall only after several minutes without progress', () => {
+  it('warns before hard stall threshold on waiting_model', () => {
+    const now = 100_000
+    const a = buildTurnActivity(true, now - 4 * 60_000, null, 'Waiting for Ollama (240s)', now)
+    expect(isLikelyStalled(a)).toBe(false)
+    expect(turnActivityHint(a, 0)).toContain('Force FAST')
+  })
+
+  it('uses cloud stall hints when session model is not Ollama', () => {
+    const now = 100_000
+    const a = buildTurnActivity(
+      true,
+      now - 4 * 60_000,
+      null,
+      'Waiting for cloud LLM (openai/gpt-5.3-chat) (240s)',
+      now
+    )
+    expect(turnActivityHint(a, 0, 'openai/gpt-5.3-chat')).toContain('cloud LLM')
+    expect(turnActivityHint(a, 0, 'openai/gpt-5.3-chat')).not.toContain('Force FAST')
+  })
+
+  it('flags stall only after several minutes without progress for unknown kind', () => {
     const now = 100_000
     const a = buildTurnActivity(true, now - 60_000, now - 55_000, 'Scanning repo map', now)
     expect(isLikelyStalled(a)).toBe(false)
     const stalled = buildTurnActivity(true, now - 400_000, now - 395_000, '', now)
     expect(isLikelyStalled(stalled)).toBe(true)
-    expect(turnActivityHint(stalled, 9)).toContain('Clear the queue')
     expect(turnActivityHint(stalled, 9)).toContain('stuck')
   })
 })

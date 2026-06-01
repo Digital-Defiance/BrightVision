@@ -1,3 +1,7 @@
 [submodule "cecli"]
 	path = cecli
 	url = https://github.com/Digital-Defiance/cecli.git
+[submodule "e2e/fixture-pack"]
+	path = e2e/fixture-pack
+	url = https://github.com/Digital-Defiance/brightvision-e2e-fixtures.git
+	branch = main

@@ -1,15 +1,15 @@
 # Spec-driven development & in-app TODOs (roadmap #18)
 
-Goal: lightweight **Kiro-like** flow inside Aider Vision without cloning IDE patterns.
+Goal: lightweight **Kiro-like** flow inside BrightVision without cloning IDE patterns.
 
 ## Shipped (v1–v4a)
 
 | Version | What |
 |---------|------|
-| v1 | Tasks tab, `.aider-vision/todos.json`, active task, spec inject, `/todo` command |
+| v1 | Tasks tab, `.cecli/todos.json`, active task, spec inject, `/todo` command |
 | v2 | Session todos HTTP API, `active_todo_id`, templates, checklist |
 | v3 | Workspace todos HTTP, markdown import/export, checklist auto-complete |
-| **v4a** | **Three-layer specs** (requirements / design / implementation tasks), `depends_on`, spec files under `.aider-vision/specs/{id}/`, `spec-driven` template |
+| **v4a** | **Three-layer specs** (requirements / design / implementation tasks), `depends_on`, spec files under `.cecli/specs/{id}/`, `spec-driven` template |
 
 ### Three-layer model (v4a)
 
@@ -27,7 +27,7 @@ Legacy single `spec` is migrated into `requirements` on load when layers are emp
 
 **Injected chat context** includes all three layers plus checklist and blocker notes for incomplete dependencies.
 
-**On disk:** updates sync to `.aider-vision/specs/<task-id>/requirements.md`, `design.md`, `tasks.md` (JSON remains source of truth in the app).
+**On disk:** updates sync to `.cecli/specs/<task-id>/requirements.md`, `design.md`, `tasks.md` (JSON remains source of truth in the app).
 
 **Template:** choose `spec-driven` when creating a task for Kiro-style stubs.
 
@@ -39,9 +39,9 @@ Legacy single `spec` is migrated into `requirements` on load when layers are emp
 
 ## v4b (shipped)
 
-1. **Generate spec** / **Refine spec** — Tasks tab buttons; requires active session + Vision API.  
+1. **Generate spec** / **Refine spec** — Tasks tab wizard (per-layer **Generate requirements** / **design** / **tasks** + optional **All layers**). Requires active session + Vision API.  
    `POST /sessions/{id}/todos/{todo_id}/generate-spec` or workspace route with `session_id` query.  
-   Body: `{ "prompt", "mode": "generate"|"refine", "apply": true }`.
+   Body: `{ "prompt", "mode": "generate"|"refine", "section": "requirements"|"design"|"tasks_md"|"all", "context_paths": [], "apply": true }`.
 2. **Steered implementation** — parsed numbered lines in `tasks_md`; **Implement** per step prefills chat.
 3. **Dependency order** — task list sorted topologically by `depends_on`.
 
@@ -51,18 +51,36 @@ Legacy single `spec` is migrated into `requirements` on load when layers are emp
 - **Ephemeral session** — `dry_run` headless session in a worker thread; chat session unchanged.
 - **Poll** — `GET /workspaces/todos/generate-spec/{job_id}` until `completed` or `error`.
 
+## v5b — Phased spec wizard (shipped)
+
+Kiro-style **Requirements → Design → Tasks** with edit-between steps:
+
+| Step | Prompt includes | Optional partial draft |
+|------|-----------------|------------------------|
+| `section=requirements` | User prompt | Existing `requirements` |
+| `section=design` | User prompt + **requirements** | Existing `design` |
+| `section=tasks_md` | User prompt + **requirements** + **design** | Existing `tasks_md` |
+
+- **Tasks tab** — wizard nudges on each layer tab; tab switches blocked until prerequisites exist.
+- **Context** — `context_paths` are the session’s `files_in_chat`. Add in the **Spec prompt** with `/add path` (Tab completes on desktop; Enter attaches) or **Add folder** beside the prompt; on **Tasks**, use the context bar or **Open Spec**. Same files as Chat `/add`.
+- **All layers** — `section=all` (or **All layers** button) keeps the original one-shot behavior.
+- **LLM regression** — `yarn test:llm:core` / `yarn test:e2e:llm` (`spec-generate-all-llm.spec.ts`; optional `spec-generate-phased-llm.spec.ts` when `E2E_SPEC_GEN_PHASED=1`) against Ollama.
+
 ## Spec file sync (shipped)
 
-- **To disk** — every todo update writes `.aider-vision/specs/{id}/requirements.md`, `design.md`, `tasks.md`.
+- **To disk** — every todo update writes `.cecli/specs/{id}/requirements.md`, `design.md`, `tasks.md`.
 - **From disk** — **Reload from disk** (UI) or `POST …/sync-spec-files` / Tauri `import_todo_spec_files`.
 
 ## Gap vs Kiro (tracked in ROADMAP #20–22)
 
-| Kiro | Aider Vision today | Roadmap |
+| Kiro | BrightVision today | Roadmap |
 |------|-------------------|---------|
-| Dedicated spec agent product surface | Ephemeral job + poll | **#20** Open |
-| EARS validation & formal spec analysis | Refine prompt only | **#21** Open |
-| Sync Files / repo-wide spec index | Per-task JSON + optional spec folder | **#22** Open |
+| Dedicated spec agent product surface | **Spec** tab (dedicated transcript) + spec-focus + generate/refine jobs | **#20** Partial — vibe/spec session types, hooks |
+| EARS validation & formal spec analysis | Validate EARS, trace, lint in generate/refine, apply gate | **#21** Partial — [EARS_MODULE.md](./EARS_MODULE.md) |
+| Sync Files / repo-wide spec index | Spec index scan + **Repair folders** | **#22** Partial |
+| Steering files | `.cecli/STEERING.md`, `.cecli/steering/*.md` in spec-focus | Expand defaults / UI editor |
+| Vibe vs Spec session | **Spec tab → Session mode** (`Vibe` \| `Spec`); spec opens this tab on Start | Per-turn override via Spec focus toggle on Tasks |
+| Save → EARS check | `PATCH` returns `ears_*` fields; UI snackbar on regression | Optional file-watcher hook (longer-term) |
 
 ## API
 

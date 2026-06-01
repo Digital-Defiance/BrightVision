@@ -3,13 +3,13 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
-import { invokeWithTimeout } from './tauriInvoke'
 import type { VisionConfig } from './config'
 import type { CoreEventBase } from './events'
 import type { CoreSessionInfo, ModelRouterApiConfig, SendMessageOptions } from './httpClient'
 import { CoreHttpClient } from './httpClient'
 import { waitForVisionApi } from './health'
 import { isTauriRuntime } from './isTauri'
+import { spawnDesktopVisionApi } from './visionApiSpawn'
 import type { ProcessUpdate } from '../progress/types'
 
 export type CoreEventHandler = (event: CoreEventBase) => void
@@ -93,14 +93,7 @@ export function createVisionApiSession(
             detail: cfg.coreEnginePath,
             progress: 0.2,
           })
-          url = await invokeWithTimeout<string>('start_core_api', {
-            workingDir: cfg.workingDir,
-            coreEnginePath: cfg.coreEnginePath,
-            pythonPath: cfg.pythonPath,
-            extraParams: cfg.extraParams,
-            ollamaApiBase: cfg.ollamaApiBase,
-            port: 8741,
-          })
+          url = await spawnDesktopVisionApi(cfg)
           desktopStartedServe = true
         }
         if (signal.aborted) throw new DOMException('Start cancelled', 'AbortError')
@@ -122,6 +115,12 @@ export function createVisionApiSession(
           files: cfg.contextFiles?.length ? cfg.contextFiles : undefined,
           auto_yes: false,
           auto_commits: !cfg.promptBeforeCommit,
+          session_encrypt: cfg.sessionEncrypt,
+          auto_save: cfg.autoSaveSession,
+          auto_load: cfg.autoLoadSession,
+          auto_save_session_name: cfg.autoSaveSessionName,
+          chat_history_file: cfg.chatHistoryFile,
+          session_mode: cfg.sessionMode,
         })
         sessionId = session.session_id
         sessionInfo = session
@@ -217,6 +216,11 @@ export function createVisionApiSession(
     cancelSend() {
       sendAbort?.abort()
       sendAbort = null
+      const sid = sessionId
+      const c = client
+      if (sid && c) {
+        void c.interruptTurn(sid).catch(() => {})
+      }
     },
 
     async submitConfirm(confirmId, answer) {

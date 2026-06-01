@@ -89,7 +89,7 @@ fn walk_files(
         }
         let entry = entry.map_err(|e| e.to_string())?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') && name != ".aider-vision" {
+        if name.starts_with('.') && name != ".cecli" {
             continue;
         }
         let path = entry.path();

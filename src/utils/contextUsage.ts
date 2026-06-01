@@ -1,6 +1,6 @@
 /**
  * Session context / token usage surfaced in the header and after /add.
- * Token lines come from core `tool_output` (aider usage report).
+ * Token lines come from core `tool_output` (Cecli usage report).
  */
 
 export interface TokenUsageReport {
@@ -35,7 +35,7 @@ function parseTokenCount(token: string): number | null {
 
 /**
  * Parse token usage from core `tool_output`.
- * - Legacy aider: `Tokens: 1.2k sent, 450 received`
+ * - Legacy format: `Tokens: 1.2k sent, 450 received`
  * - cecli: `1.2k ↑ 450 ↓` (optional cache segments before ↑, cost/speed lines after)
  */
 export function parseTokenUsageReport(text: string): TokenUsageReport | null {

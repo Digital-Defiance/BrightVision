@@ -13,12 +13,12 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import { mergeChatTimeline } from '../../utils/chatStream'
 import { DISPLAY_CORE } from '../../brand'
 import type { VisionCommand } from '../../ipc/commands'
 import type { CoreConfirmEvent } from '../../ipc/events'
-import { parseFileCommandInput, replaceFileCommandPath } from '../../utils/fileCommandComplete'
+import { useFileCommandKeyboard } from '../../hooks/useFileCommandKeyboard'
 import { ConfirmBanner } from '../ConfirmBanner'
 import { AssistantMessageBody } from './AssistantMessageBody'
 import { ChatFolderAttach } from './ChatFolderAttach'
@@ -35,8 +35,10 @@ import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { ModelRouterBar, type RouterEscalateOffer } from './ModelRouterBar'
 import { ChatAgentBar } from './ChatAgentBar'
+import { ChatEasyStart } from './ChatEasyStart'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
+import type { AssistantContentSegment } from '../../utils/proposedEdits'
 
 export interface ChatMessage {
   id: number
@@ -107,6 +109,11 @@ interface ChatPanelProps {
   lastUserMessageForRetry?: string | null
   onRetryEmptyLlm?: (mode: 'exact' | 'nudge') => void
   onOpenInEditor?: (path: string) => void
+  canApplyEdits?: boolean
+  onApplyProposedEdit?: (
+    messageId: number,
+    segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>
+  ) => Promise<void>
   modelRouterEnabled?: boolean
   lastModelRoute?: ModelRouteSnapshot | null
   routerEscalateOffer?: RouterEscalateOffer | null
@@ -115,6 +122,26 @@ interface ChatPanelProps {
   onDismissRouterEscalate?: () => void
   subagents?: SubAgentInfo[]
   agentModeAvailable?: boolean
+  /** When set and chat is empty, show in-tab Start instead of Terminal redirect copy. */
+  easyStart?: {
+    onStart: () => void
+    starting: boolean
+    startLabel?: string
+    startDetail?: string
+    disabled?: boolean
+    disabledReason?: string
+    llmModel?: string
+    showLocalLlmStep?: boolean
+  }
+  /** Active session model differs from saved Settings — Stop then Start to apply. */
+  modelSwitchBanner?: {
+    activeModel: string
+    settingsModel: string
+    onRestart: () => void
+    restarting?: boolean
+  }
+  /** Hide generic empty copy when Welcome panel is shown above. */
+  suppressEmptyHint?: boolean
 }
 
 export function ChatPanel({
@@ -161,6 +188,8 @@ export function ChatPanel({
   lastUserMessageForRetry = null,
   onRetryEmptyLlm,
   onOpenInEditor,
+  canApplyEdits = false,
+  onApplyProposedEdit,
   modelRouterEnabled = false,
   lastModelRoute = null,
   routerEscalateOffer = null,
@@ -169,13 +198,19 @@ export function ChatPanel({
   onDismissRouterEscalate,
   subagents = [],
   agentModeAvailable = false,
+  easyStart,
+  modelSwitchBanner,
+  suppressEmptyHint = false,
 }: ChatPanelProps) {
-  const pathTabIndex = useRef(0)
-  const pathPrefix = parseFileCommandInput(inputValue)?.pathPrefix ?? ''
-
-  useEffect(() => {
-    pathTabIndex.current = 0
-  }, [pathPrefix, pathSuggestions.length])
+  const { onKeyDown: onFileCommandKeyDown, onPickPath } = useFileCommandKeyboard({
+    inputValue,
+    pathSuggestions,
+    pathAssistActive,
+    commands,
+    onInputChange,
+    onPickCommand,
+    onSend,
+  })
 
   const meaningfulToolEvents = toolEvents.filter(
     (t) => t.type === 'tool_warning' || t.output?.trim() || t.type === 'tool_call'
@@ -197,6 +232,29 @@ export function ChatPanel({
       {pendingConfirm && (
         <ConfirmBanner confirm={pendingConfirm} onAnswer={onConfirmAnswer} />
       )}
+      {modelSwitchBanner && (
+        <Alert
+          severity="warning"
+          variant="outlined"
+          sx={{ mb: 1, mx: 1, py: 0.25 }}
+          data-testid="model-switch-banner"
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              disabled={modelSwitchBanner.restarting}
+              onClick={modelSwitchBanner.onRestart}
+            >
+              {modelSwitchBanner.restarting ? 'Restarting…' : 'Stop & Start'}
+            </Button>
+          }
+        >
+          <Typography variant="caption" component="span">
+            Session model <strong>{modelSwitchBanner.activeModel}</strong> — Settings has{' '}
+            <strong>{modelSwitchBanner.settingsModel}</strong>. Stop and Start to switch.
+          </Typography>
+        </Alert>
+      )}
       {(isBusy || queuedCount > 0) && turnActivityHint && (
         <Alert
           severity={turnStalled ? 'warning' : 'info'}
@@ -210,13 +268,31 @@ export function ChatPanel({
         </Alert>
       )}
       <Box sx={{ flex: 1, overflow: 'auto', mb: 1, px: 1, minHeight: 0 }}>
-        {messages.length === 0 && meaningfulToolEvents.length === 0 && (
-          <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-            <Typography color="text.secondary">
-              Start {DISPLAY_CORE} from the Terminal tab, then chat here.
-            </Typography>
-          </Paper>
+        {!isRunning && easyStart && (
+          <Box sx={{ mb: messages.length === 0 && meaningfulToolEvents.length === 0 ? 0 : 2 }}>
+            <ChatEasyStart
+              onStart={easyStart.onStart}
+              starting={easyStart.starting}
+              startLabel={easyStart.startLabel}
+              startDetail={easyStart.startDetail}
+              disabled={easyStart.disabled}
+              disabledReason={easyStart.disabledReason}
+              llmModel={easyStart.llmModel}
+              showLocalLlmStep={easyStart.showLocalLlmStep}
+            />
+          </Box>
         )}
+        {messages.length === 0 &&
+          meaningfulToolEvents.length === 0 &&
+          !easyStart &&
+          !suppressEmptyHint &&
+          !isRunning && (
+            <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">
+                Start {DISPLAY_CORE} to begin chatting.
+              </Typography>
+            </Paper>
+          )}
         <Stack spacing={2}>
           {timeline.map((entry) =>
             entry.kind === 'message' ? (
@@ -269,6 +345,12 @@ export function ChatPanel({
                       content={entry.item.content}
                       appliedFiles={entry.item.appliedFiles}
                       onOpenInEditor={onOpenInEditor}
+                      canApplyEdits={canApplyEdits}
+                      onApplyProposedEdit={
+                        onApplyProposedEdit
+                          ? (segment) => onApplyProposedEdit(entry.item.id, segment)
+                          : undefined
+                      }
                       turnTiming={entry.item.turnTiming}
                       showSectionDurations={thinkingTimingPrefs?.showSectionDurations ?? true}
                       showTurnTotal={thinkingTimingPrefs?.showMessageTurnTotal ?? true}
@@ -430,7 +512,7 @@ export function ChatPanel({
         pathAssistActive={pathAssistActive}
         disabled={!isRunning}
         onPickCommand={onPickCommand}
-        onPickPath={(path) => onInputChange(replaceFileCommandPath(inputValue, path))}
+        onPickPath={onPickPath}
       />
 
       {modelRouterEnabled && onForceRouterTier && onEscalateRouter && (
@@ -482,33 +564,7 @@ export function ChatPanel({
           inputProps={{ 'data-testid': 'chat-input' }}
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              onSend()
-            }
-            if (e.key === 'Tab') {
-              if (pathAssistActive && pathSuggestions.length > 0) {
-                e.preventDefault()
-                const idx = pathTabIndex.current % pathSuggestions.length
-                pathTabIndex.current = idx + 1
-                onInputChange(replaceFileCommandPath(inputValue, pathSuggestions[idx]))
-                return
-              }
-              if (inputValue.trim().startsWith('/')) {
-                const token = inputValue.trim().split(/\s/)[0] ?? ''
-                const match = commands.find((c) =>
-                  c.name.toLowerCase().startsWith(token.toLowerCase())
-                )
-                if (match && match.name !== token) {
-                  e.preventDefault()
-                  onPickCommand(
-                    match.name + (inputValue.includes(' ') ? inputValue.slice(token.length) : ' ')
-                  )
-                }
-              }
-            }
-          }}
+          onKeyDown={onFileCommandKeyDown}
           placeholder={
             isRunning
               ? isBusy

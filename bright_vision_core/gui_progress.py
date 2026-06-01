@@ -1,5 +1,5 @@
 """
-Progress reporting for Aider Vision (headless / GUI).
+Progress reporting for BrightVision (headless / GUI).
 
 Replaces terminal tqdm bars with structured ``progress`` events on EventIO.
 """

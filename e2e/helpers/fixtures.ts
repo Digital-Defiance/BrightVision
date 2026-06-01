@@ -22,6 +22,50 @@ export function sampleTodoStore(): TodoStore {
   }
 }
 
+/** Empty spec layers — for phased wizard tab gates and nudges. */
+export function wizardEmptyTodoStore(): TodoStore {
+  const todo = makeTodo('task-wizard', 'Wizard task', 'open')
+  todo.requirements = ''
+  todo.design = ''
+  todo.tasks_md = ''
+  return {
+    version: 1,
+    activeId: null,
+    todos: [todo],
+    templates: ['feature', 'bugfix', 'refactor', 'spec-driven'],
+  }
+}
+
+/** Cecli agent UpdateTodoList imported into workspace Tasks (dogfood bridge). */
+export function agentPlanTodoStore(): TodoStore {
+  const now = '2026-01-01T00:00:00.000Z'
+  const item = {
+    id: 'agent-plan-e2e',
+    title: 'Draft roadmap items',
+    spec: '',
+    requirements: '',
+    design: '',
+    tasks_md: '## Implementation tasks\n\n- [ ] Explore codebase\n- [ ] Draft roadmap items in docs/ROADMAP.md\n',
+    depends_on: [] as string[],
+    branch: '',
+    pr_url: '',
+    status: 'in_progress' as const,
+    links: ['cecli:agent-todo:.cecli/agents/e2e/todo.txt'],
+    checklist: [
+      { id: 'c1', text: 'Explore codebase', done: false },
+      { id: 'c2', text: 'Draft roadmap items in docs/ROADMAP.md', done: false },
+    ],
+    created_at: now,
+    updated_at: now,
+  }
+  return {
+    version: 1,
+    activeId: item.id,
+    todos: [item],
+    templates: ['feature', 'bugfix', 'refactor', 'spec-driven'],
+  }
+}
+
 function makeTodo(
   id: string,
   title: string,
@@ -47,6 +91,39 @@ function makeTodo(
   }
 }
 
+/** Assistant turn with proposed SEARCH/REPLACE but no `edited_files` (manual apply e2e). */
+export function proposedEditTurnEvents() {
+  return [
+    {
+      type: 'token',
+      text: '► **ANSWER**\n\n```src/example.ts\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE\n```\n',
+    },
+    { type: 'done', edited_files: [] as string[] },
+  ]
+}
+
+/** Engine auto-applied edit — `done.edited_files` matches proposed block path. */
+export function engineAppliedEditTurnEvents() {
+  return [
+    {
+      type: 'token',
+      text: '► **ANSWER**\n\n```src/example.ts\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE\n```\n',
+    },
+    { type: 'done', edited_files: ['src/example.ts'] },
+  ]
+}
+
+/** Non-edit fenced code (syntax display only). */
+export function displayFenceTurnEvents() {
+  return [
+    {
+      type: 'token',
+      text: '► **ANSWER**\nExample:\n\n```python\nprint("e2e-display-fence")\n```\n',
+    },
+    { type: 'done', edited_files: [] as string[] },
+  ]
+}
+
 /** Default assistant turn for mocked SSE. */
 export function defaultTurnEvents() {
   return [
@@ -57,6 +134,19 @@ export function defaultTurnEvents() {
     },
     { type: 'tool_output', text: 'Tokens: 120 sent, 45 received' },
     { type: 'done', edited_files: ['src/example.ts'] },
+  ]
+}
+
+/** Assistant answer with GFM lists/bold (no proposed-edit fences). */
+export function markdownAnswerTurnEvents() {
+  return [
+    { type: 'token', text: '► **THINKING**\nReading roadmap.\n' },
+    {
+      type: 'token',
+      text:
+        '► **ANSWER**\n**Open Items:**\n- **#21** — EARS linter\n- **#22** — spec index\n\nUse `yarn dogfood:agent`.\n',
+    },
+    { type: 'done', edited_files: [] as string[] },
   ]
 }
 

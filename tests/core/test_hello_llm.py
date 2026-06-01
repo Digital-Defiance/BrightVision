@@ -20,6 +20,7 @@ except ImportError:
 from cecli.utils import GitTemporaryDirectory
 
 from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_client import stream_session_message
 
 
 def _parse_sse_payload(raw: str) -> list[dict]:
@@ -58,28 +59,26 @@ class TestHelloLlm(unittest.TestCase):
             self.assertEqual(res.status_code, 200, res.text)
             session_id = res.json()["session_id"]
 
-            with client.stream(
-                "POST",
-                f"/sessions/{session_id}/messages",
-                json={"content": "Reply with exactly: hello from pytest", "preproc": True},
-            ) as stream:
-                self.assertEqual(stream.status_code, 200)
-                body = stream.read().decode("utf-8")
-
-            events = _parse_sse_payload(body)
+            events = stream_session_message(
+                client,
+                session_id,
+                "Reply with exactly: hello from pytest",
+                preproc=False,
+            )
             types = [e.get("type") for e in events]
             errors = [e for e in events if e.get("type") == "error"]
             self.assertFalse(errors, errors)
             self.assertIn("user_message", types)
             self.assertIn("done", types, f"events: {types}")
-            tokens = [e.get("text", "") for e in events if e.get("type") == "token"]
-            assistant = "".join(tokens)
             done = next(e for e in events if e.get("type") == "done")
+            assistant = (done.get("assistant_text") or "").strip()
             if not assistant:
-                assistant = done.get("assistant_text") or ""
-            self.assertTrue(
-                len(assistant.strip()) > 3,
-                f"expected non-empty assistant text, got {assistant!r}",
+                tokens = [e.get("text", "") for e in events if e.get("type") == "token"]
+                assistant = "".join(tokens).strip()
+            self.assertGreater(
+                len(assistant),
+                3,
+                f"expected non-empty assistant reply, got {assistant[:500]!r}",
             )
             self.assertFalse(done.get("error"), done)
 

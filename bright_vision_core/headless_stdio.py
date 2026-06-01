@@ -14,10 +14,7 @@ _null_out: TextIO | None = None
 
 
 def headless_enabled() -> bool:
-    return (
-        os.environ.get("BRIGHT_VISION_HEADLESS") == "1"
-        or os.environ.get("AIDER_VISION_HEADLESS") == "1"
-    )
+    return os.environ.get("BRIGHT_VISION_HEADLESS") == "1"
 
 
 def install_headless_stdio() -> None:

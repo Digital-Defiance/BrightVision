@@ -1,4 +1,4 @@
-/** User-facing font presets — Glass TTY nods to classic Aider terminal aesthetic. */
+/** User-facing font presets — Inter default for chat/UI; Glass TTY optional retro terminal face. */
 
 export type FontPresetId =
   | 'glass-tty'
@@ -24,7 +24,7 @@ export { APPEARANCE_STORAGE_KEY }
 
 export const DEFAULT_APPEARANCE: AppearanceConfig = {
   uiFont: 'inter',
-  chatFont: 'glass-tty',
+  chatFont: 'inter',
   terminalFont: 'jetbrains',
   uiFontCustom: '',
   chatFontCustom: '',
@@ -39,12 +39,12 @@ export const FONT_PRESET_CSS: Record<Exclude<FontPresetId, 'custom'>, string> = 
   jetbrains: '"JetBrains Mono", "Fira Code", Consolas, monospace',
   fira: '"Fira Code", "JetBrains Mono", Consolas, monospace',
   'system-mono': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-  inter: '"Inter", "Roboto", "Helvetica Neue", Arial, sans-serif',
+  inter: '"Inter", system-ui, -apple-system, sans-serif',
   'system-ui': 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
 }
 
 export const FONT_PRESET_LABELS: Record<FontPresetId, string> = {
-  'glass-tty': 'Glass TTY VT220 (classic Aider)',
+  'glass-tty': 'Glass TTY VT220 (retro terminal)',
   jetbrains: 'JetBrains Mono',
   fira: 'Fira Code',
   'system-mono': 'System monospace',

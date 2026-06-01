@@ -83,7 +83,7 @@ export function importTodoStore(
   let i = 0
   let activeFromHeader: string | null = null
 
-  if (lines[0]?.trim().toLowerCase().startsWith('# aider vision tasks')) {
+  if (lines[0]?.trim().toLowerCase().startsWith('# brightvision tasks')) {
     i = 1
     while (i < lines.length && !lines[i].trim()) i++
     if (lines[i]?.trim().toLowerCase().startsWith('activeid:')) {
@@ -135,7 +135,7 @@ export function importTodoStore(
     }
 
     const header = stripped.match(/^#\s+(.+)$/)
-    if (header && !stripped.toLowerCase().startsWith('# aider vision')) {
+    if (header && !stripped.toLowerCase().startsWith('# brightvision')) {
       flush()
       current = {
         title: header[1].trim(),

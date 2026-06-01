@@ -11,11 +11,35 @@
 
   &__meta {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 10px 16px;
     margin-top: 6px;
     min-height: 18px;
+  }
+
+  &__meta-primary {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  &__meta-trailing {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+    flex: 1 1 200px;
+    justify-content: flex-end;
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  &__bar--eta {
+    align-self: center;
   }
 
   &__timing {

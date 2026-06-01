@@ -17,6 +17,7 @@ target/
 dist/
 vite.config.js
 vite.config.d.ts
+vite.config.ts.timestamp-*.mjs
 
 # IDE & Editor
 .vscode/
@@ -42,6 +43,9 @@ Thumbs.db
 
 # cecli tag cache (local SQLite; do not commit)
 .cecli/
+# E2E seed (tasks tab / workspace API tests)
+!e2e/fixtures/tasks-seeded-workspace/.cecli/
+!e2e/fixtures/tasks-seeded-workspace/.cecli/todos.json
 
 # bright_vision_core setuptools-scm
 bright_vision_core/_version.py
@@ -54,12 +58,23 @@ playwright-report/
 
 # LLM e2e (playwright globalSetup)
 .e2e-llm-core.pid
-# hello-workspace: git init + cecli cache at runtime; commit README.md only
-e2e/fixtures/hello-workspace/.git/
+# E2E fixture workspaces: local git init + runtime cecli caches (seed files committed explicitly)
+e2e/fixtures/*-workspace/.git/
 e2e/fixtures/hello-workspace/.cecli/
+e2e/fixtures/integration-workspace/.cecli/
 
 # Local Ollama defaults for BrightVision (see docs/LOCAL_LLM.md)
 local-llm.env
+cloud-llm.env
+
+# Full-suite transcript (CLI --logged / Test Lab)
+test-everything-log.txt
+.bright-vision/bin/
+.bright-vision/cargo-bgpucap/
+.bright-vision/baselines/
+.bright-vision/test-suite-runs/
+# Local timing history (scripts/test-everything.sh)
+.bright-vision/test-everything-timing.json
 
 
 #Ignore cursor AI rules

@@ -42,7 +42,25 @@ export interface VisionConfig {
   coreApiToken: string
   /** Optional paths (relative to workspace) added to the core session. */
   contextFiles: string[]
+  /** Encrypt `.cecli/sessions/` via cecli (desktop: key in OS keychain). */
+  sessionEncrypt: boolean
+  /** Cecli `--auto-save` for `.cecli/sessions/<autoSaveSessionName>.json`. */
+  autoSaveSession: boolean
+  /** Cecli `--auto-load` on session start. */
+  autoLoadSession: boolean
+  /** Basename under `.cecli/sessions/` (default brightvision). */
+  autoSaveSessionName: string
+  /** Append chat transcript to `.cecli/chat.history`. */
+  chatHistoryFile: boolean
+  /** Default session mode when starting Vision API (vibe = code chat, spec = spec-first). */
+  sessionMode: 'vibe' | 'spec'
+  /** LAN Link proxy for BrightVision Remote (desktop Tauri). */
+  lanRemoteEnabled: boolean
+  /** Port phones use on LAN (forwards to loopback Vision API). */
+  lanProxyPort: number
 }
+
+export const DEFAULT_LAN_PROXY_PORT = 8742
 
 export const DEFAULT_CONFIG: VisionConfig = {
   model: 'ollama_chat/qwen3.6:27b-q4_K_M',
@@ -59,6 +77,14 @@ export const DEFAULT_CONFIG: VisionConfig = {
   coreApiUrl: 'http://127.0.0.1:8741',
   coreApiToken: '',
   contextFiles: [],
+  sessionEncrypt: false,
+  autoSaveSession: true,
+  autoLoadSession: true,
+  autoSaveSessionName: 'brightvision',
+  chatHistoryFile: true,
+  sessionMode: 'vibe',
+  lanRemoteEnabled: false,
+  lanProxyPort: DEFAULT_LAN_PROXY_PORT,
 }
 
 export function parseContextFilesInput(raw: string): string[] {

@@ -56,7 +56,7 @@ No additional `cecli/coders/base_coder.py` fork patches are required on current 
 source activate.sh
 
 # No legacy imports
-rg 'from aider_vision_core|import aider_vision_core' bright_vision_core/ \
+rg 'from bright_vision_core|import bright_vision_core' bright_vision_core/ \
   && echo FAIL || echo OK
 
 yarn test:bright-core

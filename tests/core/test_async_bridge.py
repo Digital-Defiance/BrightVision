@@ -72,3 +72,16 @@ def test_run_helper_still_works() -> None:
         return 42
 
     assert run(_coro()) == 42
+
+
+def test_run_from_running_event_loop() -> None:
+    """Sync bridge used inside cecli async apply (dirty_commit → repo.commit)."""
+
+    async def _inner() -> int:
+        await asyncio.sleep(0)
+        return 99
+
+    async def _outer() -> int:
+        return run(_inner())
+
+    assert asyncio.run(_outer()) == 99

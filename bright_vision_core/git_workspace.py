@@ -368,7 +368,17 @@ class RepoSet:
                     dirty.add(fname)
         return list(dirty)
 
-    def commit(self, fnames=None, context=None, message=None, aider_edits=False, coder=None):
+    def commit(
+        self,
+        fnames=None,
+        context=None,
+        message=None,
+        aider_edits=False,
+        coder=None,
+        coder_edits=None,
+    ):
+        if coder_edits is not None:
+            aider_edits = coder_edits
         if fnames:
             return self._commit_files(
                 list(fnames),

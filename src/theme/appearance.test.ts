@@ -6,8 +6,12 @@ import {
 } from './appearance'
 
 describe('appearance fonts', () => {
-  it('defaults chat to Glass TTY', () => {
-    expect(DEFAULT_APPEARANCE.chatFont).toBe('glass-tty')
+  it('defaults chat to Inter', () => {
+    expect(DEFAULT_APPEARANCE.chatFont).toBe('inter')
+    expect(resolveFontFamily('inter', '')).toContain('Inter')
+  })
+
+  it('still offers Glass TTY preset', () => {
     expect(resolveFontFamily('glass-tty', '')).toContain('Glass TTY VT220')
   })
 

@@ -70,7 +70,7 @@ For dogfooding BrightVision itself: set project to the **parent** repo (this tre
 | Start Ollama, pull, preload, ping | Rust (`src-tauri`, Settings / Terminal → Local LLM) |
 | Chat turns, tools, git edits | Python `bright_vision_core` over HTTP/SSE |
 
-Configure `local-llm.env` or `~/.config/local-llm/env`; map to Settings `ollama_chat/<tag>`. See `docs/LOCAL_LLM.md`.
+Configure `local-llm.env` or `~/.config/local-llm/env` (`DATA_MODEL`, `OLLAMA_HOST`, optional `FAST_MODEL` / `HEAVY_MODEL` / `MODEL_ROUTER`); map to Settings `ollama_chat/<tag>` and the model hopper via **Sync from env files**. See `docs/LOCAL_LLM.md`.
 
 ## What we do not do
 

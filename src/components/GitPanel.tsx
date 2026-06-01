@@ -1,6 +1,8 @@
 import AddIcon from '@mui/icons-material/Add'
+import EditIcon from '@mui/icons-material/Edit'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import UndoIcon from '@mui/icons-material/Undo'
 import {
   Accordion,
   AccordionDetails,
@@ -40,6 +42,8 @@ interface GitPanelProps {
   gitLoading: boolean
   onRefreshGit: () => void
   onUndo?: () => void
+  onOpenInEditor?: (path: string) => void
+  onRevertFile?: (path: string) => void | Promise<void>
   isRunning: boolean
   refreshToken?: number
 }
@@ -109,18 +113,24 @@ function GitFileRow({
   expanded,
   onToggle,
   onStaged,
+  onOpenInEditor,
+  onRevertFile,
 }: {
   file: GitFileEntry
   workingDir: string
   expanded: boolean
   onToggle: () => void
   onStaged: () => void
+  onOpenInEditor?: (path: string) => void
+  onRevertFile?: (path: string) => void | Promise<void>
 }) {
   const [diff, setDiff] = useState<{ text: string; truncated: boolean } | null>(null)
   const [loading, setLoading] = useState(false)
   const [staging, setStaging] = useState(false)
+  const [reverting, setReverting] = useState(false)
   const label = describeGitChange(file.index, file.worktree)
   const canStage = file.index === ' ' || file.worktree !== ' '
+  const canRevert = true
 
   useEffect(() => {
     if (!expanded) return
@@ -195,6 +205,40 @@ function GitFileRow({
             {file.path}
           </Box>
         </Box>
+        {onOpenInEditor && (
+          <Tooltip title="Open in editor">
+            <IconButton
+              size="small"
+              aria-label={`Open ${file.path} in editor`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenInEditor(file.path)
+              }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+        {canRevert && onRevertFile && (
+          <Tooltip title="Revert file (discard local changes)">
+            <span>
+              <IconButton
+                size="small"
+                aria-label={`Revert ${file.path}`}
+                disabled={reverting}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setReverting(true)
+                  void Promise.resolve(onRevertFile(file.path)).finally(() =>
+                    setReverting(false)
+                  )
+                }}
+              >
+                {reverting ? <CircularProgress size={16} /> : <UndoIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
+        )}
         {canStage && (
           <Tooltip title="Stage file">
             <span>
@@ -306,6 +350,8 @@ export function GitPanel({
   gitLoading,
   onRefreshGit,
   onUndo,
+  onOpenInEditor,
+  onRevertFile,
   isRunning,
   refreshToken = 0,
 }: GitPanelProps) {
@@ -435,6 +481,8 @@ export function GitPanel({
                       setExpandedFile((prev) => (prev === f.path ? null : f.path))
                     }
                     onStaged={onRefreshGit}
+                    onOpenInEditor={onOpenInEditor}
+                    onRevertFile={onRevertFile}
                   />
                 ))}
               </Box>

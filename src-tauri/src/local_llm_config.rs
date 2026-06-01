@@ -12,6 +12,9 @@ const KEYS: &[&str] = &[
     "EMBEDDING_MODEL",
     "INDEX_MODEL",
     "OLLAMA_HOST",
+    "FAST_MODEL",
+    "HEAVY_MODEL",
+    "MODEL_ROUTER",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,6 +24,12 @@ pub struct LocalLlmSnapshot {
     pub ollama_host: Option<String>,
     pub data_model: Option<String>,
     pub llm_mode: Option<String>,
+    /// Ollama tag for router fast tier (`FAST_MODEL` in env).
+    pub fast_model: Option<String>,
+    /// Ollama tag for router heavy tier (`HEAVY_MODEL`; empty = use session LLM).
+    pub heavy_model: Option<String>,
+    /// When set, enables Settings → Local model router on sync / startup fill.
+    pub model_router: Option<bool>,
     /// App path when `local-llm.env` or `local-llm/local-llm.env` exists under the install root.
     pub repo_local_llm_root: Option<String>,
 }
@@ -88,6 +97,20 @@ fn resolve_chat_model(vars: &HashMap<String, String>) -> Option<String> {
     None
 }
 
+fn resolve_router_tag(vars: &HashMap<String, String>, key: &str) -> Option<String> {
+    vars.get(key)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn parse_bool_env(value: &str) -> Option<bool> {
+    match value.trim().to_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
 fn config_file_paths(hint_root: Option<&str>) -> Vec<PathBuf> {
     let root = app_root();
     let mut paths: Vec<PathBuf> = Vec::new();
@@ -145,10 +168,17 @@ pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {
             sources.push(display_path(&path));
         }
     }
+    let model_router = vars
+        .get("MODEL_ROUTER")
+        .and_then(|v| parse_bool_env(v));
+
     LocalLlmSnapshot {
         ollama_host: vars.get("OLLAMA_HOST").cloned(),
         data_model: resolve_chat_model(&vars),
         llm_mode: vars.get("LLM_MODE").cloned(),
+        fast_model: resolve_router_tag(&vars, "FAST_MODEL"),
+        heavy_model: resolve_router_tag(&vars, "HEAVY_MODEL"),
+        model_router,
         repo_local_llm_root: repo_local_llm_root(),
         sources,
     }

@@ -39,7 +39,7 @@ rm -rf cecli/bright_vision_core cecli/bright_vision_core.egg-info
 |----------|------------------------|-------------------------|
 | **Dev / dogfood** | `source activate.sh` → `pip install -e cecli` from submodule | Yes — whatever SHA is pinned |
 | **Clone + CI** | Same submodule SHA after `git submodule update --init cecli` | Yes |
-| **PyPI-only** (`requirements-core.txt`, `AIDER_VISION_CORE_INSTALL=pypi`) | Transitive `cecli` from published wheels | **No** until PyPI publishes that version |
+| **PyPI-only** (`requirements-core.txt`, `BRIGHT_VISION_CORE_INSTALL=pypi`) | Transitive `cecli` from published wheels | **No** until PyPI publishes that version |
 
 Default dev path is **editable submodule**, not PyPI `cecli` latest.
 

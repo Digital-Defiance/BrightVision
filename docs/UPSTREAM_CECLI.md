@@ -58,7 +58,7 @@ source activate.sh          # editable cecli + bright_vision_core + pytest
 yarn tauri dev
 ```
 
-Optional: `BRIGHT_VISION_CECLI_DIR`, `BRIGHT_VISION_PYTHON`, `AIDER_VISION_CORE_INSTALL=pypi` — see [DEVELOPMENT.md](./DEVELOPMENT.md).
+Optional: `BRIGHT_VISION_CECLI_DIR`, `BRIGHT_VISION_PYTHON`, `BRIGHT_VISION_CORE_INSTALL=pypi` — see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ---
 

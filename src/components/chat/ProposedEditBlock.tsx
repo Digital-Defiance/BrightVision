@@ -3,15 +3,24 @@ import {
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Box,
+  Button,
   Chip,
+  CircularProgress,
+  Stack,
   Typography,
 } from '@mui/material'
+import { useState } from 'react'
 import type { AssistantContentSegment } from '../../utils/proposedEdits'
+import { ChatFenceBlock } from './ChatFenceBlock'
 
 interface ProposedEditBlockProps {
   segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>
   applied: boolean
   defaultExpanded?: boolean
+  canApply?: boolean
+  onApply?: () => Promise<void>
+  onOpenInEditor?: (path: string) => void
 }
 
 function kindLabel(kind: string): string {
@@ -20,7 +29,34 @@ function kindLabel(kind: string): string {
   return 'Code block'
 }
 
-export function ProposedEditBlock({ segment, applied, defaultExpanded = false }: ProposedEditBlockProps) {
+export function ProposedEditBlock({
+  segment,
+  applied,
+  defaultExpanded = false,
+  canApply = false,
+  onApply,
+  onOpenInEditor,
+}: ProposedEditBlockProps) {
+  const [applying, setApplying] = useState(false)
+
+  const handleApply = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!onApply || applying || applied) return
+    setApplying(true)
+    try {
+      await onApply()
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onOpenInEditor?.(segment.title)
+  }
+
+  const fenceLang = segment.kind === 'search_replace' ? 'text' : segment.language
+
   return (
     <Accordion
       disableGutters
@@ -53,25 +89,32 @@ export function ProposedEditBlock({ segment, applied, defaultExpanded = false }:
       <AccordionDetails sx={{ pt: 0 }}>
         {!applied && (
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-            Shown in chat — may not be on disk until the engine applies SEARCH/REPLACE blocks.
+            {canApply
+              ? 'Apply writes this block to your project (exact or fuzzy SEARCH match). The engine may still propose the same edit until the turn finishes.'
+              : 'Apply is available in the desktop app. Shown in chat until Cecli applies it or you use Apply.'}
           </Typography>
         )}
-        <Typography
-          component="pre"
-          variant="body2"
-          sx={{
-            m: 0,
-            p: 1,
-            bgcolor: 'background.default',
-            borderRadius: 1,
-            overflow: 'auto',
-            fontSize: '0.75rem',
-            whiteSpace: 'pre-wrap',
-            maxHeight: 320,
-          }}
-        >
-          {segment.body}
-        </Typography>
+        <Box sx={{ mb: 1 }}>
+          <ChatFenceBlock language={fenceLang} body={segment.body} complete />
+        </Box>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+          {canApply && onApply && !applied && (
+            <Button
+              size="small"
+              variant="contained"
+              disabled={applying}
+              onClick={(e) => void handleApply(e)}
+              data-testid="proposed-edit-apply"
+            >
+              {applying ? <CircularProgress size={16} color="inherit" /> : 'Apply to workspace'}
+            </Button>
+          )}
+          {onOpenInEditor && segment.title && (
+            <Button size="small" variant="outlined" onClick={handleOpen}>
+              Open in editor
+            </Button>
+          )}
+        </Stack>
       </AccordionDetails>
     </Accordion>
   )

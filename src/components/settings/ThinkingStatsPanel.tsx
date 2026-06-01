@@ -239,7 +239,7 @@ export function ThinkingStatsPanel({
           onChange={(e) =>
             onTimingPrefsChange({ ...timingPrefs, timingStatsCsvPath: e.target.value })
           }
-          placeholder=".bright-vision/timing-history.csv"
+          placeholder=".cecli/timing-history.csv"
           helperText={
             isTauriRuntime()
               ? `Export all ${storedCount} stored turns (not only the table below). Download works in browser dev too.`

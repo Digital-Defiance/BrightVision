@@ -14,3 +14,15 @@ def test_resolve_ollama_tag_from_e2e_env(monkeypatch):
     monkeypatch.setenv("E2E_OLLAMA_MODEL", "ollama_chat/llama3.2:3b")
     assert resolve_ollama_tag() == "llama3.2:3b"
     assert vision_model_from_tag(resolve_ollama_tag()) == "ollama_chat/llama3.2:3b"
+
+
+def test_resolve_ollama_tag_ignores_data_model_in_suite(monkeypatch):
+    monkeypatch.delenv("E2E_OLLAMA_MODEL", raising=False)
+    monkeypatch.setenv("BV_TEST_SUITE_ACTIVE", "1")
+    monkeypatch.setenv("DATA_MODEL", "qwen3.6:27b-q4_K_M")
+    assert resolve_ollama_tag() == "llama3.2:3b"
+
+
+def test_vision_model_passes_through_openai_provider():
+    assert vision_model_from_tag("openai/gpt-4o-mini") == "openai/gpt-4o-mini"
+    assert vision_model_from_tag("azure/my-deployment") == "azure/my-deployment"

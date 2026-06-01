@@ -11,6 +11,7 @@ import {
   type AssistantContentSegment,
 } from '../../utils/proposedEdits'
 import { ChatFenceBlock } from './ChatFenceBlock'
+import { ChatMarkdown } from './ChatMarkdown'
 import { ProposedEditBlock } from './ProposedEditBlock'
 
 function sectionLabel(kind: string, durationMs?: number): string {
@@ -28,16 +29,17 @@ function sectionLabel(kind: string, durationMs?: number): string {
 function renderSegment(
   seg: AssistantContentSegment,
   key: string,
-  appliedFiles: string[]
+  appliedFiles: string[],
+  opts: {
+    canApply?: boolean
+    onApply?: (segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>) => Promise<void>
+    onOpenInEditor?: (path: string) => void
+  }
 ) {
   if (seg.type === 'prose') {
     const text = seg.content.trim()
     if (!text) return null
-    return (
-      <Typography key={key} variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-        {seg.content}
-      </Typography>
-    )
+    return <ChatMarkdown key={key} content={seg.content} />
   }
   if (seg.type === 'display_fence') {
     return (
@@ -56,6 +58,9 @@ function renderSegment(
       segment={seg}
       applied={applied}
       defaultExpanded={!applied && seg.kind === 'search_replace'}
+      canApply={opts.canApply}
+      onApply={opts.onApply ? () => opts.onApply!(seg) : undefined}
+      onOpenInEditor={opts.onOpenInEditor}
     />
   )
 }
@@ -64,6 +69,10 @@ interface AssistantMessageBodyProps {
   content: string
   appliedFiles?: string[]
   onOpenInEditor?: (path: string) => void
+  canApplyEdits?: boolean
+  onApplyProposedEdit?: (
+    segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>
+  ) => Promise<void>
   turnTiming?: TurnThinkingTiming
   showSectionDurations?: boolean
   showTurnTotal?: boolean
@@ -73,10 +82,17 @@ export function AssistantMessageBody({
   content,
   appliedFiles = [],
   onOpenInEditor,
+  canApplyEdits = false,
+  onApplyProposedEdit,
   turnTiming,
   showSectionDurations = true,
   showTurnTotal = true,
 }: AssistantMessageBodyProps) {
+  const segmentOpts = {
+    canApply: canApplyEdits,
+    onApply: onApplyProposedEdit,
+    onOpenInEditor,
+  }
   const sections = splitAssistantSections(content)
   const durationByIndex =
     turnTiming && showSectionDurations
@@ -126,7 +142,7 @@ export function AssistantMessageBody({
           )}
           <Stack spacing={1}>
             {parseAssistantContent(sec.content).map((seg, i) =>
-              renderSegment(seg, `${si}-${i}`, appliedFiles)
+              renderSegment(seg, `${si}-${i}`, appliedFiles, segmentOpts)
             )}
           </Stack>
         </Box>

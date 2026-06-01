@@ -6,10 +6,14 @@ import FileUploadIcon from '@mui/icons-material/FileUpload'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import FactCheckIcon from '@mui/icons-material/FactCheck'
+import FolderSharedIcon from '@mui/icons-material/FolderShared'
+import HubIcon from '@mui/icons-material/Hub'
 import LinkIcon from '@mui/icons-material/Link'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import { DISPLAY_VISION_API } from '../../brand'
 import {
+  Alert,
   Box,
   Button,
   Checkbox,
@@ -20,8 +24,10 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
+  Switch,
   List,
   ListItem,
   ListItemButton,
@@ -40,7 +46,22 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTodoBlocked } from '../../todos/layers'
 import { parseImplementationSteps, type ImplementationStep } from '../../todos/tasksMd'
 import type { ChecklistItem, TodoItem, TodoStatus } from '../../todos/types'
+import {
+  earsIssueLabel,
+  type EarsLintResult,
+  type SpecIndexResult,
+  type TraceabilityResult,
+} from '../../todos/earsTypes'
 import { TODO_TEMPLATES } from '../../todos/types'
+import { SessionContextHint } from '../session/SessionContextHint'
+import type { SessionContextUsage } from '../../utils/contextUsage'
+import {
+  gateSpecTabSwitch,
+  specWizardNudges,
+  wizardPromptForSection,
+  type SpecLayerSection,
+  type SpecWizardTab,
+} from '../../utils/specWizard'
 
 const STATUS_COLOR: Record<TodoStatus, 'default' | 'primary' | 'success' | 'warning'> = {
   open: 'default',
@@ -49,14 +70,14 @@ const STATUS_COLOR: Record<TodoStatus, 'default' | 'primary' | 'success' | 'warn
   cancelled: 'warning',
 }
 
-type SpecTab = 'requirements' | 'design' | 'tasks' | 'checklist'
+type SpecTab = SpecWizardTab
 
 interface TodoPanelProps {
   loading: boolean
   todos: TodoItem[]
   activeId: string | null
   templates?: string[]
-  onCreate: (title: string, spec: string, template?: string) => void | Promise<void>
+  onCreate: (title: string, spec: string, template?: string) => void | Promise<TodoItem | void>
   onUpdate: (
     id: string,
     patch: Partial<
@@ -75,7 +96,7 @@ interface TodoPanelProps {
         | 'checklist'
       >
     >
-  ) => void
+  ) => void | Promise<void>
   currentBranch?: string | null
   tauriLocal?: boolean
   onDelete: (id: string) => void
@@ -87,16 +108,34 @@ interface TodoPanelProps {
   sessionReady?: boolean
   sessionBusy?: boolean
   specGenerating?: boolean
+  contextPaths?: string[]
+  contextUsage?: SessionContextUsage
+  onOpenSpec?: () => void
+  onAddContextPath?: (path: string) => void | Promise<void>
+  onOpenContextInEditor?: (path: string) => void
   onGenerateSpec?: (
     todoId: string,
     prompt: string,
-    mode: 'generate' | 'refine'
+    mode: 'generate' | 'refine',
+    options?: { section?: SpecLayerSection | 'all'; contextPaths?: string[] }
   ) => void | Promise<void>
   onExportMarkdown?: () => void | Promise<void>
   onImportMarkdown?: (markdown: string, merge: boolean) => void | Promise<void>
   onMoveTodo?: (id: string, direction: 'up' | 'down') => void
   onSyncSpecFromDisk?: (id: string) => void | Promise<void>
+  onLintRequirements?: (id: string, draftRequirements: string) => Promise<EarsLintResult>
+  onFetchSpecIndex?: () => Promise<SpecIndexResult>
+  onRepairSpecFolders?: () => Promise<{ created_count: number; created_ids: string[] }>
+  onPruneOrphanSpecFolders?: () => Promise<{ removed_count: number; removed_ids: string[] }>
+  specFocusMode?: boolean
+  onSpecFocusChange?: (enabled: boolean) => void
+  onTraceSpec?: (
+    id: string,
+    draft: { requirements: string; design: string; tasks_md: string }
+  ) => Promise<TraceabilityResult>
   onCancelSpecGenerate?: () => void
+  /** Bumped after generate/refine saves layers — refreshes spec index panel. */
+  specIndexRefreshToken?: number
 }
 
 export function TodoPanel({
@@ -115,12 +154,25 @@ export function TodoPanel({
   sessionReady,
   sessionBusy,
   specGenerating,
+  contextPaths = [],
+  contextUsage,
+  onOpenSpec,
+  onAddContextPath,
+  onOpenContextInEditor,
   onGenerateSpec,
   onExportMarkdown,
   onImportMarkdown,
   onMoveTodo,
   onSyncSpecFromDisk,
+  onLintRequirements,
+  onFetchSpecIndex,
+  onRepairSpecFolders,
+  onPruneOrphanSpecFolders,
+  specFocusMode = false,
+  onSpecFocusChange,
+  onTraceSpec,
   onCancelSpecGenerate,
+  specIndexRefreshToken,
   currentBranch,
   tauriLocal,
 }: TodoPanelProps) {
@@ -138,27 +190,95 @@ export function TodoPanel({
   const [specTab, setSpecTab] = useState<SpecTab>('requirements')
   const [newTemplate, setNewTemplate] = useState<string>('')
   const [generateOpen, setGenerateOpen] = useState(false)
+  const [earsLint, setEarsLint] = useState<EarsLintResult | null>(null)
+  const [earsLinting, setEarsLinting] = useState(false)
+  const [specIndex, setSpecIndex] = useState<SpecIndexResult | null>(null)
+  const [specIndexing, setSpecIndexing] = useState(false)
+  const [specTrace, setSpecTrace] = useState<TraceabilityResult | null>(null)
+  const [specTracing, setSpecTracing] = useState(false)
   const [generatePrompt, setGeneratePrompt] = useState('')
   const [generateMode, setGenerateMode] = useState<'generate' | 'refine'>('generate')
+  const [generateSection, setGenerateSection] = useState<SpecLayerSection | 'all'>('all')
+  const [tabGateAlert, setTabGateAlert] = useState<string | null>(null)
 
   const selected = todos.find((t) => t.id === selectedId) ?? null
+  const layerDraft = useMemo(
+    () => ({ requirements, design, tasks_md: tasksMd }),
+    [requirements, design, tasksMd]
+  )
+  const wizardNudges = useMemo(
+    () => (selected ? specWizardNudges(specTab, layerDraft) : []),
+    [selected, specTab, layerDraft]
+  )
+
   const depOptions = todos.filter((t) => t.id !== selected?.id)
   const implSteps = useMemo(
     () => (selected ? parseImplementationSteps(tasksMd) : []),
     [selected?.id, tasksMd]
   )
 
+  const implementBlockedByEars = Boolean(earsLint && !earsLint.ok)
+
   useEffect(() => {
-    if (selected) {
-      setTitle(selected.title)
-      setRequirements(selected.requirements ?? '')
-      setDesign(selected.design ?? '')
-      setTasksMd(selected.tasks_md ?? '')
-      setDependsOn(selected.depends_on ?? [])
-      setBranch(selected.branch ?? '')
-      setPrUrl(selected.pr_url ?? '')
-      setChecklist(selected.checklist ?? [])
+    setEarsLint(null)
+    setSpecTrace(null)
+  }, [selectedId])
+
+  const runEarsLint = async () => {
+    if (!selected || !onLintRequirements) return
+    setEarsLinting(true)
+    try {
+      const result = await onLintRequirements(selected.id, requirements)
+      setEarsLint(result)
+    } finally {
+      setEarsLinting(false)
     }
+  }
+
+  const runSpecIndex = async () => {
+    if (!onFetchSpecIndex) return
+    setSpecIndexing(true)
+    try {
+      setSpecIndex(await onFetchSpecIndex())
+    } finally {
+      setSpecIndexing(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!specIndexRefreshToken || !onFetchSpecIndex) return
+    void runSpecIndex()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when parent bumps token after generate-spec
+  }, [specIndexRefreshToken])
+
+  const runTraceSpec = async () => {
+    if (!selected || !onTraceSpec) return
+    setSpecTracing(true)
+    try {
+      const result = await onTraceSpec(selected.id, {
+        requirements,
+        design,
+        tasks_md: tasksMd,
+      })
+      setSpecTrace(result)
+    } finally {
+      setSpecTracing(false)
+    }
+  }
+
+  const hydrateEditorFromTodo = (todo: TodoItem) => {
+    setTitle(todo.title)
+    setRequirements(todo.requirements ?? '')
+    setDesign(todo.design ?? '')
+    setTasksMd(todo.tasks_md ?? '')
+    setDependsOn(todo.depends_on ?? [])
+    setBranch(todo.branch ?? '')
+    setPrUrl(todo.pr_url ?? '')
+    setChecklist(todo.checklist ?? [])
+  }
+
+  useEffect(() => {
+    if (selected) hydrateEditorFromTodo(selected)
   }, [
     selected?.id,
     selected?.title,
@@ -171,9 +291,23 @@ export function TodoPanel({
     selected?.checklist,
   ])
 
-  const persistEditor = () => {
+  useEffect(() => {
+    if (!activeId) return
+    if (!selectedId || !todos.some((t) => t.id === selectedId)) {
+      setSelectedId(activeId)
+    }
+  }, [activeId, selectedId, todos])
+
+  useEffect(() => {
+    if (!specIndexRefreshToken) return
+    const todo = selectedId ? todos.find((t) => t.id === selectedId) : null
+    if (todo) hydrateEditorFromTodo(todo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh layers after generate/refine without leaving spec sub-tabs
+  }, [specIndexRefreshToken, todos, selectedId])
+
+  const persistEditor = async () => {
     if (!selected) return
-    onUpdate(selected.id, {
+    await onUpdate(selected.id, {
       title: title.trim() || 'Untitled',
       requirements,
       design,
@@ -185,18 +319,89 @@ export function TodoPanel({
     })
   }
 
+  const handleReloadFromDisk = async () => {
+    if (!selected || !onSyncSpecFromDisk) return
+    await persistEditor()
+    await onSyncSpecFromDisk(selected.id)
+  }
+
+  const openGenerateWizard = (
+    section: SpecLayerSection | 'all',
+    mode: 'generate' | 'refine' = 'generate'
+  ) => {
+    setGenerateMode(mode)
+    setGenerateSection(section)
+    if (section === 'all') {
+      setGeneratePrompt(title ? `Feature: ${title}` : '')
+    } else {
+      const meta = wizardPromptForSection(section, title)
+      setGeneratePrompt(meta.defaultPrompt)
+    }
+    setGenerateOpen(true)
+  }
+
+  const handleSpecTabChange = (_: unknown, next: SpecTab) => {
+    const gate = gateSpecTabSwitch(specTab, next, layerDraft)
+    if (!gate.allowed) {
+      setTabGateAlert(gate.message ?? 'Complete the previous wizard step first.')
+      return
+    }
+    setTabGateAlert(null)
+    setSpecTab(next)
+  }
+
+  const renderWizardNudges = () =>
+    wizardNudges.map((nudge) => (
+      <Alert
+        key={nudge.id}
+        severity={nudge.severity}
+        sx={{ mb: 1 }}
+        data-testid={`spec-wizard-nudge-${nudge.id}`}
+        action={
+          nudge.actionSection && onGenerateSpec && sessionReady ? (
+            <Button
+              color="inherit"
+              size="small"
+              disabled={specGenerating}
+              onClick={() => openGenerateWizard(nudge.actionSection!, 'generate')}
+            >
+              {nudge.actionLabel}
+            </Button>
+          ) : undefined
+        }
+      >
+        {nudge.message}
+      </Alert>
+    ))
+
+  const persistRequirements = () => {
+    persistEditor()
+    if (onLintRequirements && requirements.trim()) {
+      void runEarsLint()
+    }
+  }
+
   const handleNew = () => {
     const t = `Task ${todos.length + 1}`
-    void onCreate(t, '', newTemplate || undefined)
+    const template = newTemplate || undefined
     setNewTemplate('')
-    setSelectedId(null)
-    setTitle(t)
-    setRequirements('')
-    setDesign('')
-    setTasksMd('')
-    setDependsOn([])
-    setChecklist([])
-    setSpecTab('requirements')
+    void (async () => {
+      const created = await onCreate(t, '', template)
+      if (created?.id) {
+        setSelectedId(created.id)
+        hydrateEditorFromTodo(created)
+        setSpecTab('requirements')
+        return
+      }
+      setSelectedId(null)
+      setTitle(t)
+      setRequirements('')
+      setDesign('')
+      setTasksMd('')
+      setDependsOn([])
+      setChecklist([])
+      setSpecTab('requirements')
+    })()
   }
 
   const addChecklistItem = () => {
@@ -267,6 +472,56 @@ export function TodoPanel({
               Export
             </Button>
           )}
+          {httpReady && onFetchSpecIndex && (
+            <Button
+              size="small"
+              startIcon={
+                specIndexing ? <CircularProgress size={16} /> : <FolderSharedIcon />
+              }
+              disabled={loading || specIndexing}
+              onClick={() => void runSpecIndex()}
+              data-testid="todo-spec-index"
+            >
+              Check spec index
+            </Button>
+          )}
+          {(httpReady || tauriLocal) && onRepairSpecFolders && (
+            <Button
+              size="small"
+              disabled={loading}
+              onClick={() => {
+                void onRepairSpecFolders().then(() => void runSpecIndex())
+              }}
+              data-testid="todo-repair-spec-folders"
+            >
+              Repair folders
+            </Button>
+          )}
+          {(httpReady || tauriLocal) && onPruneOrphanSpecFolders && (
+            <Button
+              size="small"
+              disabled={loading}
+              onClick={() => {
+                void onPruneOrphanSpecFolders().then(() => void runSpecIndex())
+              }}
+              data-testid="todo-prune-orphan-spec-folders"
+            >
+              Remove orphans
+            </Button>
+          )}
+          {sessionReady && onSpecFocusChange && (
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={specFocusMode}
+                  onChange={(e) => onSpecFocusChange(e.target.checked)}
+                  data-testid="todo-spec-focus"
+                />
+              }
+              label="Spec focus"
+            />
+          )}
           {onImportMarkdown && (
             <>
               <input
@@ -307,15 +562,72 @@ export function TodoPanel({
         </Stack>
       </Stack>
       <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-        Stored in <Box component="code">.aider-vision/todos.json</Box>; three-layer specs also sync to{' '}
-        <Box component="code">.aider-vision/specs/&lt;id&gt;/</Box>.
+        Stored in <Box component="code">.cecli/todos.json</Box>; three-layer specs also sync to{' '}
+        <Box component="code">.cecli/specs/&lt;id&gt;/</Box>.
         {tauriLocal && !httpReady
           ? ` Desktop: tasks saved locally via Tauri (${DISPLAY_VISION_API} optional).`
           : httpReady
             ? ` Synced via ${DISPLAY_VISION_API} (no chat session required).`
             : ` Start ${DISPLAY_VISION_API} (Terminal → Start) or use the desktop app for file-backed tasks.`}{' '}
-        Checking all checklist items marks a task done automatically.
+        Checking all checklist items marks a task done automatically. Cecli agent{' '}
+        <Box component="code">UpdateTodoList</Box> syncs into Tasks when a chat turn finishes or when
+        you open this tab.
       </Typography>
+      {specGenerating && (
+        <Alert
+          severity="info"
+          sx={{ mx: 1 }}
+          data-testid="spec-generating-banner"
+          action={
+            onCancelSpecGenerate ? (
+              <Button color="inherit" size="small" onClick={onCancelSpecGenerate}>
+                Cancel
+              </Button>
+            ) : undefined
+          }
+        >
+          Generating spec in the background — switch to Chat or other tabs while you wait.
+        </Alert>
+      )}
+      {specIndex && (
+        <Alert
+          severity={specIndex.ok ? 'success' : 'warning'}
+          sx={{ mx: 1 }}
+          data-testid="spec-index-summary"
+          onClose={() => setSpecIndex(null)}
+        >
+          {specIndex.ok
+            ? `Spec index OK — ${specIndex.folders.length} folder(s), ${specIndex.task_ids.length} task(s)`
+            : `${specIndex.error_count} error(s), ${specIndex.warning_count} warning(s) across spec folders`}
+          {!specIndex.ok &&
+            specIndex.issues.some((i) => i.code === 'SPEC_ORPHAN_FOLDER') && (
+              <Typography variant="caption" component="div" sx={{ mt: 0.5 }}>
+                Orphan folders are from removed or older tasks (not your current task). Use{' '}
+                <strong>Remove orphans</strong> to clean them up.
+              </Typography>
+            )}
+        </Alert>
+      )}
+      {specIndex && specIndex.issues.length > 0 && (
+        <Stack spacing={0.25} sx={{ mx: 1, maxHeight: 120, overflow: 'auto' }} data-testid="spec-index-issues">
+          {specIndex.issues.map((issue, idx) => (
+            <Typography
+              key={`${issue.code}-${issue.todo_id ?? idx}`}
+              variant="caption"
+              component="div"
+              color={
+                issue.severity === 'error'
+                  ? 'error.main'
+                  : issue.severity === 'warning'
+                    ? 'warning.main'
+                    : 'text.secondary'
+              }
+            >
+              {earsIssueLabel(issue)}
+            </Typography>
+          ))}
+        </Stack>
+      )}
 
       <Stack direction="row" sx={{ flex: 1, minHeight: 0, gap: 1 }}>
         <Paper
@@ -495,48 +807,146 @@ export function TodoPanel({
                 </Button>
               )}
 
+              {onGenerateSpec && contextUsage && (
+                <SessionContextHint
+                  contextFiles={contextPaths}
+                  contextUsage={contextUsage}
+                  sessionReady={sessionReady}
+                  onOpenSpec={onOpenSpec}
+                  onAddPath={onAddContextPath}
+                  onOpenInEditor={onOpenContextInEditor}
+                />
+              )}
+
+              {tabGateAlert && (
+                <Alert
+                  severity="warning"
+                  onClose={() => setTabGateAlert(null)}
+                  sx={{ mb: 1 }}
+                  data-testid="spec-tab-gate-alert"
+                >
+                  {tabGateAlert}
+                </Alert>
+              )}
+
               <Tabs
                 value={specTab}
-                onChange={(_, v: SpecTab) => setSpecTab(v)}
+                onChange={handleSpecTabChange}
                 variant="scrollable"
                 allowScrollButtonsMobile
+                data-testid="spec-layer-tabs"
               >
-                <Tab label="Requirements" value="requirements" />
+                <Tab
+                  label={
+                    earsLint && earsLint.error_count > 0
+                      ? `Requirements (${earsLint.error_count})`
+                      : 'Requirements'
+                  }
+                  value="requirements"
+                />
                 <Tab label="Design" value="design" />
                 <Tab label="Tasks" value="tasks" />
                 <Tab label="Checklist" value="checklist" />
               </Tabs>
 
               {specTab === 'requirements' && (
-                <TextField
-                  label="Requirements (EARS-style)"
-                  size="small"
-                  fullWidth
-                  multiline
-                  minRows={8}
-                  maxRows={16}
-                  value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  onBlur={persistEditor}
-                  placeholder="WHEN … THE system SHALL …"
-                />
+                <Stack spacing={1}>
+                  {renderWizardNudges()}
+                  <TextField
+                    label="Requirements (EARS-style)"
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={8}
+                    maxRows={16}
+                    value={requirements}
+                    onChange={(e) => setRequirements(e.target.value)}
+                    onBlur={persistRequirements}
+                    placeholder="WHEN … THE system SHALL …"
+                  />
+                  {earsLint && (
+                    <Alert
+                      severity={earsLint.ok ? 'success' : 'error'}
+                      data-testid="ears-lint-summary"
+                    >
+                      {earsLint.ok
+                        ? `EARS OK (${earsLint.clauses.length} clause${earsLint.clauses.length === 1 ? '' : 's'})`
+                        : `${earsLint.error_count} error(s), ${earsLint.warning_count} warning(s)`}
+                    </Alert>
+                  )}
+                  {earsLint && earsLint.issues.length > 0 && (
+                    <Stack spacing={0.5} data-testid="ears-lint-issues">
+                      {earsLint.issues.map((issue, idx) => (
+                        <Typography
+                          key={`${issue.code}-${issue.line ?? idx}`}
+                          variant="caption"
+                          component="div"
+                          color={
+                            issue.severity === 'error'
+                              ? 'error.main'
+                              : issue.severity === 'warning'
+                                ? 'warning.main'
+                                : 'text.secondary'
+                          }
+                        >
+                          {earsIssueLabel(issue)}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  )}
+                </Stack>
               )}
               {specTab === 'design' && (
-                <TextField
-                  label="Design"
-                  size="small"
-                  fullWidth
-                  multiline
-                  minRows={8}
-                  maxRows={16}
-                  value={design}
-                  onChange={(e) => setDesign(e.target.value)}
-                  onBlur={persistEditor}
-                  placeholder="Overview, architecture, components…"
-                />
+                <Stack spacing={1}>
+                  {renderWizardNudges()}
+                  <TextField
+                    label="Design"
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={8}
+                    maxRows={16}
+                    value={design}
+                    onChange={(e) => setDesign(e.target.value)}
+                    onBlur={persistEditor}
+                    placeholder="Overview, architecture, components…"
+                  />
+                </Stack>
               )}
               {specTab === 'tasks' && (
                 <>
+                  {renderWizardNudges()}
+                  {specTrace && (
+                    <Alert
+                      severity={specTrace.ok ? 'success' : 'warning'}
+                      data-testid="spec-trace-summary"
+                      onClose={() => setSpecTrace(null)}
+                    >
+                      {specTrace.req_ids.length === 0
+                        ? 'No REQ-### ids in requirements.'
+                        : `${specTrace.req_ids.length} requirement id(s); ${specTrace.error_count} error(s), ${specTrace.warning_count} warning(s)`}
+                    </Alert>
+                  )}
+                  {specTrace && specTrace.issues.length > 0 && (
+                    <Stack spacing={0.5} data-testid="spec-trace-issues">
+                      {specTrace.issues.map((issue, idx) => (
+                        <Typography
+                          key={`${issue.code}-${issue.req_id ?? idx}`}
+                          variant="caption"
+                          component="div"
+                          color={
+                            issue.severity === 'error'
+                              ? 'error.main'
+                              : issue.severity === 'warning'
+                                ? 'warning.main'
+                                : 'text.secondary'
+                          }
+                        >
+                          {earsIssueLabel(issue)}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  )}
                   <TextField
                     label="Implementation tasks"
                     size="small"
@@ -573,7 +983,14 @@ export function TodoPanel({
                             <Button
                               size="small"
                               variant="outlined"
-                              disabled={sessionBusy || !sessionReady}
+                              disabled={
+                                sessionBusy || !sessionReady || implementBlockedByEars
+                              }
+                              title={
+                                implementBlockedByEars
+                                  ? 'Fix EARS errors (Validate EARS) before implementing'
+                                  : undefined
+                              }
                               onClick={() => {
                                 persistEditor()
                                 onImplementStep(
@@ -670,30 +1087,76 @@ export function TodoPanel({
                         specGenerating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />
                       }
                       disabled={!sessionReady || sessionBusy || specGenerating}
+                      data-testid="todo-generate-spec-wizard"
                       onClick={() => {
-                        setGenerateMode('generate')
-                        setGeneratePrompt(title ? `Feature: ${title}` : '')
-                        setGenerateOpen(true)
+                        const section: SpecLayerSection | 'all' =
+                          specTab === 'requirements'
+                            ? 'requirements'
+                            : specTab === 'design'
+                              ? 'design'
+                              : specTab === 'tasks'
+                                ? 'tasks_md'
+                                : 'all'
+                        openGenerateWizard(section, 'generate')
                       }}
                     >
-                      Generate spec
+                      {specTab === 'requirements'
+                        ? 'Generate requirements'
+                        : specTab === 'design'
+                          ? 'Generate design'
+                          : specTab === 'tasks'
+                            ? 'Generate tasks'
+                            : 'Generate spec'}
                     </Button>
+                    {specTab !== 'checklist' && (
+                      <Button
+                        size="small"
+                        disabled={!sessionReady || sessionBusy || specGenerating}
+                        onClick={() => openGenerateWizard('all', 'generate')}
+                        data-testid="todo-generate-spec-all"
+                      >
+                        All layers
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       disabled={!sessionReady || sessionBusy || specGenerating}
-                      onClick={() => {
-                        setGenerateMode('refine')
-                        setGeneratePrompt('Review for consistency across requirements, design, and tasks.')
-                        setGenerateOpen(true)
-                      }}
+                      onClick={() => openGenerateWizard('all', 'refine')}
                     >
                       Refine spec
                     </Button>
+                    {onLintRequirements && (
+                      <Button
+                        size="small"
+                        startIcon={
+                          earsLinting ? <CircularProgress size={16} /> : <FactCheckIcon />
+                        }
+                        disabled={!sessionReady || earsLinting}
+                        onClick={() => void runEarsLint()}
+                        data-testid="todo-validate-ears"
+                      >
+                        Validate EARS
+                      </Button>
+                    )}
+                    {onTraceSpec && selected && (
+                      <Button
+                        size="small"
+                        startIcon={
+                          specTracing ? <CircularProgress size={16} /> : <HubIcon />
+                        }
+                        disabled={!sessionReady || specTracing}
+                        onClick={() => void runTraceSpec()}
+                        data-testid="todo-trace-spec"
+                      >
+                        Trace coverage
+                      </Button>
+                    )}
                     {onSyncSpecFromDisk && selected && (
                       <Button
                         size="small"
                         disabled={loading}
-                        onClick={() => void onSyncSpecFromDisk(selected.id)}
+                        onClick={() => void handleReloadFromDisk()}
+                        data-testid="todo-reload-spec-from-disk"
                       >
                         Reload from disk
                       </Button>
@@ -756,15 +1219,32 @@ export function TodoPanel({
         </Paper>
       </Stack>
 
-      <Dialog open={generateOpen} onClose={() => !specGenerating && setGenerateOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={generateOpen} onClose={() => setGenerateOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
-          {generateMode === 'generate' ? 'Generate spec with AI' : 'Refine spec with AI'}
+          {generateMode === 'refine'
+            ? 'Refine spec with AI'
+            : generateSection === 'all'
+              ? 'Generate all spec layers'
+              : wizardPromptForSection(generateSection as SpecLayerSection, title).title}
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Runs in a separate background job (same model as your session). You can keep using chat
-            while the spec generates.
+            {generateMode === 'refine'
+              ? 'Runs in a separate background job. This dialog closes when you click Run — use Chat or other tabs while the spec generates.'
+              : generateSection === 'all'
+                ? 'Generates requirements, design, and tasks in one pass (legacy). For Kiro-style flow, use the per-layer buttons and wizard prompts on each tab.'
+                : wizardPromptForSection(generateSection as SpecLayerSection, title).helper}
           </Typography>
+          {contextPaths.length > 0 ? (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              Including {contextPaths.length} file(s): {contextPaths.slice(0, 4).join(', ')}
+              {contextPaths.length > 4 ? '…' : ''}
+            </Typography>
+          ) : (
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+              No files in session context — add paths on the Tasks context bar or in Chat before Run.
+            </Typography>
+          )}
           <TextField
             label="Prompt"
             fullWidth
@@ -772,34 +1252,32 @@ export function TodoPanel({
             minRows={3}
             value={generatePrompt}
             onChange={(e) => setGeneratePrompt(e.target.value)}
-            disabled={specGenerating}
+            autoFocus
           />
         </DialogContent>
         <DialogActions>
-          <Button
-            onClick={() => {
-              if (specGenerating) onCancelSpecGenerate?.()
-              else setGenerateOpen(false)
-            }}
-          >
-            {specGenerating ? 'Cancel generation' : 'Close'}
-          </Button>
+          <Button onClick={() => setGenerateOpen(false)}>Cancel</Button>
           <Button
             variant="contained"
-            disabled={!generatePrompt.trim() || specGenerating || !selected}
+            disabled={!generatePrompt.trim() || !selected || specGenerating}
             onClick={() => {
               if (!selected || !onGenerateSpec) return
-              void (async () => {
-                try {
-                  await onGenerateSpec(selected.id, generatePrompt.trim(), generateMode)
-                  setGenerateOpen(false)
-                } catch {
-                  /* parent shows snackbar */
-                }
-              })()
+              const todoId = selected.id
+              const prompt = generatePrompt.trim()
+              const mode = generateMode
+              const section = generateSection
+              setGenerateOpen(false)
+              void Promise.resolve(
+                onGenerateSpec(todoId, prompt, mode, {
+                  section,
+                  contextPaths,
+                })
+              ).catch(() => {
+                /* parent snackbar */
+              })
             }}
           >
-            {specGenerating ? 'Generating…' : 'Run'}
+            Run
           </Button>
         </DialogActions>
       </Dialog>

@@ -36,6 +36,9 @@ export function ModelRouterSection({
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         Classify each prompt (token estimate + keywords), then pick from the enabled models in
         the hopper below. Swapping a 7B coder for ~30s beats a 27B model on a 20-minute typo fix.
+        On session start, BrightVision loads your session LLM, then only <em>pulls</em> the
+        resolved fast/heavy tags if missing — it does not preload every enabled hopper model into
+        RAM (Ollama allows one loaded model at a time). Swaps happen when a turn routes.
       </Typography>
       <Stack spacing={2}>
         <FormControlLabel

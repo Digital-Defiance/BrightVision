@@ -1,3 +1,4 @@
+import inspect
 import subprocess
 import types
 import unittest
@@ -42,6 +43,11 @@ def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | Non
 
 
 class TestGitWorkspace(unittest.TestCase):
+    def test_reposet_commit_accepts_coder_edits_kwarg(self):
+        """Cecli dirty_commit calls repo.commit(coder_edits=True) on RepoSet."""
+        params = inspect.signature(RepoSet.commit).parameters
+        self.assertIn("coder_edits", params)
+
     def test_discover_submodule_paths(self):
         with GitTemporaryDirectory() as root:
             root = Path(root)

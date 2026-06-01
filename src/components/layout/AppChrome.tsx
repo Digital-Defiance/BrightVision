@@ -1,10 +1,12 @@
 import { Box, IconButton, Paper, Stack, Toolbar, Tooltip, Typography } from '@mui/material'
 import type { ReactNode } from 'react'
+import { DISPLAY_VISION } from '../../brand'
 import { BrandLogo } from '../brand/BrandLogo'
 import type { ProcessSnapshot } from '../../progress/types'
 import type { TurnEtaEstimate } from '../../utils/turnEtaEstimate'
 import type { LiveThinkingState } from '../../utils/thinkingTiming'
-import { VisionActivityBar } from '../progress/VisionActivityBar'
+import type { ConnectionTone } from '../../utils/connectionStatus'
+import { VisionActivityBar, type SpecJobActivity } from '../progress/VisionActivityBar'
 
 export interface NavItem {
   id: string
@@ -17,13 +19,17 @@ interface AppChromeProps {
   activeTab: string
   onTabChange: (id: string) => void
   process: ProcessSnapshot
-  isRunning: boolean
+  specJob?: SpecJobActivity | null
   liveTiming?: LiveThinkingState | null
   turnEta?: TurnEtaEstimate | null
   headerExtra?: ReactNode
+  /** Green = session live; amber = API up, no session; grey = stopped. */
+  connectionTone?: ConnectionTone
   children: ReactNode
   /** CPU/RAM/GPU strip anchored in the left nav rail (not over main content). */
   railFooter?: ReactNode
+  /** Opens About (version + credits). */
+  onLogoClick?: () => void
 }
 
 export const VISION_SIDEBAR_W = 92
@@ -33,13 +39,60 @@ export function AppChrome({
   activeTab,
   onTabChange,
   process,
-  isRunning,
+  specJob = null,
   liveTiming = null,
   turnEta = null,
   headerExtra,
+  connectionTone = 'stopped',
   children,
   railFooter,
+  onLogoClick,
 }: AppChromeProps) {
+  const logoButtonSx = onLogoClick
+    ? {
+        border: 0,
+        p: 0,
+        m: 0,
+        bgcolor: 'transparent',
+        cursor: 'pointer',
+        display: 'block',
+        lineHeight: 0,
+        '&:hover': { opacity: 0.88 },
+        '&:focus-visible': {
+          outline: '2px solid',
+          outlineColor: 'primary.main',
+          outlineOffset: 2,
+          borderRadius: 1,
+        },
+      }
+    : undefined
+
+  const wrapLogo = (variant: 'header' | 'rail', node: ReactNode) => {
+    if (!onLogoClick) return node
+    const testId = variant === 'header' ? 'brand-logo-header' : 'brand-logo-rail'
+    return (
+      <Tooltip title={`About ${DISPLAY_VISION}`} placement={variant === 'header' ? 'bottom' : 'right'}>
+        <Box
+          component="button"
+          type="button"
+          onClick={onLogoClick}
+          aria-label={`About ${DISPLAY_VISION}`}
+          data-testid={testId}
+          sx={variant === 'header' ? { ...logoButtonSx, minWidth: 0 } : logoButtonSx}
+        >
+          {node}
+        </Box>
+      </Tooltip>
+    )
+  }
+
+  const connectionDotSx = {
+    stopped: { bgcolor: 'grey.700', boxShadow: 'none' },
+    ready: { bgcolor: 'warning.main', boxShadow: '0 0 10px rgba(251, 191, 36, 0.45)' },
+    starting: { bgcolor: 'info.main', boxShadow: '0 0 10px rgba(56, 189, 248, 0.45)' },
+    live: { bgcolor: 'success.main', boxShadow: '0 0 10px rgba(34, 197, 94, 0.55)' },
+  }[connectionTone]
+
   return (
     <Box sx={{ display: 'flex', height: '100vh', bgcolor: 'background.default' }}>
       <Paper
@@ -61,7 +114,7 @@ export function AppChrome({
           bgcolor: 'background.paper',
         }}
       >
-        <BrandLogo variant="rail" />
+        {wrapLogo('rail', <BrandLogo variant="rail" />)}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.5, minHeight: 0 }}>
           {nav.map((item) => {
           const selected = activeTab === item.id
@@ -124,20 +177,25 @@ export function AppChrome({
         >
           <Toolbar variant="dense" sx={{ minHeight: 48, gap: 1.5 }}>
             <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
-              <BrandLogo variant="header" />
+              {wrapLogo('header', <BrandLogo variant="header" />)}
             </Box>
             <Box
+              data-testid="connection-status-dot"
               sx={{
                 width: 7,
                 height: 7,
                 borderRadius: '50%',
-                bgcolor: isRunning ? 'success.main' : 'grey.700',
-                boxShadow: isRunning ? '0 0 10px rgba(34, 197, 94, 0.55)' : 'none',
+                ...connectionDotSx,
               }}
             />
             {headerExtra}
           </Toolbar>
-          <VisionActivityBar process={process} liveTiming={liveTiming} turnEta={turnEta} />
+          <VisionActivityBar
+            process={process}
+            specJob={specJob}
+            liveTiming={liveTiming}
+            turnEta={turnEta}
+          />
         </Paper>
 
         <Box

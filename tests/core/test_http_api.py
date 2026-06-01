@@ -24,7 +24,7 @@ class TestHttpApi(unittest.TestCase):
 
     def tearDown(self):
         reset_auth_for_tests()
-        os.environ.pop("AIDER_VISION_TOKEN", None)
+        os.environ.pop("BRIGHT_VISION_TOKEN", None)
 
     def test_health(self):
         client = TestClient(app)
@@ -38,7 +38,7 @@ class TestHttpApi(unittest.TestCase):
         self.assertEqual(res.status_code, 404)
 
     def test_auth_required_when_token_set(self):
-        os.environ["AIDER_VISION_TOKEN"] = "test-secret-token"
+        os.environ["BRIGHT_VISION_TOKEN"] = "test-secret-token"
         configure_auth("127.0.0.1")
         client = TestClient(app)
         res = client.post("/sessions", json={"workspace": "/tmp"})

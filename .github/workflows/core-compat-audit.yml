@@ -3,11 +3,13 @@ name: Core compatibility audit
 on:
   pull_request:
     paths:
-      - 'aider-vision-core/**'
+      - 'bright_vision_core/**'
+      - 'cecli/**'
       - 'src/**'
       - 'src-tauri/**'
       - 'docs/**'
       - 'package.json'
+      - 'pyproject.toml'
   push:
     branches: [main]
   workflow_dispatch:
@@ -22,8 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Rename / headless compat audit
-        run: python aider-vision-core/scripts/audit_rename_compat.py
-      - name: vision_runtime unit tests
-        working-directory: aider-vision-core
-        run: python -m unittest tests.basic.test_vision_runtime -v
+      - name: Install bright_vision_core + cecli (editable)
+        run: |
+          python -m pip install -U pip
+          pip install -e cecli
+          pip install -e '.[dev]'
+      - name: workspace path migration tests
+        run: python -m pytest tests/core/test_workspace_paths.py -q

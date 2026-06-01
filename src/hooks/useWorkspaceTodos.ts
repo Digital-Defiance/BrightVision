@@ -1,10 +1,11 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CoreHttpClient } from '../ipc/httpClient'
 import { isTauriRuntime } from '../ipc/isTauri'
 import { loadTodoStore, normalizeTodo, saveTodoStore } from '../todos/storage'
 import { exportTodoStore, importTodoStore } from '../todos/markdown'
 import { applyLayerTemplate, applyTodoTemplate } from '../todos/templates'
+import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from '../todos/earsTypes'
 import type { ChecklistItem, TodoItem, TodoStore, TodoStatus } from '../todos/types'
 
 function nowIso(): string {
@@ -18,6 +19,7 @@ function checklistComplete(checklist: ChecklistItem[]): boolean {
 export interface WorkspaceTodosApi {
   client: CoreHttpClient
   workspace: string
+  sessionId?: string | null
 }
 
 type TodoPatch = Partial<
@@ -37,21 +39,58 @@ type TodoPatch = Partial<
   >
 >
 
+export type SpecLayerDraft = Partial<Pick<TodoItem, 'requirements' | 'design' | 'tasks_md'>>
+
+function specLayersInPatch(patch: TodoPatch): SpecLayerDraft | null {
+  const layers: SpecLayerDraft = {}
+  if (patch.requirements !== undefined) layers.requirements = patch.requirements
+  if (patch.design !== undefined) layers.design = patch.design
+  if (patch.tasks_md !== undefined) layers.tasks_md = patch.tasks_md
+  return Object.keys(layers).length > 0 ? layers : null
+}
+
 export function useWorkspaceTodos(
   workingDir: string,
   api?: WorkspaceTodosApi | null,
-  onAutoCompleted?: (todoId: string) => void
+  callbacks?: {
+    onAutoCompleted?: (todoId: string) => void
+    onEarsRegression?: (todoId: string, errorCount: number) => void
+    onSpecLayersSaved?: (todoId: string, layers: SpecLayerDraft) => void
+  }
 ) {
+  const onAutoCompleted = callbacks?.onAutoCompleted
+  const onEarsRegression = callbacks?.onEarsRegression
+  const onSpecLayersSaved = callbacks?.onSpecLayersSaved
   const [store, setStore] = useState<TodoStore | null>(null)
   const [loading, setLoading] = useState(true)
   const [httpReady, setHttpReady] = useState(false)
+  const reloadGenerationRef = useRef(0)
   const tauriLocal = isTauriRuntime()
+
+  const exportSpecToDisk = useCallback(
+    async (id: string) => {
+      if (httpReady && api) {
+        await api.client.exportWorkspaceSpecFiles(api.workspace, id)
+        return
+      }
+      if (tauriLocal) {
+        await invoke('export_todo_spec_files', { workingDir, todoId: id })
+      }
+    },
+    [httpReady, api, tauriLocal, workingDir]
+  )
 
   const mirrorToDisk = useCallback(
     async (next: TodoStore) => {
-      if (tauriLocal) await saveTodoStore(workingDir, next)
+      if (!tauriLocal) return
+      await saveTodoStore(workingDir, next)
+      if (!httpReady) {
+        for (const t of next.todos) {
+          await invoke('export_todo_spec_files', { workingDir, todoId: t.id })
+        }
+      }
     },
-    [tauriLocal, workingDir]
+    [tauriLocal, workingDir, httpReady]
   )
 
   const persistLocal = useCallback(
@@ -63,30 +102,38 @@ export function useWorkspaceTodos(
   )
 
   const reload = useCallback(async () => {
+    const generation = ++reloadGenerationRef.current
+    const stale = () => generation !== reloadGenerationRef.current
     setLoading(true)
     try {
       if (tauriLocal) {
-        setStore(await loadTodoStore(workingDir))
+        const local = await loadTodoStore(workingDir)
+        if (!stale()) setStore(local)
       }
       if (api?.client) {
         try {
           await api.client.health()
+          // Agent todo.txt sync runs on session create (cecli), not on every list —
+          // re-import here resurrected tasks after delete.
+          if (stale()) return
           const data = await api.client.listWorkspaceTodos(api.workspace)
+          if (stale()) return
           setStore(data)
           setHttpReady(true)
           await mirrorToDisk(data)
           return
         } catch {
-          setHttpReady(false)
+          if (!stale()) setHttpReady(false)
         }
       } else {
         setHttpReady(false)
       }
       if (!tauriLocal) {
-        setStore(await loadTodoStore(workingDir))
+        const local = await loadTodoStore(workingDir)
+        if (!stale()) setStore(local)
       }
     } finally {
-      setLoading(false)
+      if (!stale()) setLoading(false)
     }
   }, [api, workingDir, tauriLocal, mirrorToDisk])
 
@@ -165,9 +212,10 @@ export function useWorkspaceTodos(
           }
       const base = store ?? { version: 1, activeId: null, todos: [] }
       await persistLocal({ ...base, todos: [item, ...base.todos] })
+      if (layers) await exportSpecToDisk(item.id)
       return item
     },
-    [httpReady, api, store, persistLocal, reload]
+    [httpReady, api, store, persistLocal, reload, exportSpecToDisk]
   )
 
   const updateTodo = useCallback(
@@ -175,8 +223,16 @@ export function useWorkspaceTodos(
       if (httpReady && api) {
         const result = await api.client.patchWorkspaceTodo(api.workspace, id, patch)
         if (result.auto_completed) onAutoCompleted?.(id)
+        if (
+          result.ears_requirements_ok === false &&
+          (result.ears_error_count ?? 0) > 0
+        ) {
+          onEarsRegression?.(id, result.ears_error_count ?? 0)
+        }
+        const layers = specLayersInPatch(patch)
+        if (layers) onSpecLayersSaved?.(id, layers)
         await reload()
-        return
+        return result
       }
       if (!store) return
       let todos = store.todos.map((t) =>
@@ -194,9 +250,12 @@ export function useWorkspaceTodos(
       if (!autoCompleted && patch.status === 'done' && activeId === id) {
         activeId = null
       }
+      const layers = specLayersInPatch(patch)
+      if (layers) onSpecLayersSaved?.(id, layers)
       await persistLocal({ ...store, todos, activeId })
+      if (layers) await exportSpecToDisk(id)
     },
-    [httpReady, api, store, persistLocal, reload, onAutoCompleted]
+    [httpReady, api, store, persistLocal, reload, onAutoCompleted, onSpecLayersSaved, exportSpecToDisk]
   )
 
   const deleteTodo = useCallback(
@@ -210,8 +269,11 @@ export function useWorkspaceTodos(
       const todos = store.todos.filter((t) => t.id !== id)
       const activeId = store.activeId === id ? null : store.activeId
       await persistLocal({ ...store, todos, activeId })
+      if (tauriLocal) {
+        await invoke('delete_todo_spec_folder', { workingDir, todoId: id })
+      }
     },
-    [httpReady, api, store, persistLocal, reload]
+    [httpReady, api, store, persistLocal, reload, tauriLocal, workingDir]
   )
 
   const setActiveTodo = useCallback(
@@ -274,19 +336,90 @@ export function useWorkspaceTodos(
 
   const syncSpecFromDisk = useCallback(
     async (id: string) => {
-      if (httpReady && api) {
-        await api.client.syncWorkspaceSpecFiles(api.workspace, id)
-        await reload()
-        return
+      const importFromDisk = async () => {
+        if (httpReady && api) {
+          await api.client.syncWorkspaceSpecFiles(api.workspace, id)
+          return
+        }
+        if (tauriLocal) {
+          await invoke('import_todo_spec_files', { workingDir, todoId: id })
+          return
+        }
+        throw new Error('Sync from disk requires the desktop app or a running Vision API session')
       }
-      if (tauriLocal) {
-        await invoke('import_todo_spec_files', { workingDir, todoId: id })
-        await reload()
-        return
+      try {
+        await importFromDisk()
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        const missingOnDisk =
+          /empty|No spec folder|Spec folder has no|404/.test(msg) ||
+          msg.includes('not found')
+        if (!missingOnDisk) throw err
+        await exportSpecToDisk(id)
+        await importFromDisk()
       }
-      throw new Error('Sync from disk requires the desktop app or a running Vision API session')
+      await reload()
     },
-    [httpReady, api, tauriLocal, workingDir, reload]
+    [httpReady, api, tauriLocal, workingDir, reload, exportSpecToDisk]
+  )
+
+  const lintRequirements = useCallback(
+    async (id: string, draftRequirements?: string): Promise<EarsLintResult> => {
+      if (!httpReady || !api) {
+        throw new Error('Validate EARS requires a running Vision API session (Terminal → Start)')
+      }
+      const draft =
+        draftRequirements !== undefined ? { requirements: draftRequirements } : undefined
+      if (api.sessionId) {
+        return api.client.lintSessionRequirements(api.sessionId, id, draft)
+      }
+      return api.client.lintWorkspaceRequirements(api.workspace, id, draft)
+    },
+    [httpReady, api]
+  )
+
+  const fetchSpecIndex = useCallback(async (): Promise<SpecIndexResult> => {
+    if (!httpReady || !api) {
+      throw new Error('Spec index requires a running Vision API (Terminal → Start)')
+    }
+    if (api.sessionId) {
+      return api.client.getSessionSpecIndex(api.sessionId)
+    }
+    return api.client.getWorkspaceSpecIndex(api.workspace)
+  }, [httpReady, api])
+
+  const repairSpecFolders = useCallback(async (): Promise<{ created_count: number; created_ids: string[] }> => {
+    if (!httpReady || !api) {
+      throw new Error('Repair spec folders requires a running Vision API')
+    }
+    return api.client.repairWorkspaceSpecFolders(api.workspace)
+  }, [httpReady, api])
+
+  const pruneOrphanSpecFolders = useCallback(async (): Promise<{ removed_count: number; removed_ids: string[] }> => {
+    if (httpReady && api) {
+      return api.client.pruneOrphanWorkspaceSpecFolders(api.workspace)
+    }
+    if (tauriLocal) {
+      const removed_ids = await invoke<string[]>('prune_orphan_spec_folders', { workingDir })
+      return { removed_count: removed_ids.length, removed_ids }
+    }
+    throw new Error('Remove orphan spec folders requires the desktop app or a running Vision API')
+  }, [httpReady, api, tauriLocal, workingDir])
+
+  const traceSpec = useCallback(
+    async (
+      id: string,
+      draft?: { requirements?: string; design?: string; tasks_md?: string }
+    ): Promise<TraceabilityResult> => {
+      if (!httpReady || !api) {
+        throw new Error('Trace coverage requires a running Vision API (Terminal → Start)')
+      }
+      if (api.sessionId) {
+        return api.client.traceSessionSpec(api.sessionId, id, draft)
+      }
+      return api.client.traceWorkspaceSpec(api.workspace, id, draft)
+    },
+    [httpReady, api]
   )
 
   const moveTodo = useCallback(
@@ -349,5 +482,11 @@ export function useWorkspaceTodos(
     importMarkdown,
     moveTodo,
     syncSpecFromDisk,
+    exportSpecToDisk,
+    lintRequirements,
+    fetchSpecIndex,
+    traceSpec,
+    repairSpecFolders,
+    pruneOrphanSpecFolders,
   }
 }

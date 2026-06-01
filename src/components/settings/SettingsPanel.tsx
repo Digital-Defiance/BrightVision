@@ -27,21 +27,31 @@ import { AppearanceSection } from './AppearanceSection'
 import { ThinkingTimingSection } from './ThinkingTimingSection'
 import { ResourceOverlaySection } from './ResourceOverlaySection'
 import type { ResourceOverlayPrefs } from '../../theme/resourceOverlayPrefs'
+import type { NtfyAlertsPrefs } from '../../theme/ntfyAlertsPrefs'
 import { LocalLlmActionButtons } from '../local-llm/LocalLlmActionButtons'
 import { LocalLlmPanel } from '../local-llm/LocalLlmPanel'
 import { useLocalLlmControls } from '../../hooks/useLocalLlmControls'
+import { useVisionApiControls } from '../../hooks/useVisionApiControls'
+import { VisionApiActionButtons } from './VisionApiActionButtons'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { SuggestedFilesSection } from './SuggestedFilesSection'
 import type { EditorLanguagePrefs } from '../../theme/editorLanguagePrefs'
 import { EditorLanguagesSection } from './EditorLanguagesSection'
 import { ModelRouterSection } from './ModelRouterSection'
-import type { ModelRouterPrefs } from '../../theme/modelRouterPrefs'
+import { applyLocalLlmHopperFromEnv, type ModelRouterPrefs } from '../../theme/modelRouterPrefs'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 import { AppVersionSection } from './AppVersionSection'
+import { SessionPersistenceSection } from './SessionPersistenceSection'
+import { NtfyAlertsSection } from './NtfyAlertsSection'
+import { MobileRemoteSection } from './MobileRemoteSection'
 import { AgentsSection } from './AgentsSection'
 import type { AppVersions } from '../../hooks/useAppVersions'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
+import {
+  SessionModeToggle,
+  type SessionMode,
+} from '../session/SessionModeToggle'
 
 interface SettingsPanelProps {
   config: VisionConfig
@@ -55,9 +65,11 @@ interface SettingsPanelProps {
   thinkingStatsStore: ThinkingStatsStore
   onClearThinkingStatsForModel: () => void
   onClearAllThinkingStats: () => void
-  onTimingStatsMessage?: (message: string, severity: 'info' | 'warning') => void
+  onTimingStatsMessage?: (message: string, severity: 'info' | 'warning' | 'error') => void
   resourceOverlayPrefs: ResourceOverlayPrefs
   onResourceOverlayPrefsChange: (prefs: ResourceOverlayPrefs) => void
+  ntfyAlertsPrefs: NtfyAlertsPrefs
+  onNtfyAlertsPrefsChange: (prefs: NtfyAlertsPrefs) => void
   suggestedFilesPrefs: SuggestedFilesPrefs
   onSuggestedFilesPrefsChange: (prefs: SuggestedFilesPrefs) => void
   editorLanguagePrefs: EditorLanguagePrefs
@@ -65,12 +77,16 @@ interface SettingsPanelProps {
   modelRouterPrefs: ModelRouterPrefs
   onModelRouterPrefsChange: (prefs: ModelRouterPrefs) => void
   sessionModel: string
+  onSessionModeChange: (mode: SessionMode) => void
+  liveSessionMode?: SessionMode | null
   onSave: () => void
   onReset: () => void
   appVersions: AppVersions
   subagents: SubAgentInfo[]
   agentModeAvailable: boolean
   sessionActive: boolean
+  sessionId?: string | null
+  onExportSessionDebug?: () => void | Promise<void>
 }
 
 export function SettingsPanel({
@@ -88,6 +104,8 @@ export function SettingsPanel({
   onTimingStatsMessage,
   resourceOverlayPrefs,
   onResourceOverlayPrefsChange,
+  ntfyAlertsPrefs,
+  onNtfyAlertsPrefsChange,
   suggestedFilesPrefs,
   onSuggestedFilesPrefsChange,
   editorLanguagePrefs,
@@ -95,17 +113,25 @@ export function SettingsPanel({
   modelRouterPrefs,
   onModelRouterPrefsChange,
   sessionModel,
+  onSessionModeChange,
+  liveSessionMode = null,
   onSave,
   onReset,
   appVersions,
   subagents,
   agentModeAvailable,
   sessionActive,
+  sessionId,
+  onExportSessionDebug,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
   const [ollamaTagsSnap, setOllamaTagsSnap] = useState<OllamaModelsSnapshot | null>(null)
   const localLlmControls = useLocalLlmControls(config)
+  const visionApiControls = useVisionApiControls(config, {
+    sessionActive,
+    onApiUrl: (url) => onChange({ ...config, coreApiUrl: url }),
+  })
 
   const refreshLocalLlm = useCallback(() => {
     if (!isTauriRuntime()) return
@@ -210,7 +236,16 @@ export function SettingsPanel({
                   disabled={!localLlmSnap?.sources.length}
                   onClick={() => {
                     if (!localLlmSnap) return
-                    onChange(applyLocalLlmToConfig(config, localLlmSnap, false))
+                    const nextCfg = applyLocalLlmToConfig(config, localLlmSnap, false)
+                    onChange(nextCfg)
+                    onModelRouterPrefsChange(
+                      applyLocalLlmHopperFromEnv(
+                        modelRouterPrefs,
+                        localLlmSnap,
+                        nextCfg.model,
+                        false
+                      )
+                    )
                   }}
                 >
                   Sync from env files
@@ -222,8 +257,7 @@ export function SettingsPanel({
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
                 <strong>Step 2 — Start Ollama:</strong> after step 1 (or setting{' '}
                 <code>ollama_chat/…</code> above), use Start then Ping. Same controls as{' '}
-                <strong>Terminal → Local LLM</strong>. Ping checks inference; use{' '}
-                <strong>Terminal → Start</strong> for the coding session ({DISPLAY_VISION_API}).
+                <strong>Terminal → Local LLM</strong>.
               </Typography>
               {isOllamaVisionModel(config.model) ? (
                 <LocalLlmActionButtons controls={localLlmControls} showSecondary={false} />
@@ -232,6 +266,20 @@ export function SettingsPanel({
                   Set <strong>LLM model</strong> to <code>ollama_chat/&lt;tag&gt;</code> or click{' '}
                   <strong>Sync from env files</strong> to enable Start and Ping.
                 </Typography>
+              )}
+              {isTauriRuntime() && (
+                <>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2, mb: 1 }}>
+                    <strong>Step 3 — Start {DISPLAY_VISION_API}:</strong> spawns{' '}
+                    <code>bright-vision-core-serve</code> on :8741 (tasks API, health, chat when you
+                    open a session). Use <strong>Terminal → Start</strong> for a full coding session
+                    (Ollama if enabled + API + Cecli workspace).
+                  </Typography>
+                  <VisionApiActionButtons
+                    controls={visionApiControls}
+                    sessionActive={sessionActive}
+                  />
+                </>
               )}
             </Paper>
           )}
@@ -335,6 +383,21 @@ export function SettingsPanel({
             }
             helperText="Automatically answer Yes on the next N confirmation prompts (0 = always ask)."
           />
+          <Box>
+            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+              Session mode (primary control on the Spec tab)
+            </Typography>
+            <SessionModeToggle
+              value={config.sessionMode}
+              onChange={onSessionModeChange}
+              liveMode={liveSessionMode}
+              sessionRunning={sessionActive}
+              size="medium"
+            />
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
+              ● active in this session · * pending (Stop and Start) · ○ applies on next Start
+            </Typography>
+          </Box>
           <TextField
             label="Prompt before commit"
             fullWidth
@@ -412,6 +475,26 @@ export function SettingsPanel({
       <ResourceOverlaySection
         prefs={resourceOverlayPrefs}
         onChange={onResourceOverlayPrefsChange}
+      />
+
+      <MobileRemoteSection
+        config={config}
+        onChange={onChange}
+        visionApiRunning={visionApiControls.apiReachable === true}
+        onMessage={onTimingStatsMessage}
+      />
+
+      <NtfyAlertsSection
+        prefs={ntfyAlertsPrefs}
+        onChange={onNtfyAlertsPrefsChange}
+        onMessage={onTimingStatsMessage}
+      />
+
+      <SessionPersistenceSection
+        config={config}
+        onChange={onChange}
+        sessionId={sessionId}
+        onExportSessionDebug={onExportSessionDebug}
       />
 
       <AppVersionSection versions={appVersions} />

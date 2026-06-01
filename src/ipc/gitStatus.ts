@@ -110,6 +110,14 @@ export async function gitStagePaths(
   await invoke('git_stage_paths', { workingDir, paths: paths ?? null })
 }
 
+/** Revert tracked changes to HEAD and remove untracked paths from the worktree. */
+export async function gitRestoreWorktreePaths(
+  workingDir: string,
+  paths: string[]
+): Promise<void> {
+  await invoke('git_restore_worktree_paths', { workingDir, paths })
+}
+
 /** Stage agent-edited paths when manual commit mode left them unstaged. */
 export async function autoStageEditedFiles(
   workingDir: string,

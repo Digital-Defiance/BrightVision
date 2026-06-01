@@ -94,6 +94,8 @@ describe('suggestedFiles', () => {
   it('parses /add command paths', () => {
     expect(parseAddCommandPath('/add src/foo.ts')).toBe('src/foo.ts')
     expect(parseAddCommandPath('/add @src/foo.ts')).toBe('src/foo.ts')
+    expect(parseAddCommandPath('/add AGENTS.md')).toBe('AGENTS.md')
+    expect(parseAddCommandPath('/add README.md')).toBe('README.md')
     expect(parseAddCommandPath('/add  ')).toBeNull()
     expect(parseAddCommandPath('hello')).toBeNull()
   })

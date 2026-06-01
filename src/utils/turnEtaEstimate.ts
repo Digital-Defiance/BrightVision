@@ -112,6 +112,11 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
     lines.push('Running longer than median — using p90 for remaining time.')
   }
 
+  // Bar and "~Xm left" must share one timeline (elapsed + remaining = total).
+  if (remaining > 0) {
+    estimatedTotal = Math.max(estimatedTotal, input.elapsedMs + remaining)
+  }
+
   const shortLabel =
     remaining > 0 ? `~${formatDurationMs(remaining)} left*` : null
 
@@ -122,4 +127,41 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
     tooltip: lines.join('\n'),
     confidence,
   }
+}
+
+/** Whether the activity bar should show the ETA time-remaining label. */
+export function isTurnEtaVisible(eta: TurnEtaEstimate | null | undefined): boolean {
+  return Boolean(eta?.shortLabel)
+}
+
+/**
+ * Fraction of estimated turn complete (0–1) from elapsed time vs estimated total.
+ * Used for the determinate ETA progress bar; capped below 1 until the turn ends.
+ */
+export function etaCompletionFraction(
+  eta: TurnEtaEstimate,
+  elapsedMs: number
+): number | null {
+  if (!isTurnEtaVisible(eta) || eta.totalMs == null || eta.totalMs <= 0) {
+    return null
+  }
+  if (eta.confidence === 'none') return null
+  let fraction = elapsedMs / eta.totalMs
+  if (eta.remainingMs != null && eta.remainingMs > 0) {
+    fraction = (eta.totalMs - eta.remainingMs) / eta.totalMs
+  }
+  if (!Number.isFinite(fraction)) return null
+  return clamp(fraction, 0, 0.98)
+}
+
+/** Monotonic 0–100 for ETA bar; never decreases when the estimate revises upward. */
+export function monotonicEtaCompletionPercent(
+  previousMaxFraction: number,
+  fraction: number | null
+): { percent: number | null; maxFraction: number } {
+  if (fraction == null) {
+    return { percent: null, maxFraction: 0 }
+  }
+  const maxFraction = Math.max(previousMaxFraction, fraction)
+  return { percent: Math.round(maxFraction * 100), maxFraction }
 }

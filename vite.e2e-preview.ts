@@ -5,7 +5,7 @@ export function e2ePreviewCoreStub(): Plugin {
   return {
     name: "bright-vision-e2e-preview-stub",
     configurePreviewServer(server) {
-      if (process.env.E2E !== "1" || process.env.E2E_LLM === "1") return;
+      if (process.env.E2E !== "1" || process.env.E2E_LLM === "1" || process.env.E2E_INTEGRATION === "1") return;
       server.middlewares.use((req, res, next) => {
         const raw = req.url ?? "";
         if (!raw.startsWith("/api/core")) return next();

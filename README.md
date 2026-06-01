@@ -119,7 +119,7 @@ source activate.sh
 yarn tauri dev
 ```
 
-1. Install [Ollama](https://ollama.com/) and copy `local-llm.env.example` → `local-llm.env` ([docs/LOCAL_LLM.md](docs/LOCAL_LLM.md))  
+1. Install [Ollama](https://ollama.com/) and copy `local-llm.env.example` → `local-llm.env` (`DATA_MODEL`; optional `FAST_MODEL` / `HEAVY_MODEL` / `MODEL_ROUTER` — [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md))  
 2. **Terminal → Start** (Vision API on `:8741`)  
 3. **Chat** when the session is live  
 

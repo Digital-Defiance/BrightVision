@@ -33,9 +33,7 @@ test.describe('Chat input & session control (roadmap #3–5)', () => {
     await page.getByTestId('chat-input').fill('queued follow-up')
     await page.getByTestId('chat-queue').click()
     await expect(page.getByTestId('chat-input')).toHaveValue('')
-    await expect(
-      page.getByTestId('chat-message-user').filter({ hasText: 'queued follow-up' })
-    ).toHaveCount(0)
+    await expectOptimisticSend(page, 'queued follow-up')
     await expect(page.getByText(/1 message queued/i)).toBeVisible()
     await page.getByTestId('chat-stop-turn').click({ force: true })
   })

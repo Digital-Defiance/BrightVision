@@ -60,7 +60,7 @@ def export_markdown(store: TodoStore) -> str:
         blocks.append("\n".join(lines))
     active = f"activeId: {store.active_id}\n\n" if store.active_id else ""
     body = "\n---\n\n".join(blocks)
-    return f"# Aider Vision Tasks\n\n{active}{body}\n" if body else "# Aider Vision Tasks\n\n"
+    return f"# BrightVision Tasks\n\n{active}{body}\n" if body else "# BrightVision Tasks\n\n"
 
 
 def _parse_checklist_line(line: str) -> ChecklistItem | None:
@@ -82,7 +82,7 @@ def import_markdown(text: str, existing: TodoStore | None = None, *, merge: bool
     lines = text.replace("\r\n", "\n").split("\n")
     i = 0
     active_from_header: str | None = None
-    if lines and lines[0].strip().lower().startswith("# aider vision tasks"):
+    if lines and lines[0].strip().lower() == "# brightvision tasks":
         i = 1
         while i < len(lines) and not lines[i].strip():
             i += 1
@@ -130,7 +130,7 @@ def import_markdown(text: str, existing: TodoStore | None = None, *, merge: bool
             continue
 
         hm = _TASK_HEADER.match(stripped)
-        if hm and not stripped.lower().startswith("# aider vision"):
+        if hm and not stripped.lower().startswith("# brightvision"):
             flush_task()
             current = {
                 "title": hm.group(1).strip(),

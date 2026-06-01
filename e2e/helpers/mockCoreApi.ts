@@ -8,13 +8,26 @@ import {
   emptyTodoStore,
 } from './fixtures'
 import { formatSse } from './sse'
+import { importAgentPlanFromDisk } from './agentTodoImportDisk'
+import { normalizeWorkspacePath } from './workspacePath'
+import { MOCK_SANE_SPEC_LAYERS } from '../../src/utils/specLayers'
 
 export interface MockCoreOptions {
   sessionId?: string
+  /** Absolute path reported as session workspace (fixture repos). */
+  workspacePath?: string
   healthDelayMs?: number
   healthFail?: boolean
   healthFailCount?: number
   initialTodos?: TodoStore
+  /** GET /sessions/{id}/transcript */
+  sessionTranscript?: { role: string; content: string }[]
+  /** When set, POST import-agent-plan returns 404 (no Cecli todo.txt). */
+  agentPlanMissing?: boolean
+  /** When set, POST import-agent-plan returns this store (simulated import without disk). */
+  agentPlanTodos?: TodoStore
+  /** Run real import_agent_plan_for_workspace against workspacePath (reads agent todo.txt on disk). */
+  agentTodoImportFromDisk?: boolean
   /** SSE event arrays per user message (cycles). */
   messageTurns?: Record<string, unknown>[][]
   /** Delay before fulfilling POST .../messages (keeps turn busy for queue/stop tests). */
@@ -37,9 +50,17 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 
   const sessionId = opts.sessionId ?? E2E_SESSION_ID
-  const workspace = '.'
+  const workspace = opts.workspacePath ?? '.'
+  const transcript = opts.sessionTranscript ?? []
   let healthHits = 0
   let todoStore = cloneStore(opts.initialTodos ?? emptyTodoStore())
+  if (opts.agentTodoImportFromDisk && opts.workspacePath) {
+    try {
+      todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
+    } catch {
+      /* keep initial/empty; POST import-agent-plan still exercises disk import */
+    }
+  }
   let filesInChat = [...(opts.filesInChat ?? [])]
   let sessionAutoCommits = true
   let messageTurnIndex = 0
@@ -113,6 +134,20 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
         status: 200,
         contentType: 'application/json',
         body: sessionJson(),
+      })
+      return
+    }
+    await route.continue()
+  })
+
+  await page.route(`**/api/core/sessions/${sessionId}/transcript`, async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          messages: transcript.map((m) => ({ role: m.role, content: m.content })),
+        }),
       })
       return
     }
@@ -239,9 +274,66 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   })
 
   const wsMatch = (url: URL) => {
-    const ws = url.searchParams.get('workspace') ?? workspace
-    return ws === workspace || ws === encodeURIComponent(workspace)
+    const raw = url.searchParams.get('workspace') ?? ''
+    const ws = normalizeWorkspacePath(decodeURIComponent(raw))
+    const root = normalizeWorkspacePath(workspace)
+    return ws === root
   }
+
+  let agentPlanImportCount = 0
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/todos/import-agent-plan'),
+    async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      const url = new URL(route.request().url())
+      if (!wsMatch(url)) {
+        await route.continue()
+        return
+      }
+      if (opts.agentPlanMissing) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+        })
+        return
+      }
+      agentPlanImportCount += 1
+      if (opts.agentTodoImportFromDisk && opts.workspacePath) {
+        try {
+          todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
+        } catch (err) {
+          await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              detail: err instanceof Error ? err.message : String(err),
+            }),
+          })
+          return
+        }
+      } else if (opts.agentPlanTodos) {
+        todoStore = cloneStore(opts.agentPlanTodos)
+      } else {
+        // Real core: no agent todo.txt → 404; workspace todos.json unchanged.
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(todoStore),
+      })
+    }
+  )
 
   await page.route(
     (url) => /\/workspaces\/todos$/.test(url.pathname),
@@ -340,6 +432,58 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   )
 
   await page.route(
+    (url) => url.pathname.includes('/lint-requirements'),
+    async (route) => {
+      const body = route.request().postDataJSON() as { requirements?: string }
+      const text = body?.requirements ?? ''
+      const ok = /\bshall\b/i.test(text) && /\bwhen\b/i.test(text)
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok,
+          error_count: ok ? 0 : 1,
+          warning_count: 0,
+          issues: ok
+            ? []
+            : [
+                {
+                  code: 'EARS_NO_SHALL',
+                  message: 'Requirement clause should include SHALL',
+                  severity: 'error',
+                  line: 2,
+                  req_id: 'REQ-001',
+                },
+              ],
+          clauses: ok ? [{ id: 'REQ-001', line: 1, text: 'mock clause' }] : [],
+        }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/repair-spec-folders'),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ created_count: 0, created_ids: [] }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/prune-orphan-spec-folders'),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ removed_count: 0, removed_ids: [] }),
+      })
+    }
+  )
+
+  await page.route(
     (url) => /\/workspaces\/todos\/[^/]+\/generate-spec$/.test(url.pathname),
     async (route) => {
     const url = new URL(route.request().url())
@@ -364,9 +508,9 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
       const t = todoStore.todos[idx]!
       const updated: TodoItem = {
         ...t,
-        requirements: '# Generated requirements\n\nWHEN user acts THEN system SHALL respond.',
-        design: '## Generated design\n\nDetails.',
-        tasks_md: '- [ ] Generated step',
+        requirements: MOCK_SANE_SPEC_LAYERS.requirements,
+        design: MOCK_SANE_SPEC_LAYERS.design,
+        tasks_md: MOCK_SANE_SPEC_LAYERS.tasks_md,
         updated_at: new Date().toISOString(),
       }
       const todos = [...todoStore.todos]
@@ -399,7 +543,15 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
       const m = url.pathname.match(/\/workspaces\/todos\/([^/]+)$/)
       if (!m) return false
       const seg = m[1]
-      return seg !== 'active' && !url.pathname.includes('generate-spec')
+      if (
+        seg === 'active' ||
+        seg === 'export' ||
+        seg === 'import' ||
+        seg === 'import-agent-plan'
+      ) {
+        return false
+      }
+      return !url.pathname.includes('generate-spec')
     },
     async (route) => {
     const url = new URL(route.request().url())
@@ -443,5 +595,10 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
     }
   )
 
-  return { sessionId, getAutoCommits: () => sessionAutoCommits, getTodoStore: () => todoStore }
+  return {
+    sessionId,
+    getAutoCommits: () => sessionAutoCommits,
+    getTodoStore: () => todoStore,
+    getAgentPlanImportCount: () => agentPlanImportCount,
+  }
 }

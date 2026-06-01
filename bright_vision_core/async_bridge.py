@@ -6,6 +6,7 @@ import asyncio
 import queue
 import threading
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeVar
 
 T = TypeVar("T")
@@ -30,8 +31,27 @@ HEARTBEAT_PULSE = object()
 
 
 def run(coro: Coroutine[object, object, T]) -> T:
-    """Run one coroutine in a fresh event loop (sync callers only)."""
-    return asyncio.run(coro)
+    """
+    Run one coroutine from sync code.
+
+    Uses ``asyncio.run`` when no loop is active. When called from an async turn
+    (e.g. cecli ``dirty_commit`` → ``RepoSet.commit`` → async ``GitRepo.commit``),
+    runs the coroutine on a worker thread so we never nest ``asyncio.run`` on the
+    active loop.
+    """
+    if _running_loop() is None:
+        return asyncio.run(coro)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    """Return the active loop, or None (avoid raising in tracebacks)."""
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
 
 
 def iterate_async(agen: AsyncIterator[T]) -> Iterator[T]:

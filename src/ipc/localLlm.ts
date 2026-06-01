@@ -37,8 +37,23 @@ export interface LlmPingResult {
   responsePreview: string | null
   coreReachable: boolean | null
   coreLatencyMs: number | null
+  /** Connect/HTTP detail when Vision API health fails (desktop ping). */
+  coreHealthError?: string | null
   error: string | null
   logs: string[]
+}
+
+/** MUI alert severity — Ollama-only success is warning when Vision API was probed but is down. */
+export function llmPingAlertSeverity(
+  r: LlmPingResult
+): 'success' | 'warning' | 'error' {
+  if (!r.generateOk) return 'error'
+  if (r.coreReachable === false) return 'warning'
+  return 'success'
+}
+
+export function llmPingNeedsSessionStart(r: LlmPingResult): boolean {
+  return r.generateOk && r.coreReachable === false
 }
 
 export function formatLlmPingSummary(r: LlmPingResult): string {
@@ -64,8 +79,10 @@ export function formatLlmPingSummary(r: LlmPingResult): string {
 
 /** Hint when ping succeeds against Ollama but the Vision API HTTP server is down. */
 export function formatLlmPingHint(r: LlmPingResult): string | null {
-  if (!r.generateOk || r.coreReachable !== false) return null
-  return `Ollama inference works. Start the coding session (Terminal → Start) so ${DISPLAY_VISION_API} listens on :8741.`
+  if (!llmPingNeedsSessionStart(r)) return null
+  const detail = r.coreHealthError?.trim()
+  const base = `Ollama is ready. Ping does not start ${DISPLAY_VISION_API} — use Settings → Start ${DISPLAY_VISION_API} or Terminal → Start (full session) so :8741 is listening.`
+  return detail ? `${base} (${detail})` : base
 }
 
 export interface LocalLlmSnapshot {
@@ -73,6 +90,12 @@ export interface LocalLlmSnapshot {
   ollamaHost: string | null
   dataModel: string | null
   llmMode: string | null
+  /** Ollama tag for router fast tier (`FAST_MODEL`). */
+  fastModel?: string | null
+  /** Ollama tag for router heavy tier (`HEAVY_MODEL`; omit to use session LLM). */
+  heavyModel?: string | null
+  /** `MODEL_ROUTER=1` enables local model router when syncing env. */
+  modelRouter?: boolean | null
   /** App path when `local-llm.env` exists at repo root or under `local-llm/`. */
   repoLocalLlmRoot?: string | null
 }
@@ -161,6 +184,9 @@ export function formatLocalLlmEnvPanel(snap: LocalLlmSnapshot): string {
   const effective: string[] = []
   if (snap.dataModel?.trim()) effective.push(`DATA_MODEL=${snap.dataModel.trim()}`)
   if (snap.ollamaHost?.trim()) effective.push(`OLLAMA_HOST=${snap.ollamaHost.trim()}`)
+  if (snap.fastModel?.trim()) effective.push(`FAST_MODEL=${snap.fastModel.trim()}`)
+  if (snap.heavyModel?.trim()) effective.push(`HEAVY_MODEL=${snap.heavyModel.trim()}`)
+  if (snap.modelRouter != null) effective.push(`MODEL_ROUTER=${snap.modelRouter ? '1' : '0'}`)
   const parts = [
     'Read order — later files override earlier:',
     ...lines,

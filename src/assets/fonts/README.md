@@ -1,24 +1,34 @@
-# Fonts
+# Fonts (bundled for the desktop app)
+
+Source of truth for full families: repo root [`assets/`](../../../assets/).  
+Ship copies here so Vite bundles them into the app.
+
+## UI + chat (Inter)
+
+Copied from `assets/Inter/`:
+
+| File | Weight |
+|------|--------|
+| `Inter-Regular.woff2` | 400 |
+| `Inter-Medium.woff2` | 500 |
+| `Inter-SemiBold.woff2` | 600 |
+| `Inter-Bold.woff2` | 700 |
+
+Registered in `src/styles/global.scss` as `font-family: Inter`. Default for UI and chat (Settings → Appearance).
 
 ## Wordmark (BrightVision logo text)
 
-Commit Inter exports used by inline SVG wordmarks (`src/assets/brand/*.svg`):
+| File | CSS name |
+|------|----------|
+| `Inter-Black.woff2` | `Inter-Black` |
+| `Inter-Thin.woff2` | `Inter-Thin` |
 
-```
-Inter-Black.woff2
-Inter-Thin.woff2
-```
+Used by inline SVG in `BrandLogo`, not the general UI stack.
 
-`global.scss` registers `@font-face` for `Inter-Black` and `Inter-Thin` so `BrandLogo` renders correctly when SVG is inlined in the app shell.
+## Optional retro chat
 
-## Chat / terminal preset
+| File | Preset |
+|------|--------|
+| `Glass_TTY_VT220.woff2` | Settings → Appearance → Glass TTY VT220 |
 
-Commit **Glass TTY VT220** for the optional classic terminal chat font:
-
-```
-Glass_TTY_VT220.woff2
-```
-
-If Glass TTY is missing, chat falls back to the system monospace stack.
-
-Include font license terms in the repo if required for distribution.
+Include font license terms in the repo if required for distribution (Inter OFL).

@@ -12,7 +12,8 @@ test.describe('Roadmap gaps (web smoke)', () => {
     await startMockSession(page, { initialTodos: sampleTodoStore() })
     await openTasks(page)
     await page.getByText('First task').click()
-    await expect(page.getByRole('button', { name: 'Generate spec' })).toBeEnabled()
+    await expect(page.getByTestId('todo-generate-spec-wizard')).toBeEnabled()
+    await expect(page.getByTestId('session-context-hint')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Refine spec' })).toBeEnabled()
   })
 

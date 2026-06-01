@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 
 import pytest
 
@@ -25,6 +24,11 @@ _HEADLESS_ATTRS = (
     "disable_scraping",
     "use_enhanced_map",
     "agent_config",
+    "auto_save",
+    "auto_load",
+    "auto_save_session_name",
+    "session_encrypt",
+    "session_key_file",
 )
 
 
@@ -60,22 +64,19 @@ def test_default_headless_args_returns_fresh_namespace():
 
 
 @pytest.mark.asyncio
-async def test_agent_coder_mcp_init_fails_without_verbose():
-    """Regression: Vision used to omit verbose and /agent crashed in initialize_mcp_tools."""
+async def test_agent_coder_mcp_init_with_default_headless_args():
+    """Vision /agent must pass default_headless_args (includes verbose) into AgentCoder."""
     pytest.importorskip("cecli")
     from cecli.coders.agent_coder import AgentCoder
     from cecli.io import InputOutput
     from cecli.models import Model
 
     io = InputOutput(pretty=False, fancy_input=False, yes=True)
-    bad_args = SimpleNamespace(debug=False, tui=False, yes=True)
     coder = AgentCoder(
         main_model=Model("gpt-3.5-turbo"),
         io=io,
         repo=None,
         fnames=[],
-        args=bad_args,
+        args=default_headless_args(yes=True),
     )
-
-    with pytest.raises(AttributeError, match="verbose"):
-        await coder.initialize_mcp_tools()
+    await coder.initialize_mcp_tools()

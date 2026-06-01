@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Optional dev hook: yarn install-git-hooks (see docs/DEVELOPMENT.md)
+set -e
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+if [ -x .venv/bin/python3 ] || [ -n "${E2E_PYTHON:-}" ]; then
+  yarn verify:ears
+else
+  echo "pre-commit: skip verify:ears (no .venv — run source activate.sh)" >&2
+fi

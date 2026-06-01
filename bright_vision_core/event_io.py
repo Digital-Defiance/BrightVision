@@ -8,7 +8,10 @@ import json
 import os
 import threading
 import uuid
+from collections import deque
 from typing import Any, Callable, TextIO
+
+_DEBUG_EVENT_RING_MAX = 800
 
 from rich.console import Console
 
@@ -34,6 +37,7 @@ class EventIO(InputOutput):
         self.on_event = on_event
         self.echo_to_console = echo_to_console
         self.events: list[dict[str, Any]] = []
+        self.debug_event_ring: deque[dict[str, Any]] = deque(maxlen=_DEBUG_EVENT_RING_MAX)
         self._confirm_lock = threading.Lock()
         self._confirm_events: dict[str, threading.Event] = {}
         self._confirm_answers: dict[str, bool] = {}
@@ -55,6 +59,7 @@ class EventIO(InputOutput):
     def emit(self, event_type: str, **payload: Any) -> dict[str, Any]:
         event = {"type": event_type, **payload}
         self.events.append(event)
+        self.debug_event_ring.append(event)
         if self.on_event:
             self.on_event(event)
         return event

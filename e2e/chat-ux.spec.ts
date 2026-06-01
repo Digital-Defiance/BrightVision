@@ -1,12 +1,30 @@
 import { expect, test } from '@playwright/test'
 import { expectOptimisticSend } from './helpers/chatSend'
-import { defaultTurnEvents, hangingTurnEvents } from './helpers/fixtures'
+import {
+  defaultTurnEvents,
+  hangingTurnEvents,
+  markdownAnswerTurnEvents,
+  proposedEditTurnEvents,
+} from './helpers/fixtures'
 import { openChat, startMockSession } from './helpers/session'
 
 test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
   test.beforeEach(async ({ page }) => {
     await startMockSession(page, { messageTurns: [defaultTurnEvents()] })
     await openChat(page)
+  })
+
+  test('assistant prose renders markdown (lists, bold, inline code)', async ({ page }) => {
+    await startMockSession(page, { messageTurns: [markdownAnswerTurnEvents()] })
+    await openChat(page)
+    await page.getByTestId('chat-input').fill('what is next')
+    await page.getByTestId('chat-send').click()
+
+    const md = page.getByTestId('chat-markdown').filter({ hasText: 'Open Items' })
+    await expect(md).toBeVisible({ timeout: 15_000 })
+    await expect(md.locator('strong', { hasText: 'Open Items' })).toBeVisible()
+    await expect(md.getByRole('listitem').filter({ hasText: '#21' })).toBeVisible()
+    await expect(md.locator('code', { hasText: 'yarn dogfood:agent' })).toBeVisible()
   })
 
   test('assistant turn shows section chips and reply', async ({ page }) => {
@@ -19,7 +37,9 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
     await expect(page.getByText('Explain the module')).toBeVisible()
   })
 
-  test('proposed edit accordion and applied label after done', async ({ page }) => {
+  test('proposed edit accordion when engine has not applied yet', async ({ page }) => {
+    await startMockSession(page, { messageTurns: [proposedEditTurnEvents()] })
+    await openChat(page)
     await page.getByTestId('chat-input').fill('Patch src/example.ts')
     await page.getByTestId('chat-send').click()
     await expectOptimisticSend(page, 'Patch src/example.ts')

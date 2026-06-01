@@ -1,10 +1,8 @@
 /**
- * Browser localStorage keys — migrate once from legacy `aider-vision-*` names.
+ * Browser localStorage keys for BrightVision settings.
  */
 
 import { PRODUCT_VISION } from './brand'
-
-const LEGACY_PREFIX = 'aider-vision'
 
 export const CONFIG_STORAGE_KEY = `${PRODUCT_VISION}-config`
 export const APPEARANCE_STORAGE_KEY = `${PRODUCT_VISION}-appearance`
@@ -14,38 +12,19 @@ export const RESOURCE_OVERLAY_STORAGE_KEY = `${PRODUCT_VISION}-resource-overlay`
 export const SUGGESTED_FILES_STORAGE_KEY = `${PRODUCT_VISION}-suggested-files`
 export const EDITOR_LANGUAGE_PREFS_STORAGE_KEY = `${PRODUCT_VISION}-editor-languages`
 export const MODEL_ROUTER_PREFS_STORAGE_KEY = `${PRODUCT_VISION}-model-router`
+export const NTFY_ALERTS_STORAGE_KEY = `${PRODUCT_VISION}-ntfy-alerts`
+export const SPEC_FOCUS_STORAGE_KEY = `${PRODUCT_VISION}-spec-focus`
 
-const MIGRATIONS: Array<{ current: string; legacy: string }> = [
-  { current: CONFIG_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-config` },
-  { current: APPEARANCE_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-appearance` },
-  { current: THINKING_TIMING_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-thinking-timing` },
-  { current: THINKING_STATS_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-thinking-stats` },
-  { current: RESOURCE_OVERLAY_STORAGE_KEY, legacy: `${LEGACY_PREFIX}-resource-overlay` },
-]
-
-/** Read key, copying legacy value forward when present. */
-export function readStorageItem(currentKey: string, legacyKey?: string): string | null {
-  const value = localStorage.getItem(currentKey)
-  if (value !== null) return value
-  if (!legacyKey) return null
-  const legacy = localStorage.getItem(legacyKey)
-  if (legacy === null) return null
-  localStorage.setItem(currentKey, legacy)
-  localStorage.removeItem(legacyKey)
-  return legacy
+/** Read key; returns null when unset. */
+export function readStorageItem(currentKey: string): string | null {
+  return localStorage.getItem(currentKey)
 }
 
-/** Run all known migrations (safe to call on app boot). */
-export function migrateLegacyStorageKeys(): void {
-  for (const { current, legacy } of MIGRATIONS) {
-    readStorageItem(current, legacy)
-  }
-}
+/** No-op — retained for callers on app boot. */
+export function migrateLegacyStorageKeys(): void {}
 
 export function removeStorageKeys(keys: string[]): void {
   for (const key of keys) {
     localStorage.removeItem(key)
-    const legacy = key.replace(PRODUCT_VISION, LEGACY_PREFIX)
-    if (legacy !== key) localStorage.removeItem(legacy)
   }
 }

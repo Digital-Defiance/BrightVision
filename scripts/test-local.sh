@@ -12,7 +12,8 @@ usage() {
   echo "  fast     — TypeScript check + Vitest (~seconds)" >&2
   echo "  local    — fast + Rust git_ops tests" >&2
   echo "  full     — local + Playwright e2e (~1–2 min)" >&2
-  echo "  release  — full + yarn verify:submodule (needs .venv)" >&2
+  echo "  integration — local + real-core Playwright (live :8741, no mock API)" >&2
+  echo "  release  — full + bright-core pytest + integration e2e + verify:submodule (needs .venv)" >&2
   exit 1
 }
 
@@ -30,17 +31,29 @@ case "$TIER" in
     yarn tsc --noEmit
     yarn test
     yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
     yarn test:e2e
+    ;;
+  integration)
+    yarn tsc --noEmit
+    yarn test
+    yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
+    yarn test:e2e:integration
     ;;
   release)
     yarn tsc --noEmit
     yarn test
     yarn test:rust
+    sh scripts/free-e2e-preview-port.sh
     yarn test:e2e
-    if [ -x ".venv/bin/python" ]; then
+    if [ -x ".venv/bin/python3" ]; then
+      yarn test:bright-core
+      sh scripts/free-e2e-preview-port.sh
+      yarn test:e2e:integration
       yarn verify:submodule
     else
-      echo "Note: skipping yarn verify:submodule (no .venv — run: source activate.sh)" >&2
+      echo "Note: skipping bright-core, integration e2e, verify:submodule (no .venv — run: source activate.sh)" >&2
     fi
     ;;
   -h|--help|help)

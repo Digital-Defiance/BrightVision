@@ -1,15 +1,18 @@
 """
-Workspace task list persisted in ``.aider-vision/todos.json``.
+Workspace task list persisted in ``.cecli/todos.json`` (see ``workspace_paths``).
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
+
+from bright_vision_core.workspace_paths import specs_root, todos_json_path, workspace_meta_dir
 
 TodoStatus = Literal["open", "in_progress", "done", "cancelled"]
 
@@ -224,11 +227,39 @@ def format_todo_context(item: TodoItem, *, store: TodoStore | None = None) -> st
 class WorkspaceTodos:
     def __init__(self, workspace_dir: str | Path):
         self.root = Path(workspace_dir).resolve()
-        self.path = self.root / ".aider-vision" / "todos.json"
-        self.specs_root = self.root / ".aider-vision" / "specs"
+        workspace_meta_dir(self.root)
+        self.path = todos_json_path(self.root)
+        self.specs_root = specs_root(self.root)
+
+    def repair_spec_folders(self) -> tuple[int, list[str]]:
+        """Create missing ``.cecli/specs/{id}/`` dirs and sync markdown from todos.json."""
+        store = self.load()
+        created: list[str] = []
+        for item in store.todos:
+            folder = self.specs_root / item.id
+            if not folder.is_dir():
+                created.append(item.id)
+            self.sync_spec_files(item)
+        return len(created), created
+
+    def prune_orphan_spec_folders(self) -> tuple[int, list[str]]:
+        """Remove ``.cecli/specs/{id}/`` dirs with no matching task in todos.json."""
+        store = self.load()
+        known = {item.id for item in store.todos}
+        removed: list[str] = []
+        if not self.specs_root.is_dir():
+            return 0, removed
+        for entry in sorted(self.specs_root.iterdir()):
+            if not entry.is_dir() or entry.name.startswith("."):
+                continue
+            if entry.name in known:
+                continue
+            shutil.rmtree(entry)
+            removed.append(entry.name)
+        return len(removed), removed
 
     def sync_spec_files(self, item: TodoItem) -> None:
-        """Write three-layer markdown under ``.aider-vision/specs/{id}/`` for external editing."""
+        """Write three-layer markdown under ``.cecli/specs/{id}/`` for external editing."""
         item = migrate_todo_layers(item)
         folder = self.specs_root / item.id
         folder.mkdir(parents=True, exist_ok=True)
@@ -411,7 +442,13 @@ class WorkspaceTodos:
         return store
 
     def delete(self, todo_id: str) -> None:
+        from bright_vision_core.agent_todos import parse_agent_todo_link
+
         store = self.load()
+        item = next((t for t in store.todos if t.id == todo_id), None)
+        if item is None:
+            raise ValueError(f"Unknown task: {todo_id}")
+        agent_relpath = parse_agent_todo_link(item.links)
         before = len(store.todos)
         store.todos = [t for t in store.todos if t.id != todo_id]
         if len(store.todos) == before:
@@ -419,6 +456,13 @@ class WorkspaceTodos:
         if store.active_id == todo_id:
             store.active_id = None
         self.save(store)
+        spec_folder = self.specs_root / todo_id
+        if spec_folder.is_dir():
+            shutil.rmtree(spec_folder)
+        if agent_relpath:
+            agent_path = self.root / agent_relpath
+            if agent_path.is_file():
+                agent_path.unlink()
 
     def set_active(self, todo_id: str | None) -> TodoStore:
         store = self.load()

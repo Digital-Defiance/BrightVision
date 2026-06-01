@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import type { TodoStore } from '../../src/todos/types'
 import {
   E2E_COMMIT_DETAIL,
   E2E_GIT_COMMITS,
@@ -7,6 +8,9 @@ import {
   E2E_GIT_STATUS,
   E2E_PATH_SUGGESTIONS,
 } from './tauriFixtures'
+import { emptyTodoStore } from './fixtures'
+
+const emptyTodosJson = (): TodoStore => emptyTodoStore()
 
 export type TauriHandler = (args: Record<string, unknown>) => unknown | Promise<unknown>
 
@@ -125,6 +129,10 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
       gpuSource: 'nvidia-smi',
       scope: 'system',
     }),
+    ntfy_send_push: async () => null,
+    read_workspace_todos: async () => emptyTodosJson(),
+    write_workspace_todos: async () => null,
+    export_todo_spec_files: async () => null,
     llm_ping: async () => ({
       ollamaReachable: true,
       modelPulled: true,

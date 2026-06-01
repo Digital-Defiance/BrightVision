@@ -2,7 +2,7 @@ import { SUGGESTED_FILES_STORAGE_KEY } from '../storageKeys'
 
 export { SUGGESTED_FILES_STORAGE_KEY }
 
-/** User message sent after suggested files land in context (cecli / aider convention). */
+/** User message sent after suggested files land in context (Cecli convention). */
 export const PROCEED_AFTER_FILES_MESSAGE = 'proceed'
 
 export interface SuggestedFilesPrefs {

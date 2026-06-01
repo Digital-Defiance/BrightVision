@@ -33,6 +33,14 @@ function normalizeSuggestedPath(raw: string): string | null {
   return p
 }
 
+/** Normalize a path from an explicit `/add path` user command (allows repo-root files). */
+export function normalizeAddCommandPath(raw: string): string | null {
+  let p = stripFileMentionPrefix(raw).replace(/^`+|`+$/g, '').replace(/^\.\//, '').trim()
+  if (!p || p.includes('://') || p.startsWith('http') || /\s/.test(p)) return null
+  if (p.length < 2) return null
+  return p
+}
+
 function addPath(set: Set<string>, raw: string | undefined) {
   if (!raw) return
   const n = normalizeSuggestedPath(raw)
@@ -125,7 +133,7 @@ export function buildQueuedAddMessages(paths: string[]): string[] {
 export function parseAddCommandPath(text: string): string | null {
   const m = text.trim().match(/^\/add\s+(\S+)\s*$/i)
   if (!m?.[1]) return null
-  return normalizeSuggestedPath(m[1])
+  return normalizeAddCommandPath(m[1])
 }
 
 export function filterPathsNotInChat(paths: string[], filesInChat: string[]): string[] {

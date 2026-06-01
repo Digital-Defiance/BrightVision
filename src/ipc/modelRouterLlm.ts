@@ -31,7 +31,36 @@ function ollamaHostForConfig(config: VisionConfig): string {
   return config.ollamaApiBase.trim() || resolveLocalLlmForConfig(config).ollamaHost
 }
 
-/** Build Tauri hopper prepare list: pull all enabled tags; preload first enabled fast. */
+/**
+ * Session start: only ensure the resolved fast/heavy route tags exist on disk.
+ * No RAM preload (avoids fighting the session model load and 10% UI stalls).
+ */
+export function buildRouterRoutePullEntries(
+  prefs: ModelRouterPrefs,
+  sessionModel: string
+): HopperPrepareEntry[] {
+  const { fast, heavy } = resolveHopperModels(prefs.models, sessionModel)
+  const entries: HopperPrepareEntry[] = []
+  const seen = new Set<string>()
+  for (const spec of [
+    { tier: 'fast' as const, model: fast },
+    { tier: 'heavy' as const, model: heavy },
+  ]) {
+    if (!spec.model) continue
+    const tag = ollamaTagFromVisionModel(spec.model)
+    if (!tag || seen.has(tag)) continue
+    seen.add(tag)
+    entries.push({
+      model_tag: tag,
+      keep_alive_secs:
+        spec.tier === 'fast' ? prefs.keepAliveFastSec : prefs.keepAliveHeavySec,
+      preload: false,
+    })
+  }
+  return entries
+}
+
+/** Full hopper prep: pull every enabled tag; preload first enabled fast (Settings / manual). */
 export function buildHopperPrepareEntries(
   prefs: ModelRouterPrefs,
   sessionModel: string
@@ -55,6 +84,29 @@ export function buildHopperPrepareEntries(
   return entries
 }
 
+async function invokeHopperPrepare(
+  config: VisionConfig,
+  entries: HopperPrepareEntry[]
+): Promise<string[]> {
+  if (entries.length === 0) return []
+  return invoke<string[]>('local_llm_prepare_hopper', {
+    ollamaHost: ollamaHostForConfig(config),
+    entries,
+  })
+}
+
+/** On Terminal → Start: pull fast/heavy route tags only (no preload). */
+export async function prepareModelRouterForSessionStart(
+  config: VisionConfig,
+  prefs: ModelRouterPrefs
+): Promise<string[]> {
+  if (!isTauriRuntime() || !prefs.enabled || !isOllamaVisionModel(config.model)) {
+    return []
+  }
+  return invokeHopperPrepare(config, buildRouterRoutePullEntries(prefs, config.model))
+}
+
+/** Pull all enabled hopper models + preload first fast (heavy; use from Settings later). */
 export async function prepareModelRouterHopper(
   config: VisionConfig,
   prefs: ModelRouterPrefs
@@ -62,12 +114,7 @@ export async function prepareModelRouterHopper(
   if (!isTauriRuntime() || !prefs.enabled || !isOllamaVisionModel(config.model)) {
     return []
   }
-  const entries = buildHopperPrepareEntries(prefs, config.model)
-  if (entries.length === 0) return []
-  return invoke<string[]>('local_llm_prepare_hopper', {
-    ollamaHost: ollamaHostForConfig(config),
-    entries,
-  })
+  return invokeHopperPrepare(config, buildHopperPrepareEntries(prefs, config.model))
 }
 
 export async function ensureRoutedOllamaModel(

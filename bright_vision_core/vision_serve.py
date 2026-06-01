@@ -1,4 +1,4 @@
-"""HTTP API server for aider-vision-core."""
+"""HTTP API server for BrightVision (``bright-vision-core-serve``)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import sys
 
 
 def run(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="aider-vision-core HTTP API server")
+    parser = argparse.ArgumentParser(description="BrightVision Vision HTTP API server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8741)
     parser.add_argument("--reload", action="store_true", help="Reload on code changes")
     parser.add_argument(
         "--generate-token",
         action="store_true",
-        help="Print a random token suitable for AIDER_VISION_TOKEN and exit",
+        help="Print a random token suitable for BRIGHT_VISION_TOKEN and exit",
     )
     args = parser.parse_args(argv)
 
@@ -35,7 +35,7 @@ def run(argv: list[str] | None = None) -> None:
 
     from bright_vision_core.vision_runtime import configure_vision_runtime
 
-    if os.environ.get("BRIGHT_VISION_HEADLESS") == "1" or os.environ.get("AIDER_VISION_HEADLESS") == "1":
+    if os.environ.get("BRIGHT_VISION_HEADLESS") == "1":
         configure_vision_runtime()
     else:
         print(startup_message(args.host))
@@ -52,5 +52,5 @@ def run(argv: list[str] | None = None) -> None:
         port=args.port,
         reload=args.reload,
         log_level="warning",
-        access_log=not os.environ.get("AIDER_VISION_HEADLESS"),
+        access_log=not os.environ.get("BRIGHT_VISION_HEADLESS"),
     )

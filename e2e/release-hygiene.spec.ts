@@ -28,7 +28,7 @@ test.describe('Release & submodule hygiene (#19, #31)', () => {
   })
 
   test('yarn verify:submodule passes when project venv exists', ({}, testInfo) => {
-    const venvPython = join(ROOT, '.venv/bin/python')
+    const venvPython = join(ROOT, '.venv/bin/python3')
     if (!existsSync(venvPython)) {
       testInfo.skip(true, 'requires .venv (see activate.sh)')
     }

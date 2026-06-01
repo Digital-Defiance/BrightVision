@@ -1,10 +1,15 @@
-import { isOllamaVisionModel } from '../ipc/localLlm'
+import type { LocalLlmSnapshot } from '../ipc/localLlm'
+import { isOllamaVisionModel, ollamaChatModelFromTag } from '../ipc/localLlm'
 import { MODEL_ROUTER_PREFS_STORAGE_KEY } from '../storageKeys'
 import {
   DEFAULT_MODEL_HOPPER,
+  createHopperEntry,
   migrateLegacyRouterModels,
+  normalizeHopperEntries,
   resolveHopperModels,
+  syncSessionModelToHopper,
   type ModelHopperEntry,
+  type ModelHopperTier,
 } from './modelHopper'
 
 export { MODEL_ROUTER_PREFS_STORAGE_KEY }
@@ -60,6 +65,77 @@ export function loadModelRouterPrefs(): ModelRouterPrefs {
 export function saveModelRouterPrefs(prefs: ModelRouterPrefs): void {
   const { fastModel: _f, heavyModel: _h, ...rest } = prefs
   localStorage.setItem(MODEL_ROUTER_PREFS_STORAGE_KEY, JSON.stringify(rest))
+}
+
+function hopperTierHasModel(models: ModelHopperEntry[], tier: ModelHopperTier): boolean {
+  return models.some((m) => m.enabled && m.tier === tier && m.model.trim())
+}
+
+function setHopperTierFromEnv(
+  models: ModelHopperEntry[],
+  tier: ModelHopperTier,
+  liteLlmModel: string,
+  rawTag: string
+): ModelHopperEntry[] {
+  const idx = models.findIndex((m) => m.tier === tier)
+  const label = `Env ${tier === 'fast' ? 'FAST_MODEL' : 'HEAVY_MODEL'}: ${rawTag}`
+  if (idx >= 0) {
+    return models.map((m, i) =>
+      i === idx ? { ...m, model: liteLlmModel, label, enabled: true } : m
+    )
+  }
+  return [...models, createHopperEntry({ tier, model: liteLlmModel, enabled: true, label })]
+}
+
+/**
+ * Apply `FAST_MODEL`, `HEAVY_MODEL`, and `MODEL_ROUTER` from local-llm env into the hopper.
+ * `fillEmpty` — only overwrite fast/heavy slots that are unset (startup); `false` on Sync button.
+ */
+export function applyLocalLlmHopperFromEnv(
+  prefs: ModelRouterPrefs,
+  snap: LocalLlmSnapshot,
+  sessionModel: string,
+  fillEmpty: boolean
+): ModelRouterPrefs {
+  const fastTag = snap.fastModel?.trim()
+  const heavyTag = snap.heavyModel?.trim()
+  const routerFlag = snap.modelRouter
+  if (!fastTag && !heavyTag && routerFlag == null) {
+    return prefs
+  }
+
+  let models = normalizeHopperEntries(prefs.models)
+
+  if (fastTag && (!fillEmpty || !hopperTierHasModel(models, 'fast'))) {
+    models = setHopperTierFromEnv(
+      models,
+      'fast',
+      ollamaChatModelFromTag(fastTag),
+      fastTag
+    )
+  }
+
+  if (heavyTag && (!fillEmpty || !hopperTierHasModel(models, 'heavy'))) {
+    models = setHopperTierFromEnv(
+      models,
+      'heavy',
+      ollamaChatModelFromTag(heavyTag),
+      heavyTag
+    )
+  } else if (fastTag && !heavyTag) {
+    models = syncSessionModelToHopper(models, sessionModel)
+  }
+
+  let enabled = prefs.enabled
+  if (routerFlag === true) {
+    enabled = true
+  } else if (routerFlag === false && !fillEmpty) {
+    enabled = false
+  } else if ((fastTag || heavyTag) && fillEmpty && !prefs.enabled) {
+    enabled = Boolean(fastTag)
+  }
+
+  return { ...prefs, models, enabled }
 }
 
 export function modelRouterApiPayload(

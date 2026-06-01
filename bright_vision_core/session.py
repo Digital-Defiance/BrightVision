@@ -5,22 +5,24 @@ Headless cecli sessions for API / web frontends.
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import os
-import shlex
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Iterator, TypeVar
+from typing import Any, Iterator, Literal, TypeVar
+
+SessionMode = Literal["vibe", "spec"]
 
 _T = TypeVar("_T")
 
-# Wall-clock cap for slash/preproc (e.g. `/agent` on a local model looping on tools).
-SLASH_PREPROC_TIMEOUT_S = float(os.environ.get("VISION_SLASH_PREPROC_TIMEOUT_S", "600"))
-
 from cecli import models
 from cecli.coders import Coder
-from cecli.commands import Commands
+from cecli.commands import Commands, SwitchCoderSignal
+from cecli.commands.add import AddCommand
+from cecli.commands.utils.helpers import quote_filename
+from cecli.utils import is_image_file
 
 from bright_vision_core.async_bridge import (
     HEARTBEAT_PULSE,
@@ -33,17 +35,33 @@ from bright_vision_core.event_io import EventIO
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder
 from bright_vision_core.git_workspace import create_git_workspace
 from bright_vision_core.headless_args import default_headless_args
-from bright_vision_core.todo_spec_generate import build_generate_message, parse_generated_layers
-from bright_vision_core.slash_helpers import is_switch_coder_signal, run_slash_command_sync
+from bright_vision_core.headless_persistence import apply_persistence_to_args
+from bright_vision_core.ears.prompt import requirements_pass_ears
+from bright_vision_core.spec_focus import (
+    build_user_message_with_spec_context,
+    spec_focus_requested,
+)
+from bright_vision_core.spec_layers import normalize_spec_layer_traceability
+from bright_vision_core.roadmap_hints import maybe_append_roadmap_hint
+from bright_vision_core.slash_helpers import (
+    fast_slash_preproc_timeout_s,
+    is_switch_coder_signal,
+    resolve_slash_command_name,
+    run_slash_command_sync,
+    slash_preproc_timeout_s,
+)
+from bright_vision_core.workspace_paths import attachments_dir, attachments_prefix
 from bright_vision_core.model_router import (
     ModelRouterConfig,
     RouteDecision,
     classify_prompt,
+    estimate_message_tokens,
     estimate_prompt_tokens,
     should_escalate_fast_turn,
 )
 from bright_vision_core.model_router_apply import apply_route_to_coder
-from bright_vision_core.workspace_todos import WorkspaceTodos, format_todo_context
+from bright_vision_core.llm_progress import llm_wait_messages
+from bright_vision_core.workspace_todos import WorkspaceTodos
 
 
 def _edited_files(coder) -> list[str]:
@@ -125,6 +143,7 @@ def _run_blocking_with_sse_pulses(
         if timeout_s is not None and time.monotonic() - started > timeout_s:
             if on_timeout:
                 on_timeout()
+            done.wait(timeout=3.0)
             raise TimeoutError(f"{message} timed out after {int(timeout_s)}s")
         pulse += 1
         emit_progress(io, label=label, message=f"{message} ({int(pulse * wait_s)}s)")
@@ -157,12 +176,16 @@ class Session:
         io: EventIO,
         *,
         model_router: ModelRouterConfig | None = None,
+        spec_focus: bool = False,
+        session_mode: SessionMode = "vibe",
     ):
         self.coder = coder
         self.io = io
         self._model_router = model_router
         self._router_heavy_model_name = coder.main_model.name
         self._last_route: RouteDecision | None = None
+        self.session_mode: SessionMode = session_mode
+        self.spec_focus = spec_focus or session_mode == "spec"
         self.coder.yield_stream = True
         self.coder.stream = bool(coder.stream)
         self.coder.pretty = False
@@ -173,6 +196,17 @@ class Session:
         """Signal the active cecli turn to stop (HTTP disconnect or slash timeout)."""
         rebind_coder_loop_primitives(self.coder)
         self.coder.interrupt_event.set()
+
+    def sync_agent_todos_with_workspace(self) -> None:
+        """Pull Cecli agent todo.txt into workspace Tasks before turn end."""
+        try:
+            from bright_vision_core.agent_todos import sync_session_agent_todos
+
+            sync_session_agent_todos(self, pull=True, push_active=True)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).debug("agent todo sync skipped", exc_info=True)
 
     @classmethod
     def create(
@@ -190,6 +224,14 @@ class Session:
         on_event=None,
         echo_to_console: bool = False,
         model_router: ModelRouterConfig | dict[str, Any] | None = None,
+        session_encrypt: bool = False,
+        session_key_file: str | None = None,
+        auto_save: bool = False,
+        auto_load: bool = False,
+        auto_save_session_name: str = "brightvision",
+        chat_history_file: bool | str | None = True,
+        spec_focus: bool = False,
+        session_mode: SessionMode = "vibe",
     ) -> Session:
         workspace = Path(workspace_dir).resolve()
         if not workspace.is_dir():
@@ -203,7 +245,22 @@ class Session:
         prev_cwd = os.getcwd()
         os.chdir(workspace)
         try:
-            io = EventIO(yes=yes, pretty=False, on_event=on_event, echo_to_console=echo_to_console)
+            cecli_meta = workspace / ".cecli"
+            if chat_history_file is True:
+                chat_hist_path = str(cecli_meta / "chat.history")
+            elif chat_history_file:
+                chat_hist_path = str(Path(chat_history_file).expanduser())
+            else:
+                chat_hist_path = None
+            io_kwargs: dict[str, Any] = {
+                "yes": yes,
+                "pretty": False,
+                "on_event": on_event,
+                "echo_to_console": echo_to_console,
+            }
+            if chat_hist_path:
+                io_kwargs["chat_history_file"] = chat_hist_path
+            io = EventIO(**io_kwargs)
             model_name = model or models.DEFAULT_MODEL_NAME
             router_cfg = (
                 ModelRouterConfig.from_payload(model_router)
@@ -237,6 +294,14 @@ class Session:
                 map_tokens = main_model.get_repo_map_tokens()
 
             commands = Commands(io, None)
+            headless_args = apply_persistence_to_args(
+                default_headless_args(yes=yes),
+                session_encrypt=session_encrypt,
+                session_key_file=session_key_file,
+                auto_save=auto_save,
+                auto_load=auto_load,
+                auto_save_session_name=auto_save_session_name,
+            )
             coder = run(
                 Coder.create(
                     main_model=main_model,
@@ -250,12 +315,28 @@ class Session:
                     map_tokens=map_tokens,
                     commands=commands,
                     use_git=repo is not None,
-                    args=default_headless_args(yes=yes),
+                    args=headless_args,
                 )
             )
             commands.coder = coder
             rebind_coder_loop_primitives(coder)
-            return cls(coder, io, model_router=router_cfg if router_cfg and router_cfg.enabled else None)
+            if headless_args.auto_load:
+                from cecli.sessions import SessionManager
+
+                manager = SessionManager(coder, io)
+                name = headless_args.auto_save_session_name or "auto-save"
+                try:
+                    run(manager.load_session(name, switch=False, quiet=True))
+                except Exception:
+                    pass
+                io.drain_events()
+            return cls(
+                coder,
+                io,
+                model_router=router_cfg if router_cfg and router_cfg.enabled else None,
+                spec_focus=spec_focus,
+                session_mode=session_mode,
+            )
         finally:
             os.chdir(prev_cwd)
 
@@ -294,17 +375,21 @@ class Session:
         self,
         user_message: str,
         *,
+        intent_message: str | None = None,
         force_tier: str | None = None,
     ) -> RouteDecision | None:
         router = self._model_router
         if not router or not router.enabled:
             return None
         heavy = router.heavy_model or self._router_heavy_model_name
-        estimated = self._estimate_turn_tokens(user_message)
+        routing_text = (intent_message if intent_message is not None else user_message).strip()
+        message_tokens = estimate_message_tokens(routing_text)
+        context_tokens = self._estimate_turn_tokens(user_message)
         tier_force = force_tier if force_tier in ("fast", "heavy") else None
         decision = classify_prompt(
-            user_message,
-            estimated_tokens=estimated,
+            routing_text,
+            message_tokens=message_tokens,
+            context_tokens=context_tokens,
             router=router,
             heavy_model_name=heavy,
             force_tier=tier_force,
@@ -318,21 +403,33 @@ class Session:
         message: str,
         *,
         preproc: bool = True,
+        skip_workspace_init: bool = False,
         active_todo_id: str | None = None,
         inject_todo_spec: bool = False,
+        spec_focus: bool = False,
         force_tier: str | None = None,
         escalate_from_last: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        turn_todo_id: str | None = None
-        user_text = message
+        user_text = maybe_append_roadmap_hint(message, self.coder)
+        focus_requested = spec_focus_requested(
+            message_spec_focus=spec_focus,
+            session_spec_focus=self.spec_focus,
+            session_mode=self.session_mode,
+        )
+        item = None
+        store = None
         if active_todo_id:
             todos = WorkspaceTodos(self.coder.root)
             store = todos.load()
             item = todos.find(store, active_todo_id)
-            if item:
-                turn_todo_id = item.id
-                if inject_todo_spec:
-                    user_text = format_todo_context(item, store=store) + message
+        user_text, _spec_active, turn_todo_id = build_user_message_with_spec_context(
+            self.coder.root,
+            user_text,
+            item=item,
+            store=store,
+            focus_requested=focus_requested,
+            inject_todo_spec=inject_todo_spec,
+        )
 
         self.io.emit("user_message", text=user_text)
         for event in self.io.drain_events():
@@ -341,17 +438,18 @@ class Session:
         self.coder.interrupt_event.clear()
 
         try:
-            emit_progress(self.io, label="Vision", message="Preparing workspace…")
-            yield from _drain_io_events(self.io)
+            if not skip_workspace_init:
+                emit_progress(self.io, label="Vision", message="Preparing workspace…")
+                yield from _drain_io_events(self.io)
 
-            for item in _run_blocking_with_sse_pulses(
-                self.io,
-                self.coder.init_before_message,
-                label="Vision",
-                message="Preparing workspace",
-            ):
-                if isinstance(item, dict):
-                    yield item
+                for item in _run_blocking_with_sse_pulses(
+                    self.io,
+                    self.coder.init_before_message,
+                    label="Vision",
+                    message="Preparing workspace",
+                ):
+                    if isinstance(item, dict):
+                        yield item
             self.io.user_input(user_text)
 
             user_msg = user_text
@@ -367,6 +465,7 @@ class Session:
 
                     return run(_preproc_coro())
 
+                preproc_timeout = slash_preproc_timeout_s(user_text, self.coder.commands)
                 try:
                     for item in _run_blocking_with_sse_pulses(
                         self.io,
@@ -375,8 +474,8 @@ class Session:
                         message="Running slash commands",
                         mirror_assistant_complete=True,
                         assistant_text=assistant_text,
-                        timeout_s=SLASH_PREPROC_TIMEOUT_S,
-                        on_timeout=self.interrupt_turn,
+                        timeout_s=preproc_timeout,
+                        on_timeout=self.interrupt_turn if preproc_timeout else None,
                     ):
                         if isinstance(item, dict):
                             yield item
@@ -388,13 +487,31 @@ class Session:
                         mirror_assistant_complete=True,
                         assistant_text=assistant_text,
                     )
+                    cmd = resolve_slash_command_name(user_text, self.coder.commands)
+                    if cmd == "agent":
+                        cap_hint = (
+                            "Unset VISION_AGENT_PREPROC_TIMEOUT_S or set it to 0 for no wall-clock cap "
+                            "(default). Use Stop to cancel a long agent run."
+                        )
+                    elif cmd in ("invoke-agent", "ask", "code", "architect", "context", "hashline"):
+                        cap_hint = (
+                            "Long mode commands default to no preproc cap; set "
+                            "VISION_AGENT_PREPROC_TIMEOUT_S to limit. Use Stop to cancel."
+                        )
+                    else:
+                        cap_hint = (
+                            f"Cap: VISION_SLASH_PREPROC_TIMEOUT_S (default "
+                            f"{int(fast_slash_preproc_timeout_s())}s)."
+                        )
                     yield self.io.emit(
                         "error",
                         text=(
-                            f"{err}. Stop the turn or retry with a simpler prompt. "
-                            "Local agent mode may loop on tools (e.g. repeated ls)."
+                            f"{err}. Use Stop, then retry. "
+                            "For quick UI tweaks, send your request without /agent. "
+                            f"{cap_hint}"
                         ),
                     )
+                    self.sync_agent_todos_with_workspace()
                     yield self.io.emit(
                         "done",
                         assistant_text="".join(assistant_text),
@@ -408,6 +525,7 @@ class Session:
                     mirror_assistant_complete=True,
                     assistant_text=assistant_text,
                 )
+                self.sync_agent_todos_with_workspace()
                 yield self.io.emit("done", assistant_text="".join(assistant_text))
                 return
 
@@ -416,28 +534,36 @@ class Session:
 
             route_decision: RouteDecision | None = None
             if escalate_from_last and self._model_router and self._model_router.enabled:
-                route_decision = self._route_and_apply(user_msg, force_tier="heavy")
+                route_decision = self._route_and_apply(
+                    user_msg, intent_message=message, force_tier="heavy"
+                )
                 if route_decision:
                     yield self._emit_model_route(route_decision, escalated=True)
                     for event in self.io.drain_events():
                         yield event
             elif self._model_router and self._model_router.enabled:
-                route_decision = self._route_and_apply(user_msg, force_tier=force_tier)
+                route_decision = self._route_and_apply(
+                    user_msg, intent_message=message, force_tier=force_tier
+                )
                 if route_decision:
                     yield self._emit_model_route(route_decision)
                     for event in self.io.drain_events():
                         yield event
 
             turn_had_tool_error = False
+            turn_tool_error_text = ""
             max_attempts = 2 if self._model_router and self._model_router.escalate_on_failure else 1
             for attempt in range(max_attempts):
                 if attempt > 0 and route_decision:
-                    route_decision = self._route_and_apply(user_msg, force_tier="heavy")
+                    route_decision = self._route_and_apply(
+                        user_msg, intent_message=message, force_tier="heavy"
+                    )
                     yield self._emit_model_route(route_decision, escalated=True)
                     for event in self.io.drain_events():
                         yield event
 
-                emit_progress(self.io, label="LLM", message="Waiting for Ollama…")
+                wait_initial, wait_heartbeat = llm_wait_messages(self.coder.main_model)
+                emit_progress(self.io, label="LLM", message=wait_initial)
                 for event in self.io.drain_events():
                     yield event
 
@@ -447,11 +573,12 @@ class Session:
                     self.io,
                     coder=self.coder,
                     label="LLM",
-                    message="Waiting for Ollama",
+                    message=wait_heartbeat,
                 ):
                     for event in self.io.drain_events():
                         if event.get("type") == "tool_error":
                             turn_had_tool_error = True
+                            turn_tool_error_text += str(event.get("text") or "")
                         yield event
                     if piece is HEARTBEAT_PULSE:
                         continue
@@ -463,6 +590,7 @@ class Session:
                 for event in self.io.drain_events():
                     if event.get("type") == "tool_error":
                         turn_had_tool_error = True
+                        turn_tool_error_text += str(event.get("text") or "")
                     yield event
 
                 edited = _edited_files(self.coder)
@@ -473,10 +601,11 @@ class Session:
                     and should_escalate_fast_turn(
                         route_decision,
                         router=self._model_router,
-                        user_message=user_msg,
+                        user_message=message,
                         edited_files=edited,
                         assistant_text="".join(attempt_text),
                         had_tool_error=turn_had_tool_error,
+                        tool_error_text=turn_tool_error_text,
                     )
                 ):
                     assistant_text.clear()
@@ -498,6 +627,7 @@ class Session:
                     links.append(f"commit:{last_hash}")
                 WorkspaceTodos(self.coder.root).append_links(links, todo_id=turn_todo_id)
 
+            self.sync_agent_todos_with_workspace()
             yield self.io.emit("done", **payload)
         except BaseException as err:
             if is_switch_coder_signal(err):
@@ -506,47 +636,135 @@ class Session:
                     mirror_assistant_complete=True,
                     assistant_text=assistant_text,
                 )
+                self.sync_agent_todos_with_workspace()
                 yield self.io.emit("done", assistant_text="".join(assistant_text))
                 return
             if isinstance(err, BrokenPipeError):
                 yield self.io.emit("error", text=str(err))
+                self.sync_agent_todos_with_workspace()
                 yield self.io.emit("done", assistant_text="".join(assistant_text), error=True)
                 return
             if isinstance(err, Exception):
                 yield self.io.emit("error", text=str(err))
+                self.sync_agent_todos_with_workspace()
                 yield self.io.emit("done", assistant_text="".join(assistant_text), error=True)
                 return
             raise
+
+    def _resolve_workspace_file(self, raw: str) -> str | None:
+        """Return workspace-relative posix path for an on-disk file, or None after tool_error."""
+        workspace = Path(self.coder.root).resolve()
+        p = Path(raw.strip().lstrip("@"))
+        if not p.is_absolute():
+            p = workspace / p
+        p = p.resolve()
+        if not p.is_file():
+            self.io.tool_error(f"Not a file: {p}")
+            return None
+        try:
+            return p.relative_to(workspace).as_posix()
+        except ValueError:
+            self.io.tool_error(f"File outside workspace: {p}")
+            return None
+
+    def _add_matched_file_to_chat(self, rel: str) -> bool:
+        """Add one file like cecli ``/add`` without create-file confirms."""
+        coder = self.coder
+        io = self.io
+        abs_file_path = coder.abs_root_path(rel)
+
+        blocked = AddCommand._add_blocked_message(coder, rel)
+        if blocked:
+            io.tool_error(blocked)
+            return False
+
+        if abs_file_path in coder.abs_fnames:
+            io.tool_output(f"{rel} is already in the chat")
+            return True
+        if abs_file_path in coder.abs_read_only_stubs_fnames:
+            if coder.repo and coder.repo.path_in_repo(rel):
+                coder.abs_read_only_stubs_fnames.remove(abs_file_path)
+                coder.abs_fnames.add(abs_file_path)
+                io.tool_output(f"Moved {rel} from read-only (stub) to editable files in the chat")
+            else:
+                io.tool_error(f"Cannot add {rel} as it's not part of the repository")
+                return False
+        elif abs_file_path in coder.abs_read_only_fnames:
+            if coder.repo and coder.repo.path_in_repo(rel):
+                coder.abs_read_only_fnames.remove(abs_file_path)
+                coder.abs_fnames.add(abs_file_path)
+                io.tool_output(f"Moved {rel} from read-only to editable files in the chat")
+            else:
+                io.tool_error(f"Cannot add {rel} as it's not part of the repository")
+                return False
+        else:
+            if is_image_file(rel) and not coder.main_model.info.get("supports_vision"):
+                io.tool_error(
+                    f"Cannot add image file {rel} as the {coder.main_model.name} "
+                    "does not support images."
+                )
+                return False
+            content = io.read_text(abs_file_path)
+            if content is None:
+                io.tool_error(f"Unable to read {rel}")
+                return False
+            coder.abs_fnames.add(abs_file_path)
+            io.tool_output(f"Added {rel} to the chat")
+            coder.check_added_files()
+            if hasattr(coder, "use_enhanced_context") and coder.use_enhanced_context:
+                if hasattr(coder, "_calculate_context_block_tokens"):
+                    coder._calculate_context_block_tokens()
+        return True
+
+    def _finish_file_adds_like_slash_add(self) -> None:
+        """Match cecli ``/add`` post-success coder refresh (SwitchCoderSignal)."""
+        coder = self.coder
+        if coder.repo_map:
+            map_tokens = coder.repo_map.max_map_tokens
+            map_mul_no_files = coder.repo_map.map_mul_no_files
+        else:
+            map_tokens = 0
+            map_mul_no_files = 1
+        raise SwitchCoderSignal(
+            edit_format=coder.edit_format,
+            summarize_from_coder=False,
+            from_coder=coder,
+            map_tokens=map_tokens,
+            map_mul_no_files=map_mul_no_files,
+            show_announcements=False,
+        )
 
     def add_files(self, paths: list[str]) -> list[dict[str, Any]]:
         if not paths:
             return []
 
-        workspace = Path(self.coder.root).resolve()
+        attach_prefix = attachments_prefix()
         quoted: list[str] = []
+        direct_added = False
         for raw in paths:
-            raw = raw.strip().lstrip("@")
-            p = Path(raw)
-            if not p.is_absolute():
-                p = workspace / p
-            p = p.resolve()
-            if not p.is_file():
-                self.io.tool_error(f"Not a file: {p}")
+            rel = self._resolve_workspace_file(raw)
+            if rel is None:
                 continue
-            try:
-                rel = p.relative_to(workspace)
-                quoted.append(shlex.quote(str(rel).replace("\\", "/")))
-            except ValueError:
-                quoted.append(shlex.quote(str(p)))
+            if rel.startswith(attach_prefix):
+                if self._add_matched_file_to_chat(rel):
+                    direct_added = True
+                continue
+            quoted.append(quote_filename(rel))
 
-        if quoted:
-            run_slash_command_sync(self.coder, "add", " ".join(quoted))
+        try:
+            if quoted:
+                run_slash_command_sync(self.coder, "add", " ".join(quoted))
+            elif direct_added:
+                self._finish_file_adds_like_slash_add()
+        except BaseException as exc:
+            if not is_switch_coder_signal(exc):
+                raise
 
         return self.io.drain_events()
 
     def stage_uploaded_file(self, filename: str, content: bytes) -> Path:
         workspace = Path(self.coder.root).resolve()
-        attach_dir = workspace / ".aider-vision" / "attachments"
+        attach_dir = attachments_dir(workspace)
         attach_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = Path(filename).name or "upload"
@@ -581,14 +799,46 @@ class Session:
         undo_last_aider_commit_for_coder(self.coder, self.io)
         return self.io.drain_events()
 
-    def run_one_shot(self, message: str) -> str:
-        parts: list[str] = []
-        for event in self.run_message(message, preproc=False):
-            if event.get("type") == "token":
-                parts.append(str(event.get("text") or ""))
-            elif event.get("type") == "done":
-                return str(event.get("assistant_text") or "".join(parts))
-        return "".join(parts)
+    def run_one_shot(
+        self,
+        message: str,
+        *,
+        timeout_s: float | None = None,
+        skip_workspace_init: bool = False,
+    ) -> str:
+        def _consume() -> str:
+            parts: list[str] = []
+            for event in self.run_message(
+                message,
+                preproc=False,
+                skip_workspace_init=skip_workspace_init,
+            ):
+                if event.get("type") == "token":
+                    parts.append(str(event.get("text") or ""))
+                elif event.get("type") == "done":
+                    return str(event.get("assistant_text") or "".join(parts))
+            return "".join(parts)
+
+        if timeout_s is None:
+            return _consume()
+
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        fut = pool.submit(_consume)
+        try:
+            return fut.result(timeout=timeout_s)
+        except concurrent.futures.TimeoutError as err:
+            try:
+                self.interrupt_turn()
+            except Exception:
+                pass
+            # Let the worker unwind after interrupt (reduces pending asyncio task warnings).
+            try:
+                fut.result(timeout=15)
+            except Exception:
+                pass
+            raise TimeoutError(f"One-shot turn timed out after {int(timeout_s)}s") from err
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     def generate_todo_layers(
         self,
@@ -596,24 +846,70 @@ class Session:
         prompt: str,
         *,
         mode: str = "generate",
+        section: str = "all",
         apply: bool = True,
+        enforce_ears: bool = True,
+        context_paths: list[str] | None = None,
     ) -> dict[str, Any]:
+        from bright_vision_core.todo_spec_generate import (
+            SpecSection,
+            build_generate_message,
+            merge_generated_layers,
+            parse_generated_layers,
+            validate_section_prerequisites,
+        )
+
         api = WorkspaceTodos(self.coder.root)
         item = api.get(todo_id)
-        msg = build_generate_message(prompt, mode=mode, item=item)  # type: ignore[arg-type]
-        raw = self.run_one_shot(msg)
-        layers = parse_generated_layers(raw)
-        if apply and any(layers.values()):
-            item, _ = api.update(
-                todo_id,
-                requirements=layers.get("requirements", ""),
-                design=layers.get("design", ""),
-                tasks_md=layers.get("tasks_md", ""),
-            )
+        sec: SpecSection = section if section in ("all", "requirements", "design", "tasks_md") else "all"
+        if sec != "all" and mode != "generate":
+            sec = "all"
+        validate_section_prerequisites(item, sec)
+        for path in context_paths or []:
+            if str(path).strip():
+                self.add_files([str(path).strip()])
+        msg = build_generate_message(prompt, mode=mode, item=item, section=sec)  # type: ignore[arg-type]
+        from bright_vision_core.todo_spec_jobs import spec_gen_turn_timeout_s
+
+        raw = self.run_one_shot(
+            msg,
+            timeout_s=spec_gen_turn_timeout_s(),
+            skip_workspace_init=True,
+        )
+        parsed = parse_generated_layers(raw, section=sec)
+        merged = normalize_spec_layer_traceability(
+            merge_generated_layers(item, parsed, section=sec)
+        )
+        ears_blocked = False
+        ears_issues: list[dict] = []
+        req_text = merged.get("requirements", "")
+        if req_text.strip() and enforce_ears and sec in ("all", "requirements"):
+            from bright_vision_core.ears.repair import repair_requirements_missing_shall
+            from bright_vision_core.todo_spec_generate import compact_spec_gen_enabled
+
+            if compact_spec_gen_enabled():
+                req_text = repair_requirements_missing_shall(req_text)
+                merged = {**merged, "requirements": req_text}
+        if apply and any(merged.values()):
+            ok, ears_issues = requirements_pass_ears(req_text)
+            ears_gate = sec in ("all", "requirements")
+            if enforce_ears and ears_gate and not ok:
+                apply = False
+                ears_blocked = True
+            else:
+                item, _ = api.update(
+                    todo_id,
+                    requirements=req_text,
+                    design=merged.get("design", ""),
+                    tasks_md=merged.get("tasks_md", ""),
+                )
         return {
-            "requirements": layers.get("requirements", ""),
-            "design": layers.get("design", ""),
-            "tasks_md": layers.get("tasks_md", ""),
+            "requirements": merged.get("requirements", ""),
+            "design": merged.get("design", ""),
+            "tasks_md": merged.get("tasks_md", ""),
             "raw": raw,
             "item": item,
+            "ears_blocked": ears_blocked,
+            "ears_issues": ears_issues,
+            "section": sec,
         }

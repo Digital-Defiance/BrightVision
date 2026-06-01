@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "activeId": null,
+  "todos": [
+    {
+      "id": "task-a",
+      "title": "First task",
+      "spec": "",
+      "requirements": "# First task\n\nRequirements here.",
+      "design": "## Design\n\nDetails.",
+      "tasks_md": "- [ ] Step one\n- [ ] Step two",
+      "depends_on": [],
+      "branch": "",
+      "pr_url": "",
+      "status": "open",
+      "links": [],
+      "checklist": [
+        {
+          "id": "c1",
+          "text": "Checklist item",
+          "done": false
+        }
+      ],
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": "task-b",
+      "title": "Blocked successor",
+      "spec": "",
+      "requirements": "# Blocked successor\n\nRequirements here.",
+      "design": "## Design\n\nDetails.",
+      "tasks_md": "- [ ] Step one\n- [ ] Step two",
+      "depends_on": [
+        "task-a"
+      ],
+      "branch": "",
+      "pr_url": "",
+      "status": "open",
+      "links": [],
+      "checklist": [
+        {
+          "id": "c1",
+          "text": "Checklist item",
+          "done": false
+        }
+      ],
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "updated_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "templates": [
+    "feature",
+    "bugfix",
+    "refactor",
+    "spec-driven"
+  ]
+}

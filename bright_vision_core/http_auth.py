@@ -1,9 +1,9 @@
 """
-Local API authentication for aider-vision.
+Local API authentication for BrightVision (Vision HTTP).
 
 Policy
 ------
-- ``AIDER_VISION_TOKEN`` set → Bearer token required on all routes except ``/health``.
+- ``BRIGHT_VISION_TOKEN`` set → Bearer token required on all routes except ``/health``.
 - Listening on loopback only (``127.0.0.1`` / ``::1`` / ``localhost``) and no token → auth
   disabled (convenient local dev).
 - Listening on a non-loopback address without a token → startup refused (see
@@ -16,8 +16,8 @@ import os
 import secrets
 from ipaddress import ip_address
 
-TOKEN_ENV = "AIDER_VISION_TOKEN"
-TOKEN_ENV_ALIASES = ("AIDER_VISION_TOKEN", "BRIGHT_VISION_TOKEN")
+TOKEN_ENV = "BRIGHT_VISION_TOKEN"
+TOKEN_ENV_ALIASES = ("BRIGHT_VISION_TOKEN",)
 
 _auth_required = False
 _expected_token: str | None = None

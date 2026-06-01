@@ -29,7 +29,7 @@ Add images or PDFs to the chat without sending a message:
 
 ```http
 POST /sessions/{session_id}/files
-{"paths": [".aider-vision/attachments/screenshot.png"]}
+{"paths": [".cecli/attachments/screenshot.png"]}
 ```
 
 Browser upload (base64 data URLs accepted):
@@ -41,21 +41,36 @@ POST /sessions/{session_id}/files/upload
 
 Response includes updated `files_in_chat` and `events` (tool_output / errors).
 
-> **Note:** Workspace metadata paths still use `.aider-vision/` under the project root (todos, specs, attachments). Product branding is BrightVision; on-disk layout is unchanged until a dedicated migration.
+> **Note:** Project-local state lives under **`.cecli/`**: Cecli uses `agents/`, `sessions/`, `logs/`, …; BrightVision adds `todos.json`, `specs/`, `attachments/`.
 
 ### Workspace tasks (spec-driven)
 
-Todos live in `.aider-vision/todos.json` under the session workspace.
+Todos live in `.cecli/todos.json` under the session workspace.
 
 ```http
 GET    /sessions/{session_id}/todos
 POST   /sessions/{session_id}/todos          {"title", "spec?", "template?"}
 PATCH  /sessions/{session_id}/todos/{id}     partial update: title, spec, requirements, design, tasks_md, depends_on, branch, pr_url, checklist, status, links
-POST   /sessions/{session_id}/todos/{id}/generate-spec   {"prompt", "mode", "apply", "background": true} → 202 {job_id} or 200 when complete
+POST   /sessions/{session_id}/todos/{id}/generate-spec   {"prompt", "mode", "section", "context_paths", "apply", "background": true} → 202 {job_id} or 200 when complete
 GET    /workspaces/todos/generate-spec/{job_id}   poll job status
 DELETE /sessions/{session_id}/todos/{id}
 PUT    /sessions/{session_id}/todos/active   {"activeId": "…" | null}
+POST   /workspaces/todos/{id}/lint-requirements?workspace=…   optional {"requirements": "draft markdown"}
+POST   /sessions/{session_id}/todos/{id}/lint-requirements   same body — deterministic EARS lint (`bright_vision_core/ears`)
+GET    /workspaces/spec-index?workspace=…   scan `.cecli/specs/**` vs `todos.json` task ids
+GET    /sessions/{session_id}/spec-index   same for session workspace
+POST   /workspaces/todos/{id}/trace-spec?workspace=…   optional {"requirements","design","tasks_md"} drafts
+POST   /sessions/{session_id}/todos/{id}/trace-spec   REQ ↔ design ↔ tasks traceability report
+POST   /workspaces/todos/repair-spec-folders?workspace=…   create missing `.cecli/specs/{id}/` + sync markdown
 ```
+
+Generate spec body adds `enforce_ears` (default true). Completed jobs may return `ears_blocked` + `ears_issues` when apply was skipped.
+
+Message body adds `spec_focus` (steering + inject active task spec) and optional `preproc: false` (Spec tab).
+
+Session create accepts `session_mode`: `"vibe"` (default) or `"spec"` (steering + task spec on every turn).
+
+`PATCH …/todos/{id}` returns optional `ears_requirements_ok` / `ears_error_count` when `requirements` is updated.
 
 Send a message with task context:
 
@@ -69,6 +84,16 @@ POST /sessions/{session_id}/messages
 ```
 
 The `done` event may include `active_todo_id`; edited files and commits are appended to that task’s `links`.
+
+### Session debug export
+
+When a turn misbehaves (wrong tool arguments, duplicate `GitLog`/`Grep`, char-split todos), export a JSON bundle:
+
+```http
+GET /sessions/{session_id}/debug
+```
+
+Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. UI: **Settings → Session history → Export debug bundle**. Redact secrets before sharing.
 
 ### Workspace tasks (no session)
 
@@ -84,12 +109,14 @@ GET    /workspaces/todos/export?workspace=…
 POST   /workspaces/todos/import   {"workspace", "markdown", "merge": false}
 POST   /workspaces/todos/{id}/generate-spec?workspace=…&session_id=…   same body as session route
 POST   /workspaces/todos/{id}/move?workspace=…   {"direction": "up"|"down"}
-POST   /workspaces/todos/{id}/sync-spec-files?workspace=…   import specs from `.aider-vision/specs/{id}/`
+POST   /workspaces/todos/{id}/sync-spec-files?workspace=…   import specs from `.cecli/specs/{id}/`
+POST   /workspaces/todos/{id}/export-spec-files?workspace=…   write specs from todos.json to `.cecli/specs/{id}/`
+POST   /workspaces/todos/prune-orphan-spec-folders?workspace=…   delete `.cecli/specs/{id}/` with no task in todos.json
 ```
 
 `auto_completed` is true when a PATCH checklist update completes every item (task marked done).
 
-Optional auth: set `AIDER_VISION_TOKEN` (or `BRIGHT_VISION_TOKEN` where supported) and send `Authorization: Bearer <token>`.
+Optional auth: set `BRIGHT_VISION_TOKEN` (or `BRIGHT_VISION_TOKEN` where supported) and send `Authorization: Bearer <token>`.
 
 ## Multi-repo workspaces (including nested submodules)
 

@@ -1,8 +1,10 @@
 import NetworkPingIcon from '@mui/icons-material/NetworkPing'
+import Tooltip from '@mui/material/Tooltip'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import StopIcon from '@mui/icons-material/Stop'
 import { Alert, Button, CircularProgress, Stack, Typography } from '@mui/material'
+import { DISPLAY_VISION_API } from '../../brand'
 import type { LocalLlmControls } from '../../hooks/useLocalLlmControls'
 
 interface LocalLlmActionButtonsProps {
@@ -27,6 +29,7 @@ export function LocalLlmActionButtons({
     clearError,
     formatLlmPingSummary,
     formatLlmPingHint,
+    llmPingAlertSeverity,
   } = controls
 
   return (
@@ -43,16 +46,22 @@ export function LocalLlmActionButtons({
         >
           Start Local LLM
         </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<NetworkPingIcon />}
-          disabled={busy}
-          data-testid="local-llm-ping"
-          onClick={() => void runPing()}
+        <Tooltip
+          title={`Checks Ollama (generate probe) and ${DISPLAY_VISION_API} /health. Does not start the API — use Settings → Start Vision API or Terminal → Start.`}
         >
-          Ping LLM
-        </Button>
+          <span>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<NetworkPingIcon />}
+              disabled={busy}
+              data-testid="local-llm-ping"
+              onClick={() => void runPing()}
+            >
+              Ping stack
+            </Button>
+          </span>
+        </Tooltip>
         {showSecondary && (
           <>
             <Button
@@ -80,7 +89,7 @@ export function LocalLlmActionButtons({
       </Stack>
       {pingResult && (
         <Alert
-          severity={pingResult.generateOk ? 'success' : 'warning'}
+          severity={llmPingAlertSeverity(pingResult)}
           data-testid="local-llm-ping-result"
           onClose={clearPingResult}
         >

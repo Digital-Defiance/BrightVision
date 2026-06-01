@@ -18,6 +18,8 @@ pub struct LlmPingResult {
     pub response_preview: Option<String>,
     pub core_reachable: Option<bool>,
     pub core_latency_ms: Option<u64>,
+    /// Connect/HTTP detail when ``core_reachable`` is false.
+    pub core_health_error: Option<String>,
     pub error: Option<String>,
     pub logs: Vec<String>,
 }
@@ -566,10 +568,9 @@ pub async fn local_llm_start_plain(
 
     if loaded {
         logs.push(format!(
-            "{model} already in /api/ps — skipping full preload (fast path)"
+            "{model} already in /api/ps — skipping preload and keep_alive refresh (fast path)"
         ));
-        logs.push(format!("Refreshing {model} keep_alive=-1…"));
-        client.touch_keep_alive(&model).await?;
+        // Avoid queueing another /api/generate behind an in-flight load (session Start looked stuck at 10%).
     } else {
         logs.push(format!("Loading {model} into RAM (keep_alive=-1)…"));
         client.preload_generate(&model).await?;
@@ -592,10 +593,10 @@ pub async fn local_llm_start_plain(
     })
 }
 
-async fn ping_core_health(core_api_url: &str) -> (bool, Option<u64>) {
+async fn ping_core_health(core_api_url: &str) -> (bool, Option<u64>, Option<String>) {
     let base = core_api_url.trim().trim_end_matches('/');
     if base.is_empty() {
-        return (false, None);
+        return (false, None, Some("core API URL is empty".into()));
     }
     let client = match reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(3))
@@ -603,12 +604,20 @@ async fn ping_core_health(core_api_url: &str) -> (bool, Option<u64>) {
         .build()
     {
         Ok(c) => c,
-        Err(_) => return (false, None),
+        Err(e) => return (false, None, Some(format!("HTTP client: {e}"))),
     };
     let started = std::time::Instant::now();
-    match client.get(format!("{base}/health")).send().await {
-        Ok(res) if res.status().is_success() => (true, Some(started.elapsed().as_millis() as u64)),
-        _ => (false, None),
+    let url = format!("{base}/health");
+    match client.get(&url).send().await {
+        Ok(res) if res.status().is_success() => {
+            (true, Some(started.elapsed().as_millis() as u64), None)
+        }
+        Ok(res) => (
+            false,
+            None,
+            Some(format!("GET {url} → HTTP {}", res.status())),
+        ),
+        Err(e) => (false, None, Some(format!("GET {url} failed: {e}"))),
     }
 }
 
@@ -680,22 +689,37 @@ pub async fn llm_ping(
         error = Some(format!("Model {model} is not pulled — run Start Local LLM"));
     }
 
-    let (core_reachable, core_latency_ms) = match core_api_url {
+    let (core_reachable, core_latency_ms, core_health_error) = match core_api_url {
         Some(ref url) if !url.trim().is_empty() => {
             logs.push(format!("Pinging Vision API {url}…"));
-            let (ok, ms) = ping_core_health(url).await;
+            let (ok, ms, detail) = ping_core_health(url).await;
             logs.push(if ok {
                 format!(
                     "Vision API health OK{}",
                     ms.map(|m| format!(" in {m}ms")).unwrap_or_default()
                 )
             } else {
-                "Vision API health check failed or timed out".to_string()
+                format!(
+                    "Vision API not reachable: {}",
+                    detail.as_deref().unwrap_or("health check failed or timed out")
+                )
             });
-            (Some(ok), ms)
+            (Some(ok), ms, detail)
         }
-        _ => (None, None),
+        _ => (None, None, None),
     };
+
+    if generate_ok && core_reachable == Some(false) {
+        let msg = core_health_error.clone().unwrap_or_else(|| {
+            core_api_url
+                .as_ref()
+                .map(|u| format!("Vision API not listening on {u}"))
+                .unwrap_or_else(|| "Vision API not running".into())
+        });
+        if error.is_none() {
+            error = Some(msg);
+        }
+    }
 
     Ok(LlmPingResult {
         ollama_reachable,
@@ -706,6 +730,7 @@ pub async fn llm_ping(
         response_preview,
         core_reachable,
         core_latency_ms,
+        core_health_error,
         error,
         logs,
     })
@@ -793,24 +818,30 @@ pub async fn local_llm_prepare_hopper(
         spawn_ollama_serve(&mut logs).await?;
         wait_for_ollama(&client, 30, &mut logs).await?;
     }
+    let (tags_models, ps_models) = client.fetch_tags_and_ps().await?;
     let mut preloaded: Option<String> = None;
     for entry in &entries {
         let tag = entry.model_tag.trim();
         if tag.is_empty() {
             continue;
         }
-        if !OllamaClient::model_in_tags(&client.fetch_tags_models().await?, tag) {
+        if !OllamaClient::model_in_tags(&tags_models, tag) {
             pull_model(tag, &mut logs).await?;
         } else {
             logs.push(format!("{tag} already pulled"));
         }
         if entry.preload && preloaded.is_none() {
+            if OllamaClient::model_in_ps(&ps_models, tag) {
+                logs.push(format!("{tag} already in /api/ps — skipping hopper preload"));
+                preloaded = Some(tag.to_string());
+                continue;
+            }
             let ka = if entry.keep_alive_secs < 0 {
                 serde_json::json!(-1)
             } else {
                 serde_json::json!(entry.keep_alive_secs)
             };
-            logs.push(format!("Preloaded {tag} (keep_alive {ka:?})"));
+            logs.push(format!("Preloading {tag} into RAM (keep_alive {ka:?})…"));
             client.preload_generate_keep_alive(tag, ka).await?;
             preloaded = Some(tag.to_string());
         }

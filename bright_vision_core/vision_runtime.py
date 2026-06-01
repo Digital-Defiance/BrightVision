@@ -75,7 +75,7 @@ def safe_cache_len(cache: Any) -> int:
 
 def configure_vision_runtime(*, force: bool = False) -> None:
     """
-    One-time setup for Aider Vision desktop / API child processes.
+    One-time setup for BrightVision desktop / API child processes.
 
     - Redirect stdio (headless)
     - Disable tqdm terminal bars
@@ -85,6 +85,10 @@ def configure_vision_runtime(*, force: bool = False) -> None:
     if _runtime_configured and not force:
         return
     _runtime_configured = True
+
+    from bright_vision_core.litellm_ollama_patch import apply_litellm_ollama_tool_argument_patch
+
+    apply_litellm_ollama_tool_argument_patch()
 
     if not headless_enabled():
         return

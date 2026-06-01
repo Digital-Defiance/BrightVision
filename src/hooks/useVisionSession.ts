@@ -6,6 +6,7 @@ import type {
   CoreSessionInfo,
   ModelRouterApiConfig,
   SendMessageOptions,
+  SessionTranscriptRow,
 } from '../ipc/httpClient'
 import type { CoreEventBase } from '../ipc/events'
 import { isTauriRuntime } from '../ipc/isTauri'
@@ -36,7 +37,7 @@ export function useVisionSession(
   const sessionRef = useRef<VisionApiSession | null>(null)
   const pendingStartRef = useRef<VisionApiSession | null>(null)
   const inflightRef = useRef(0)
-  const queueRef = useRef<string[]>([])
+  const queueRef = useRef<{ content: string; options?: SendMessageOptions }[]>([])
   const drainQueueRef = useRef<() => Promise<void>>(async () => {})
 
   const setBusyFromInflight = useCallback(() => {
@@ -86,7 +87,16 @@ export function useVisionSession(
         setApiUrl(session.getApiUrl())
         setHttpClient(session.getHttpClient())
         setIsRunning(true)
-        return { info, workingDir: resolved.workingDir }
+        let transcript: SessionTranscriptRow[] = []
+        const client = session.getHttpClient()
+        if (config.autoLoadSession && client) {
+          try {
+            transcript = await client.getSessionTranscript(info.session_id)
+          } catch {
+            transcript = []
+          }
+        }
+        return { info, workingDir: resolved.workingDir, transcript }
       } catch (err) {
         if (generation === startGenerationRef.current) {
           process.fail(err instanceof Error ? err.message : String(err))
@@ -198,7 +208,7 @@ export function useVisionSession(
     while (queueRef.current.length > 0 && sessionRef.current && inflightRef.current === 0) {
       const next = queueRef.current.shift()!
       syncQueueCount()
-      await sendOne(next)
+      await sendOne(next.content, next.options)
     }
   }, [sendOne, syncQueueCount])
 
@@ -212,7 +222,8 @@ export function useVisionSession(
         return { queued: false as const }
       }
       if (inflightRef.current > 0) {
-        queueRef.current.push(content)
+        queueRef.current.push({ content, options: todoOptions })
+        onOutboundMessageRef.current?.(content)
         syncQueueCount()
         return { queued: true as const }
       }

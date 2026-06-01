@@ -49,10 +49,74 @@ class TestWorkspaceTodos(unittest.TestCase):
             api = WorkspaceTodos(root)
             item = api.add("Spec task", template="spec-driven")
             api.sync_spec_files(item)
-            spec_dir = root / ".aider-vision" / "specs" / item.id
+            spec_dir = api.specs_root / item.id
             (spec_dir / "requirements.md").write_text("### REQ-1\nUpdated", encoding="utf-8")
             loaded = api.import_spec_files(item.id)
             self.assertIn("Updated", loaded.requirements)
+
+    def test_delete_removes_spec_folder(self):
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            api = WorkspaceTodos(root)
+            item = api.add("Gone", template="spec-driven")
+            api.sync_spec_files(item)
+            spec_dir = api.specs_root / item.id
+            self.assertTrue(spec_dir.is_dir())
+            api.delete(item.id)
+            self.assertFalse(spec_dir.is_dir())
+
+    def test_prune_orphan_spec_folders(self):
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            api = WorkspaceTodos(root)
+            item = api.add("Keep")
+            orphan = api.specs_root / "deleted-task-id"
+            orphan.mkdir(parents=True)
+            (orphan / "requirements.md").write_text("orphan", encoding="utf-8")
+            count, ids = api.prune_orphan_spec_folders()
+            self.assertEqual(count, 1)
+            self.assertEqual(ids, ["deleted-task-id"])
+            self.assertFalse(orphan.is_dir())
+            self.assertTrue((api.specs_root / item.id).is_dir() or not (api.specs_root / item.id).exists())
+
+    def test_sync_spec_files_writes_layers(self):
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            api = WorkspaceTodos(root)
+            item = api.add("Export task", template="spec-driven")
+            item, _ = api.update(item.id, requirements="### REQ-1\nFrom json")
+            api.sync_spec_files(item)
+            spec_dir = api.specs_root / item.id
+            self.assertIn("From json", (spec_dir / "requirements.md").read_text(encoding="utf-8"))
+
+    def test_delete_removes_linked_agent_todo_txt(self):
+        from bright_vision_core.agent_todos import (
+            AgentTodoRow,
+            format_agent_todo_txt,
+            import_agent_plan_for_workspace,
+        )
+
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            agent_path = root / ".cecli" / "agents" / "default" / "todo.txt"
+            agent_path.parent.mkdir(parents=True, exist_ok=True)
+            agent_path.write_text(
+                format_agent_todo_txt(
+                    [AgentTodoRow(text="Ship it", done=False, current=True)]
+                ),
+                encoding="utf-8",
+            )
+            store = import_agent_plan_for_workspace(root)
+            todo_id = store.todos[0].id
+            api = WorkspaceTodos(root)
+            api.delete(todo_id)
+            store = api.load()
+            self.assertEqual(len(store.todos), 0)
+            self.assertFalse(agent_path.is_file())
 
 
 if __name__ == "__main__":

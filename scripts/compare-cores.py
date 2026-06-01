@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare aider-vision-core/aider_vision_core vs bright-vision-core/cecli file-by-file.
+"""Compare bright_vision_core vs cecli/cecli file-by-file.
 
 Usage:
   python3 scripts/compare-cores.py              # summary
@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "aider-vision-core" / "aider_vision_core"
-DST = ROOT / "bright-vision-core" / "cecli"
+SRC = ROOT / "bright_vision_core"
+DST = ROOT / "cecli" / "cecli"
 
 VISION_ONLY = {
     "http_api.py",
@@ -73,7 +73,7 @@ def sha(p: Path) -> str:
 def diff_stat(rel: str) -> str:
     sp, dp = SRC / rel, DST / rel
     if not sp.exists():
-        return "missing in aider_vision_core"
+        return "missing in bright_vision_core"
     if not dp.exists():
         return "missing in cecli (port from Vision)"
     r = subprocess.run(["diff", "-u", str(dp), str(sp)], capture_output=True, text=True)
@@ -112,10 +112,10 @@ def main() -> int:
         rel = args.diff
         sp, dp = SRC / rel, DST / rel
         if not sp.exists():
-            print(f"No {rel} in aider_vision_core", file=sys.stderr)
+            print(f"No {rel} in bright_vision_core", file=sys.stderr)
             return 1
         if not dp.exists():
-            print(f"# {rel} only exists in aider_vision_core — copy as new file")
+            print(f"# {rel} only exists in bright_vision_core — copy as new file")
             print(sp.read_text())
             return 0
         return subprocess.call(["diff", "-u", str(dp), str(sp)])
@@ -144,8 +144,8 @@ def main() -> int:
             print(f)
         return 0
 
-    print("Core file comparison (aider_vision_core vs cecli)")
-    print(f"  aider_vision_core: {len(s)} .py files")
+    print("Core file comparison (bright_vision_core vs cecli)")
+    print(f"  bright_vision_core: {len(s)} .py files")
     print(f"  cecli:             {len(d)} .py files")
     print(f"  only Vision tree:  {len(only_src)}")
     print(f"  only cecli:        {len(only_dst)}")

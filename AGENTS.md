@@ -6,7 +6,7 @@ You are the lead architect and autonomous developer for **BrightVision**, a cros
 
 The product is **headless**: users never drive an interactive coding CLI in the shell. Every turn is **React → Vision HTTP API (SSE) → Python session → events → React**.
 
-Prioritize dogfoodable workflows: Ollama/local models, superproject/submodule git, EARS/spec-driven tasks.
+Prioritize dogfoodable workflows: run `yarn dogfood:agent` (headless, no GUI required), Ollama/local models when `DOGFOOD_LLM=1`, superproject/submodule git, EARS/spec-driven tasks. See `docs/DOGFOOD.md`.
 
 ## Repository structure
 
@@ -20,6 +20,10 @@ Prioritize dogfoodable workflows: Ollama/local models, superproject/submodule gi
 | **`docs/`** | Architecture, ROADMAP, LOCAL_LLM |
 | **`e2e/`** | Playwright (mocked `/api/core` + optional mocked Tauri) |
 | **`scripts/`** | Superproject helpers (`compare-cores.py`, build) |
+| **`packages/vision-client/`** | Shared Vision HTTP + SSE types (`@brightvision/vision-client`) |
+| **`apps/remote/`** | BrightVision Remote (Expo) — thin client to `:8741` / LAN proxy |
+
+**Mobile Remote (#45):** Execution spec = **`docs/MOBILE_REMOTE.md`** (agent copy-paste prompts + per-phase acceptance criteria). Head-only; contract = `docs/IPC.md`. Do not treat partial scaffold as done until criteria pass.
 
 **User project vs engine:** Settings **project** (`workingDir`) is any git repo the agent edits. Cecli + Vision API live beside the app install, not inside the user’s project.
 
@@ -40,7 +44,7 @@ React (src/)
 - **Web:** `bright-vision-core-serve` or Vite proxy `/api/core` → `:8741`.
 - **Dev Python:** `source activate.sh` → `pip install -e` cecli submodule + parent `bright_vision_core` (`pip install -e .`).
 
-Deeper detail: `docs/ARCHITECTURE.md`, `docs/IPC.md`, `docs/DEVELOPMENT.md`, `docs/LOCAL_LLM.md`.
+Deeper detail: `docs/ARCHITECTURE.md`, `docs/IPC.md`, `docs/DEVELOPMENT.md`, `docs/LOCAL_LLM.md`, `docs/TESTING_POLICY.md`.
 
 **Engine strategy (May 2026):** **Cecli** submodule + **`bright_vision_core`** Vision HTTP in this repo. Do not edit `cecli/website/`. Layout: `docs/UPSTREAM_CECLI.md`. Pin policy: `docs/CECLI_PIN.md`. Tier rules: `docs/CORE_FILE_MERGE.md`.
 
@@ -61,7 +65,7 @@ Deeper detail: `docs/ARCHITECTURE.md`, `docs/IPC.md`, `docs/DEVELOPMENT.md`, `do
 
 ## Configuration & environment
 
-- **`VisionConfig`** (`src/ipc/config.ts`): model, `workingDir`, Ollama base, optional `local-llm.env` / XDG `~/.config/local-llm/env`.
+- **`VisionConfig`** (`src/ipc/config.ts`): model, `workingDir`, Ollama base, optional `local-llm.env` / XDG `~/.config/local-llm/env` (`DATA_MODEL`, `OLLAMA_HOST`, `FAST_MODEL`, `HEAVY_MODEL`, `MODEL_ROUTER` → Settings + hopper via `read_local_llm_config`).
 - **Local LLM:** Rust (`src-tauri` + Settings) starts Ollama; Python core runs chat via LiteLLM (`ollama_chat/…`). See `docs/LOCAL_LLM.md`.
 - **`LITELLM_EXTRA_PARAMS`**, API keys via environment when using cloud models.
 
@@ -85,6 +89,8 @@ See `.cursor/rules/roadmap.mdc`.
 | Tier | Command |
 |------|---------|
 | TS unit | `yarn test` |
+| Vision client package | `yarn test:vision-client` |
+| Remote (Expo) | `yarn remote:dev` (manual; same Wi‑Fi as desktop LAN Link) |
 | TS + types | `yarn test:fast` |
 | + Rust | `yarn test:local` |
 | + E2E | `yarn test:full` (needs `npx playwright install chromium` once) |

@@ -1,12 +1,12 @@
-# Core merge: file-by-file (aider_vision_core → bright_vision_core + cecli)
+# Core merge: file-by-file (bright_vision_core → bright_vision_core + cecli)
 
-Commits are **not replayable** between `aider-vision-core` and `bright-vision-core` (aider fork vs cecli). Treat each **file** (or cecli `commands/` module) as a merge unit.
+Commits are **not replayable** between `bright_vision_core` and `bright-vision-core` (aider fork vs cecli). Treat each **file** (or cecli `commands/` module) as a merge unit.
 
 ## How different is cecli? (honest summary)
 
 They are **cousins**, not renames. Same lineage (aider-style coders + `Commands` + `GitRepo`), but cecli has moved on in a different direction.
 
-| Signal | aider_vision_core | cecli |
+| Signal | bright_vision_core | cecli |
 |--------|------------------:|------:|
 | `.py` files | 97 | 241 |
 | Command surface | one `commands.py` | **73** modules under `commands/` |
@@ -19,12 +19,12 @@ They are **cousins**, not renames. Same lineage (aider-style coders + `Commands`
 So:
 
 - **Rsync of the whole tree is a bad plan** — you would paste an outdated aider fork on top of cecli and lose agents, skills, and the new command layout.
-- **Rsync of only “Vision-only” files is a mediocre plan** — those files **import** `Commands`, `Coder`, `GitRepo`, etc. from `aider_vision_core`. After copy they must be **rewritten** to use `cecli.*` anyway. That is manual porting, not a one-shot sync.
+- **Rsync of only “Vision-only” files is a mediocre plan** — those files **import** `Commands`, `Coder`, `GitRepo`, etc. from `bright_vision_core`. After copy they must be **rewritten** to use `cecli.*` anyway. That is manual porting, not a one-shot sync.
 - **A good plan** — treat cecli as the engine; **add** a thin `bright_vision_core` package (~15 files) and fix imports + any API mismatches (especially `git_workspace` / `RepoSet`, which cecli does not have today).
 
 ### What you are really porting
 
-Not “all of aider-vision-core,” but **the integration layer** the outer app was built against:
+Not “all of bright_vision_core,” but **the integration layer** the outer app was built against:
 
 1. HTTP + SSE (`http_api`, `http_auth`, `vision_serve`)
 2. Headless session (`session`, `event_io`, `headless_stdio`)
@@ -47,7 +47,7 @@ Rough tree stats:
 
 | Bucket | Count | Rule |
 |--------|------:|------|
-| Only in `aider_vision_core` | 41 | Port if Vision-specific; skip stale prompts |
+| Only in `bright_vision_core` | 41 | Port if Vision-specific; skip stale prompts |
 | Only in `cecli` | 185 | **Keep** — agents, `/merge`, skills, `commands/*` |
 | Shared path, identical | 7 | No action |
 | Shared path, differ | 49 | **Intelligent merge** — default **cecli wins** unless Vision delta is required |
@@ -67,7 +67,7 @@ No cecli counterpart. These are what the **outer repo** needs for HTTP/SSE and T
 | `brand.py` | Align with outer `src/brand.ts` → BrightVision |
 | `gui_progress.py` | Progress → activity bar (may hook cecli IO later) |
 
-After copy: rename imports `aider_vision_core` → `bright_vision_core`; wire internals to **`cecli`** for coders/llm/repo.
+After copy: rename imports `bright_vision_core` → `bright_vision_core`; wire internals to **`cecli`** for coders/llm/repo.
 
 ## Tier 2 — Do not copy; cecli is authoritative
 
@@ -77,7 +77,7 @@ After copy: rename imports `aider_vision_core` → `bright_vision_core`; wire in
 | `coders/agent_coder.py`, `sub_agent_coder.py`, … | New agent model |
 | `change_tracker.py`, hooks, skills | Not in Vision fork |
 
-**Do not** rsync Tier 2 from aider_vision_core onto cecli.
+**Do not** rsync Tier 2 from bright_vision_core onto cecli.
 
 ## Tier 3 — Shared files that differ (merge manually)
 
@@ -85,7 +85,7 @@ Default: **start from cecli**, port **Vision-only hunks** from aider.
 
 | File | Guidance |
 |------|----------|
-| `main.py` | Large diff (~500+ lines). Identify `AIDER_VISION_HEADLESS`, API mode, vision entry — port hunks into cecli `main` or thin `bright_vision_core` wrapper |
+| `main.py` | Large diff (~500+ lines). Identify `BRIGHT_VISION_HEADLESS`, API mode, vision entry — port hunks into cecli `main` or thin `bright_vision_core` wrapper |
 | `repo.py` | Vision added submodule/gitlink behavior → merge into cecli `repo.py` or use `git_workspace.py` only |
 | `coders/base_coder.py` | Submodule roots, headless progress — diff and take **minimal** Vision patches |
 | `io.py`, `args.py`, `repomap.py`, `waiting.py`, `watch.py` | Review per feature; often cecli is ahead |

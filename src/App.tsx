@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { CssBaseline, ThemeProvider } from '@mui/material'
 import ChatIcon from '@mui/icons-material/Chat'
+import ArticleIcon from '@mui/icons-material/Article'
 import ChecklistRtlIcon from '@mui/icons-material/ChecklistRtl'
 import GitHubIcon from '@mui/icons-material/GitHub'
 import SettingsIcon from '@mui/icons-material/Settings'
@@ -23,7 +24,12 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { DISPLAY_CORE, ErrorSource, prefixForTechnicalLog, prefixForUserFacing } from './brand'
 import { AppChrome } from './components/layout/AppChrome'
 import { ResourceOverlay } from './components/layout/ResourceOverlay'
-import { DEFAULT_CONFIG, defaultCoreApiUrl, type VisionConfig } from './ipc/config'
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_LAN_PROXY_PORT,
+  defaultCoreApiUrl,
+  type VisionConfig,
+} from './ipc/config'
 import {
   applyLocalLlmToConfig,
   isOllamaVisionModel,
@@ -68,6 +74,8 @@ import {
   filterPathsNotInChat,
   isAwaitingFilesCta,
   mergeSuggestedPaths,
+  normalizeAddCommandPath,
+  parseAddCommandPath,
   pathsNotInChat,
 } from './utils/suggestedFiles'
 import {
@@ -76,6 +84,7 @@ import {
   saveSuggestedFilesPrefs,
   type SuggestedFilesPrefs,
 } from './theme/suggestedFilesPrefs'
+import { loadSpecFocusPref, saveSpecFocusPref } from './theme/specFocusPrefs'
 import { SessionContextChip } from './components/session/SessionContextChip'
 import {
   buildEmptyLlmRetryMessage,
@@ -86,13 +95,37 @@ import {
   formatFilesNotAddedSnackbar,
   rewriteAddFileToolMessage,
 } from './utils/addFileMessages'
+import { applyProposedEditSegment } from './utils/applyProposedEdit'
+import {
+  isSessionLoadedToolOutput,
+  transcriptToChatMessages,
+  type TranscriptRow,
+} from './utils/sessionTranscript'
+import type { AssistantContentSegment } from './utils/proposedEdits'
+import { normalizeRepoPath } from './utils/proposedEdits'
+import { buildSpecTraceHint, defaultRefinePrompt, type SpecTraceHint } from './utils/specTraceHint'
+import { truncatePromptPreview } from './utils/specGeneratePrompt'
+import {
+  sectionActivityLabel,
+  type SpecLayerSection,
+} from './utils/specWizard'
+import type { TraceabilityResult } from './todos/earsTypes'
+import { isRedundantEditToolOutput } from './utils/suppressDuplicateToolOutput'
 import { appendTimingStatsCsvRow } from './ipc/timingStatsCsv'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
+import { SpecAgentPanel } from './components/spec/SpecAgentPanel'
+import {
+  resolveConnectionStatusLabel,
+  resolveConnectionTone,
+} from './utils/connectionStatus'
 import { TodoPanel } from './components/todos/TodoPanel'
 import { GitPanel } from './components/GitPanel'
-import { useWorkspaceTodos } from './hooks/useWorkspaceTodos'
+import { useWorkspaceTodos, type SpecLayerDraft } from './hooks/useWorkspaceTodos'
 import { WelcomePanel } from './components/onboarding/WelcomePanel'
+import { AboutDialog } from './components/settings/AboutDialog'
 import { SettingsPanel } from './components/settings/SettingsPanel'
+import { VisionApiActionButtons } from './components/settings/VisionApiActionButtons'
+import { useVisionApiControls } from './hooks/useVisionApiControls'
 import type { SubAgentInfo } from './ipc/agentCommands'
 
 const EditorPanel = lazy(() =>
@@ -121,6 +154,14 @@ import {
   saveResourceOverlayPrefs,
   type ResourceOverlayPrefs,
 } from './theme/resourceOverlayPrefs'
+import {
+  loadNtfyAlertsPrefs,
+  saveNtfyAlertsPrefs,
+  DEFAULT_NTFY_ALERTS_PREFS,
+  generateNtfyTopic,
+  type NtfyAlertsPrefs,
+} from './theme/ntfyAlertsPrefs'
+import { maybeNotifyTurnComplete, maybeNotifySpecJobComplete } from './ipc/ntfyAlerts'
 import { useAppVersions } from './hooks/useAppVersions'
 import { StderrBatcher } from './utils/stderrBatch'
 import { useThinkingTiming } from './hooks/useThinkingTiming'
@@ -134,6 +175,7 @@ import {
   saveThinkingStats,
 } from './utils/thinkingStats'
 import { estimateTurnEta } from './utils/turnEtaEstimate'
+import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
 import {
   resolveMessageTurnTiming,
   shouldRecordTurnInHistory,
@@ -149,6 +191,7 @@ import {
 } from './utils/contextUsage'
 import { buildGitStatusByPath } from './utils/editorGitStatus'
 import {
+  applyLocalLlmHopperFromEnv,
   DEFAULT_MODEL_ROUTER_PREFS,
   formatModelRouteEvent,
   loadModelRouterPrefs,
@@ -159,7 +202,7 @@ import {
 import type { ModelRouterApiConfig, SendMessageOptions } from './ipc/httpClient'
 import {
   ensureRoutedOllamaModel,
-  prepareModelRouterHopper,
+  prepareModelRouterForSessionStart,
   type ModelRouteSnapshot,
 } from './ipc/modelRouterLlm'
 import { shouldOfferRouterEscalate } from './utils/modelRouterEscalate'
@@ -178,6 +221,7 @@ import {
   THINKING_TIMING_STORAGE_KEY,
   EDITOR_LANGUAGE_PREFS_STORAGE_KEY,
   MODEL_ROUTER_PREFS_STORAGE_KEY,
+  NTFY_ALERTS_STORAGE_KEY,
   migrateLegacyStorageKeys,
   readStorageItem,
   removeStorageKeys,
@@ -185,7 +229,7 @@ import {
 
 const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
-type TabId = 'chat' | 'terminal' | 'git' | 'editor' | 'settings' | 'tasks'
+type TabId = 'chat' | 'spec' | 'terminal' | 'git' | 'editor' | 'settings' | 'tasks'
 
 function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): VisionConfig {
   const merged: VisionConfig = { ...DEFAULT_CONFIG, ...raw }
@@ -210,11 +254,31 @@ function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): Vi
   if (typeof merged.manageLocalLlm !== 'boolean') {
     merged.manageLocalLlm = true
   }
-  if (
-    merged.coreEnginePath === 'aider-vision-core' ||
-    merged.coreEnginePath === 'bright-vision-core' ||
-    merged.coreEnginePath === 'BrightVision-core'
-  ) {
+  if (typeof merged.sessionEncrypt !== 'boolean') {
+    merged.sessionEncrypt = false
+  }
+  if (typeof merged.autoSaveSession !== 'boolean') {
+    merged.autoSaveSession = false
+  }
+  if (typeof merged.autoLoadSession !== 'boolean') {
+    merged.autoLoadSession = false
+  }
+  if (typeof merged.chatHistoryFile !== 'boolean') {
+    merged.chatHistoryFile = true
+  }
+  if (typeof merged.autoSaveSessionName !== 'string' || !merged.autoSaveSessionName.trim()) {
+    merged.autoSaveSessionName = 'brightvision'
+  }
+  if (merged.sessionMode !== 'vibe' && merged.sessionMode !== 'spec') {
+    merged.sessionMode = 'vibe'
+  }
+  if (typeof merged.lanRemoteEnabled !== 'boolean') {
+    merged.lanRemoteEnabled = false
+  }
+  if (typeof merged.lanProxyPort !== 'number' || merged.lanProxyPort < 1024) {
+    merged.lanProxyPort = DEFAULT_LAN_PROXY_PORT
+  }
+  if (merged.coreEnginePath === 'bright-vision-core' || merged.coreEnginePath === 'BrightVision-core') {
     merged.coreEnginePath = '.'
   }
   if (!merged.coreApiUrl || merged.coreApiUrl === DEFAULT_CONFIG.coreApiUrl) {
@@ -237,6 +301,7 @@ interface TerminalLine {
 
 const NAV: { id: TabId; label: string; icon: ReactNode }[] = [
   { id: 'chat', label: 'Chat', icon: <ChatIcon /> },
+  { id: 'spec', label: 'Spec', icon: <ArticleIcon /> },
   { id: 'tasks', label: 'Tasks', icon: <ChecklistRtlIcon /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon /> },
   { id: 'git', label: 'Git', icon: <GitHubIcon /> },
@@ -253,6 +318,8 @@ function AppShell({
   setSuggestedFilesPrefs,
   resourceOverlayPrefs,
   setResourceOverlayPrefs,
+  ntfyAlertsPrefs,
+  setNtfyAlertsPrefs,
   editorLanguagePrefs,
   setEditorLanguagePrefs,
   modelRouterPrefs,
@@ -266,16 +333,24 @@ function AppShell({
   setSuggestedFilesPrefs: React.Dispatch<React.SetStateAction<SuggestedFilesPrefs>>
   resourceOverlayPrefs: ResourceOverlayPrefs
   setResourceOverlayPrefs: React.Dispatch<React.SetStateAction<ResourceOverlayPrefs>>
+  ntfyAlertsPrefs: NtfyAlertsPrefs
+  setNtfyAlertsPrefs: React.Dispatch<React.SetStateAction<NtfyAlertsPrefs>>
   editorLanguagePrefs: EditorLanguagePrefs
   setEditorLanguagePrefs: React.Dispatch<React.SetStateAction<EditorLanguagePrefs>>
   modelRouterPrefs: ModelRouterPrefs
   setModelRouterPrefs: React.Dispatch<React.SetStateAction<ModelRouterPrefs>>
 }) {
+  const ntfyAlertsPrefsRef = useRef(ntfyAlertsPrefs)
+  ntfyAlertsPrefsRef.current = ntfyAlertsPrefs
+
   const [activeTab, setActiveTab] = useState<TabId>('chat')
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [editorPendingPath, setEditorPendingPath] = useState<string | null>(null)
   const [config, setConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState<VisionConfig>(DEFAULT_CONFIG)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [specChatMessages, setSpecChatMessages] = useState<ChatMessage[]>([])
+  const [specInputValue, setSpecInputValue] = useState('')
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([])
   const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([])
   const [inputValue, setInputValue] = useState('')
@@ -299,9 +374,26 @@ function AppShell({
   )
   const [engineInstallPath, setEngineInstallPath] = useState<string | undefined>()
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
+  const [specFocusMode, setSpecFocusMode] = useState(() => loadSpecFocusPref())
   const [specGenerating, setSpecGenerating] = useState(false)
+  const [specIndexRefreshToken, setSpecIndexRefreshToken] = useState(0)
+  const [specAgentEarsLinting, setSpecAgentEarsLinting] = useState(false)
+  const [specAgentTracing, setSpecAgentTracing] = useState(false)
+  const [specTraceHint, setSpecTraceHint] = useState<SpecTraceHint | null>(null)
+  const [specJobPrompt, setSpecJobPrompt] = useState<string | null>(null)
+  const [specJobMode, setSpecJobMode] = useState<'generate' | 'refine' | null>(null)
+  const [specJobSection, setSpecJobSection] = useState<SpecLayerSection | null>(null)
+  const [liveSessionMode, setLiveSessionMode] = useState<'vibe' | 'spec' | null>(null)
+  const liveSessionModeRef = useRef<'vibe' | 'spec' | null>(null)
   const specGenerateAbortRef = useRef<AbortController | null>(null)
+  const specLayersSavedRef = useRef<(id: string, layers: SpecLayerDraft) => void | Promise<void>>(
+    () => {}
+  )
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const specChatEndRef = useRef<HTMLDivElement>(null)
+  const specTurnCaptureRef = useRef(false)
+  const specStreamingAssistantId = useRef<number | null>(null)
+  const specPendingUserMessageIdsRef = useRef<number[]>([])
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const streamingAssistantId = useRef<number | null>(null)
   const pendingUserMessageIdsRef = useRef<number[]>([])
@@ -313,6 +405,8 @@ function AppShell({
   savedConfigRef.current = savedConfig
   const chatMessagesRef = useRef(chatMessages)
   chatMessagesRef.current = chatMessages
+  const specChatMessagesRef = useRef(specChatMessages)
+  specChatMessagesRef.current = specChatMessages
   const ingestSuggestionsRef = useRef<(content: string) => void>(() => {})
   const suggestedFilesPrefsRef = useRef(suggestedFilesPrefs)
   suggestedFilesPrefsRef.current = suggestedFilesPrefs
@@ -397,7 +491,7 @@ function AppShell({
 
   useEffect(() => {
     migrateLegacyStorageKeys()
-    const stored = readStorageItem(CONFIG_STORAGE_KEY, 'aider-vision-config')
+    const stored = readStorageItem(CONFIG_STORAGE_KEY)
     let merged = DEFAULT_CONFIG
     if (stored) {
       try {
@@ -428,6 +522,9 @@ function AppShell({
             pythonPath: merged.pythonPath.trim() || pythonPath,
           }
           next = applyLocalLlmToConfig(next, localLlm, true)
+          setModelRouterPrefs((prefs) =>
+            applyLocalLlmHopperFromEnv(prefs, localLlm, next.model, true)
+          )
           if (
             dir !== merged.workingDir ||
             next.pythonPath !== merged.pythonPath ||
@@ -559,6 +656,33 @@ function AppShell({
     [nextChatMessageId]
   )
 
+  const appendUserMessageToSpecChat = useCallback(
+    (content: string, trackPending: boolean) => {
+      const id = nextChatMessageId()
+      if (trackPending) specPendingUserMessageIdsRef.current.push(id)
+      setSpecChatMessages((prev) =>
+        capList([...prev, { id, role: 'user' as const, content }], MAX_CHAT_MESSAGES)
+      )
+    },
+    [nextChatMessageId]
+  )
+
+  const hydrateChatFromTranscript = useCallback(
+    (rows: TranscriptRow[]) => {
+      const mapped = transcriptToChatMessages(rows, nextChatMessageId)
+      if (!mapped.length) return
+      setChatMessages(capList(mapped, MAX_CHAT_MESSAGES))
+      setToolEvents([])
+    },
+    [nextChatMessageId]
+  )
+
+  const httpClientRef = useRef<CoreHttpClient | null>(null)
+  const sessionInfoIdRef = useRef<string | null>(null)
+  const hydrateChatFromCoreRef = useRef<(client: CoreHttpClient, sessionId: string) => void>(
+    () => {}
+  )
+
   const appendOllamaStatusToChat = useCallback(
     (command: VisionClientCommandId, snapshot: OllamaModelsSnapshot, userLabel: string) => {
       const userId = nextChatMessageId()
@@ -610,8 +734,12 @@ function AppShell({
           startTurnTimingRef.current(chars, wall)
         }
         const serverText = String(ev.text ?? '')
-        const pendingId = shiftPendingUserMessageId(pendingUserMessageIdsRef.current)
-        setChatMessages((prev) =>
+        const specCap = specTurnCaptureRef.current
+        const pendingId = shiftPendingUserMessageId(
+          specCap ? specPendingUserMessageIdsRef.current : pendingUserMessageIdsRef.current
+        )
+        const setMsgs = specCap ? setSpecChatMessages : setChatMessages
+        setMsgs((prev) =>
           capList(
             reconcileUserMessageInChat(
               prev,
@@ -632,29 +760,32 @@ function AppShell({
           lastAssistantStreamRef.current,
           chunk
         )
-        let sid = streamingAssistantId.current
+        const specCap = specTurnCaptureRef.current
+        const streamRef = specCap ? specStreamingAssistantId : streamingAssistantId
+        const setMsgs = specCap ? setSpecChatMessages : setChatMessages
+        let sid = streamRef.current
         if (sid === null) {
           sid = orderId
-          streamingAssistantId.current = sid
+          streamRef.current = sid
           turnAssistantMessageIdRef.current = sid
           turnHadAssistantOutputRef.current = true
-          setChatMessages((prev) => {
+          setMsgs((prev) => {
             const next = capList(
               [...prev, { id: sid!, role: 'assistant' as const, content: chunk }],
               MAX_CHAT_MESSAGES
             )
-            thinkingTimingRef.current.syncContent(chunk)
+            if (!specCap) thinkingTimingRef.current.syncContent(chunk)
             return next
           })
         } else {
           const captureSid = sid
           turnHadAssistantOutputRef.current = true
-          setChatMessages((prev) => {
+          setMsgs((prev) => {
             const next = capList(
               prev.map((m) => {
                 if (m.id !== captureSid) return m
                 const content = appendStreamingToken(m.content, chunk)
-                thinkingTimingRef.current.syncContent(content)
+                if (!specCap) thinkingTimingRef.current.syncContent(content)
                 return { ...m, content }
               }),
               MAX_CHAT_MESSAGES
@@ -677,7 +808,9 @@ function AppShell({
         lastModelRouteRef.current = snapshot
         setLastModelRoute(snapshot)
         const routeText = formatModelRouteEvent(snapshot)
-        setChatMessages((prev) =>
+        const specCapRoute = specTurnCaptureRef.current
+        const setRouteMsgs = specCapRoute ? setSpecChatMessages : setChatMessages
+        setRouteMsgs((prev) =>
           capList(
             [
               ...prev,
@@ -737,6 +870,7 @@ function AppShell({
           break
         }
         if (!text.trim()) break
+        if (isRedundantEditToolOutput(text, lastAssistantStreamRef.current)) break
         streamingAssistantId.current = null
         setToolEvents((prev) =>
           capList(
@@ -755,6 +889,11 @@ function AppShell({
         setTerminalLines((prev) =>
           capList([...prev, { id: orderId, text, type: 'stdout' as const }], MAX_TERMINAL_LINES)
         )
+        if (isSessionLoadedToolOutput(text)) {
+          const client = httpClientRef.current
+          const sid = sessionInfoIdRef.current
+          if (client && sid) hydrateChatFromCoreRef.current(client, sid)
+        }
         break
       }
       case 'tool_error': {
@@ -822,6 +961,7 @@ function AppShell({
       case 'assistant_complete':
         break
       case 'done': {
+        const specCapDone = specTurnCaptureRef.current
         const applied =
           ev.edited_files && Array.isArray(ev.edited_files)
             ? (ev.edited_files as string[])
@@ -831,7 +971,7 @@ function AppShell({
         const hadAssistantOutput = turnHadAssistantOutputRef.current
         let turnTiming: TurnThinkingTiming | null = null
         if (wallStart != null) {
-          const prev = chatMessagesRef.current
+          const prev = specCapDone ? specChatMessagesRef.current : chatMessagesRef.current
           const target =
             turnAssistantId != null
               ? prev.find((m) => m.id === turnAssistantId && m.role === 'assistant')
@@ -878,6 +1018,14 @@ function AppShell({
             }
           }
         }
+        if (turnTiming?.turnDurationMs) {
+          void maybeNotifyTurnComplete(ntfyAlertsPrefsRef.current, {
+            durationMs: turnTiming.turnDurationMs,
+            queuedRemaining: queuedCountRef.current,
+            editedCount: applied.length,
+            documentVisible: document.visibilityState === 'visible',
+          })
+        }
         if (!turnTiming) takeTurnResourcePeakRef.current()
         turnAssistantMessageIdRef.current = null
         streamingAssistantId.current = null
@@ -897,7 +1045,8 @@ function AppShell({
           thinkingTimingRef.current.reset()
           pendingTurnTimingQueueRef.current = []
         }
-        setChatMessages((prev) => {
+        const setDoneMsgs = specCapDone ? setSpecChatMessages : setChatMessages
+        setDoneMsgs((prev) => {
           const attachId =
             turnAssistantId ??
             (hadAssistantOutput
@@ -921,6 +1070,10 @@ function AppShell({
             MAX_CHAT_MESSAGES
           )
         })
+        if (specCapDone) {
+          specTurnCaptureRef.current = false
+          specStreamingAssistantId.current = null
+        }
         if (applied.length > 0) {
           setTerminalLines((prev) => [
             ...prev,
@@ -961,8 +1114,8 @@ function AppShell({
           if (ev.commit_hash) links.push(`commit:${String(ev.commit_hash)}`)
           if (links.length) {
             void recordTurnLinksRef.current(links)
-            void reloadTodosRef.current()
           }
+          void reloadTodosRef.current()
         }
         if (applied.length > 0) {
           const cfg = savedConfigRef.current
@@ -1065,13 +1218,28 @@ function AppShell({
     setSuggestedPaths((prev) => filterPathsNotInChat(prev, filesInChat))
   }, [filesInChat])
 
+  const removeLastPendingSpecUserMessage = useCallback(() => {
+    const id = popPendingUserMessageId(specPendingUserMessageIdsRef.current)
+    setSpecChatMessages((prev) => removeChatMessageById(prev, id))
+  }, [])
+
   const onOutboundMessage = useCallback(
     (content: string) => {
       if (content.trim() === '/clear') return
-      appendUserMessageToChat(content, true)
+      if (specTurnCaptureRef.current) {
+        setSpecChatMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last?.role === 'user' && last.content === content) return prev
+          const id = nextChatMessageId()
+          specPendingUserMessageIdsRef.current.push(id)
+          return capList([...prev, { id, role: 'user' as const, content }], MAX_CHAT_MESSAGES)
+        })
+      } else {
+        appendUserMessageToChat(content, true)
+      }
       startTurnTimingRef.current(content.length, Date.now())
     },
-    [appendUserMessageToChat]
+    [appendUserMessageToChat, nextChatMessageId]
   )
 
   const {
@@ -1093,6 +1261,23 @@ function AppShell({
     refreshSessionInfo,
     patchSessionFiles,
   } = useVisionSession(wrapHandler(handleCoreEvent), { onOutboundMessage })
+
+  httpClientRef.current = httpClient
+  sessionInfoIdRef.current = sessionInfo?.session_id ?? null
+  hydrateChatFromCoreRef.current = (client, sessionId) => {
+    void client
+      .getSessionTranscript(sessionId)
+      .then((rows) => {
+        const typed: TranscriptRow[] = []
+        for (const r of rows) {
+          if (r.role === 'user' || r.role === 'assistant') {
+            typed.push({ role: r.role, content: r.content })
+          }
+        }
+        hydrateChatFromTranscript(typed)
+      })
+      .catch(() => {})
+  }
 
   queuedCountRef.current = queuedCount
 
@@ -1167,7 +1352,7 @@ function AppShell({
     [syncSessionFiles, recordAddedContextEstimate, savedConfig.workingDir]
   )
 
-  const stallWatch = useSessionStallWatch(isBusy, queuedCount)
+  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model)
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
   const { resetPeak: resetTurnResourcePeak, takePeak: takeTurnResourcePeak } =
     useTurnResourcePeak(isRunning && trackTurnResources, resourceOverlayPrefs.pollIntervalSec)
@@ -1242,20 +1427,25 @@ function AppShell({
       coreEnginePath: savedConfig.coreEnginePath,
       pythonPath: savedConfig.pythonPath,
     },
-    refreshDeps: [isRunning, httpClient, activeTab === 'settings'],
+    refreshDeps: [isRunning, httpClient, activeTab === 'settings', aboutOpen],
   })
 
   const workspaceTodosApi = useMemo(
     () => ({
       client: httpClient ?? todoApiClient,
       workspace: savedConfig.workingDir,
+      sessionId: sessionInfo?.session_id ?? null,
     }),
-    [httpClient, todoApiClient, savedConfig.workingDir]
+    [httpClient, todoApiClient, savedConfig.workingDir, sessionInfo?.session_id]
   )
 
   const { paths: pathSuggestions, active: pathAssistActive } = usePathCompletion(
     savedConfig.workingDir,
     inputValue
+  )
+  const { paths: specPathSuggestions, active: specPathAssistActive } = usePathCompletion(
+    savedConfig.workingDir,
+    specInputValue
   )
   const {
     store: todoStore,
@@ -1266,6 +1456,11 @@ function AppShell({
     deleteTodo,
     moveTodo,
     syncSpecFromDisk,
+    lintRequirements,
+    fetchSpecIndex,
+    traceSpec,
+    repairSpecFolders,
+    pruneOrphanSpecFolders,
     setActiveTodo,
     markDone,
     recordTurnLinks,
@@ -1274,14 +1469,64 @@ function AppShell({
     importMarkdown,
     httpReady: todosHttpReady,
     tauriLocal: todosTauriLocal,
-  } = useWorkspaceTodos(savedConfig.workingDir, workspaceTodosApi, () => {
+  } = useWorkspaceTodos(savedConfig.workingDir, workspaceTodosApi, {
+    onAutoCompleted: () => {
       setSnackbar({
         message: 'Task marked done — all checklist items complete',
         severity: 'info',
       })
       void reloadTodos()
+    },
+    onEarsRegression: (_id, errorCount) => {
+      setSnackbar({
+        message: `Requirements saved with ${errorCount} EARS error(s) — use Validate EARS`,
+        severity: 'warning',
+      })
+    },
+    onSpecLayersSaved: (id, layers) => {
+      setSpecIndexRefreshToken((n) => n + 1)
+      void specLayersSavedRef.current(id, layers)
+    },
+  })
+
+  const applySpecTraceResult = useCallback((result: TraceabilityResult, opts?: { afterSave?: boolean }) => {
+    setSpecTraceHint(buildSpecTraceHint(result))
+    const prefix = opts?.afterSave ? 'Spec trace after save' : 'Trace'
+    if (result.ok && result.warning_count === 0) {
+      setSnackbar({
+        message: `${prefix}: ${result.req_ids.length} REQ id(s)`,
+        severity: 'info',
+      })
+      return
     }
-  )
+    const parts: string[] = []
+    if (result.error_count > 0) parts.push(`${result.error_count} error(s)`)
+    if (result.warning_count > 0) parts.push(`${result.warning_count} warning(s)`)
+    setSnackbar({
+      message: parts.length ? `${prefix}: ${parts.join(', ')}` : `${prefix} reported issues`,
+      severity: result.error_count > 0 ? 'warning' : 'info',
+    })
+  }, [])
+
+  specLayersSavedRef.current = async (id, layers) => {
+    if (liveSessionModeRef.current !== 'spec' || !todosHttpReady) return
+    const item = todoStore?.todos.find((t) => t.id === id)
+    if (!item) return
+    try {
+      const result = await traceSpec(id, {
+        requirements: layers.requirements ?? item.requirements ?? '',
+        design: layers.design ?? item.design ?? '',
+        tasks_md: layers.tasks_md ?? item.tasks_md ?? '',
+      })
+      applySpecTraceResult(result, { afterSave: true })
+    } catch {
+      // trace on save is best-effort
+    }
+  }
+
+  useEffect(() => {
+    setSpecTraceHint(null)
+  }, [activeTodo?.id])
 
   recordTurnLinksRef.current = recordTurnLinks
   reloadTodosRef.current = reloadTodos
@@ -1325,6 +1570,31 @@ function AppShell({
     setActiveTab('editor')
   }, [])
 
+  const handleApplyProposedEdit = useCallback(
+    async (
+      messageId: number,
+      segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>
+    ) => {
+      const result = await applyProposedEditSegment(savedConfigRef.current.workingDir, segment)
+      if (!result.ok) {
+        setSnackbar({ message: result.message, severity: 'error' })
+        return
+      }
+      if (result.path) {
+        setChatMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== messageId || m.role !== 'assistant') return m
+            const paths = new Set([...(m.appliedFiles ?? []), normalizeRepoPath(result.path!)])
+            return { ...m, appliedFiles: [...paths] }
+          })
+        )
+        handleOpenInEditor(result.path)
+      }
+      setSnackbar({ message: result.message, severity: 'info' })
+    },
+    [handleOpenInEditor]
+  )
+
   useEffect(() => {
     if (!isTauriRuntime()) return
     const setup = async () => {
@@ -1345,18 +1615,59 @@ function AppShell({
   }, [chatMessages])
 
   useEffect(() => {
+    if (activeTab === 'spec') specChatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [specChatMessages, activeTab])
+
+  useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [terminalLines])
 
+  liveSessionModeRef.current = liveSessionMode
+
+  const handleSessionModeChange = useCallback(
+    (sessionMode: 'vibe' | 'spec') => {
+      setConfig((c) => ({ ...c, sessionMode }))
+      setSavedConfig((c) => {
+        const next = { ...c, sessionMode }
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
+        return next
+      })
+      if (!lifecycleActive && sessionMode === 'spec') {
+        setActiveTab('spec')
+      }
+    },
+    [lifecycleActive]
+  )
+
   const handleSave = () => {
+    const modelChanged = config.model.trim() !== savedConfig.model.trim()
     setSavedConfig(config)
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
     saveAppearance(appearance)
     saveThinkingTimingPrefs(thinkingTimingPrefs)
     saveResourceOverlayPrefs(resourceOverlayPrefs)
+    saveNtfyAlertsPrefs(ntfyAlertsPrefs)
     saveEditorLanguagePrefs(editorLanguagePrefs)
     saveModelRouterPrefs(modelRouterPrefs)
-    setSnackbar({ message: 'Settings saved', severity: 'info' })
+    if (isRunning && modelChanged && sessionInfo) {
+      setSnackbar({
+        message:
+          'LLM model updated in Settings — use Stop & Start in Chat to apply (no app restart needed).',
+        severity: 'warning',
+      })
+    } else {
+      setSnackbar({ message: 'Settings saved', severity: 'info' })
+    }
+  }
+
+  const handleRestartSession = async () => {
+    try {
+      await handleStop()
+      await handleStart()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setSnackbar({ message: msg, severity: 'error' })
+    }
   }
 
   const handleReset = () => {
@@ -1369,11 +1680,13 @@ function AppShell({
       RESOURCE_OVERLAY_STORAGE_KEY,
       EDITOR_LANGUAGE_PREFS_STORAGE_KEY,
       MODEL_ROUTER_PREFS_STORAGE_KEY,
+      NTFY_ALERTS_STORAGE_KEY,
     ])
     setAppearance({ ...DEFAULT_APPEARANCE })
     applyAppearanceCssVars(DEFAULT_APPEARANCE)
     setThinkingTimingPrefs({ ...DEFAULT_THINKING_TIMING_PREFS })
     setResourceOverlayPrefs({ ...DEFAULT_RESOURCE_OVERLAY_PREFS })
+    setNtfyAlertsPrefs({ ...DEFAULT_NTFY_ALERTS_PREFS, topic: generateNtfyTopic() })
     setEditorLanguagePrefs({ ...DEFAULT_EDITOR_LANGUAGE_PREFS })
     setModelRouterPrefs({ ...DEFAULT_MODEL_ROUTER_PREFS })
   }
@@ -1404,21 +1717,51 @@ function AppShell({
     ])
   }, [])
 
+  const visionApiControls = useVisionApiControls(savedConfig, {
+    sessionActive: lifecycleActive,
+    onLogLines: appendTerminalLog,
+    onApiUrl: (url) => {
+      const next = { ...savedConfig, coreApiUrl: url }
+      setSavedConfig(next)
+      setConfig(next)
+    },
+  })
+
   const ensureLocalLlm = async (): Promise<void> => {
     if (!isTauriRuntime() || !savedConfig.manageLocalLlm || !isOllamaVisionModel(savedConfig.model)) {
       return
     }
     const { ollamaHost, modelTag } = resolveLocalLlmForConfig(savedConfig)
     if (!modelTag) return
-    process.apply({ phase: 'booting_api', label: 'Starting Local LLM', progress: 0.1 })
+    process.apply({
+      phase: 'booting_api',
+      label: 'Starting Local LLM',
+      detail: `${modelTag} @ ${ollamaHost}`,
+      progress: 0.1,
+    })
     try {
       const s = await invoke<LocalLlmRuntimeStatus>('local_llm_start_plain', {
         ollamaHost,
         modelTag,
       })
       appendTerminalLog(s.logs.map((l) => `[local-llm] ${l}`))
+      process.apply({
+        phase: 'booting_api',
+        label: 'Local LLM ready',
+        detail: modelTag,
+        progress: 0.22,
+      })
       if (modelRouterPrefs.enabled) {
-        const hopperLogs = await prepareModelRouterHopper(savedConfig, modelRouterPrefs)
+        process.apply({
+          phase: 'booting_api',
+          label: 'Router models',
+          detail: 'Pull fast/heavy tags only (no extra preload)',
+          progress: 0.28,
+        })
+        const hopperLogs = await prepareModelRouterForSessionStart(
+          savedConfig,
+          modelRouterPrefs
+        )
         if (hopperLogs.length) {
           appendTerminalLog(hopperLogs.map((l) => `[router] ${l}`))
         }
@@ -1435,10 +1778,17 @@ function AppShell({
       await stop()
       process.idle()
     }
+    if (config.model.trim() !== savedConfig.model.trim()) {
+      setSnackbar({
+        message: 'Save Settings before Start so the new LLM model is used.',
+        severity: 'warning',
+      })
+      return
+    }
     try {
       await ensureLocalLlm()
       const routerPayload = modelRouterApiPayload(modelRouterPrefs, savedConfig.model)
-      const { info, workingDir } = await start(savedConfig, {
+      const { info, workingDir, transcript = [] } = await start(savedConfig, {
         modelRouter: routerPayload as ModelRouterApiConfig | undefined,
       })
       if (workingDir !== savedConfig.workingDir) {
@@ -1453,20 +1803,38 @@ function AppShell({
       todoInjectedIdRef.current = null
       streamingAssistantId.current = null
       pendingUserMessageIdsRef.current = []
-      setChatMessages([])
-      setToolEvents([])
+      const restored: TranscriptRow[] = []
+      for (const r of transcript) {
+        if (r.role === 'user' || r.role === 'assistant') {
+          restored.push({ role: r.role, content: r.content })
+        }
+      }
+      if (restored.length) {
+        hydrateChatFromTranscript(restored)
+      } else {
+        setChatMessages([])
+        setToolEvents([])
+      }
       setTerminalLines([
         {
           id: Date.now(),
-          text: `${prefixForUserFacing('vision')} Started ${DISPLAY_CORE} (session ${info.session_id.slice(0, 8)}…).`,
+          text: `${prefixForUserFacing('vision')} Started ${DISPLAY_CORE} (${savedConfig.sessionMode} session ${info.session_id.slice(0, 8)}…).`,
           type: 'stdout',
           source: 'vision',
         },
       ])
+      if (savedConfig.sessionMode === 'spec') {
+        setActiveTab('spec')
+        setSpecFocusMode(true)
+        saveSpecFocusPref(true)
+      }
       const files = info.files_in_chat?.length ? info.files_in_chat.join(', ') : '(repo map)'
       setStatusMessage(`Session active — ${files}`)
+      setLiveSessionMode(savedConfig.sessionMode)
       dismissWelcome()
-      setActiveTab('chat')
+      if (savedConfig.sessionMode !== 'spec') {
+        setActiveTab('chat')
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
@@ -1506,6 +1874,7 @@ function AppShell({
         },
       ])
       setStatusMessage('Stopped')
+      setLiveSessionMode(null)
     } catch (err) {
       setSnackbar({
         message: err instanceof Error ? err.message : String(err),
@@ -1578,6 +1947,27 @@ function AppShell({
     const block = `[Terminal output]\n\`\`\`\n${lines}\n\`\`\`\n\n`
     setInputValue((prev) => (prev.endsWith('\n') || !prev ? prev + block : `${prev}\n\n${block}`))
   }, [isRunning, terminalLines])
+
+  const handleExportSessionDebug = useCallback(async () => {
+    const sid = sessionInfo?.session_id
+    const client = httpClient ?? todoApiClient
+    if (!sid) {
+      setSnackbar({ message: 'Start a session before exporting debug data', severity: 'info' })
+      return
+    }
+    try {
+      await downloadSessionDebugBundle(client, sid)
+      setSnackbar({
+        message: 'Session debug bundle downloaded (share when reporting tool-call issues)',
+        severity: 'info',
+      })
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [sessionInfo?.session_id, httpClient, todoApiClient])
 
   const handleAttachContextDirectory = useCallback(async () => {
     if (!isRunning || !isTauriRuntime()) return
@@ -1691,7 +2081,18 @@ function AppShell({
       lastAssistantStreamRef.current = ''
       setRouterEscalateOffer(null)
       stallWatch.touchEvent('user_send')
-      const result = await send(text, { ...todoOptions, ...sendExtras })
+      let merged: SendMessageOptions | undefined = todoOptions
+        ? { activeTodoId: todoOptions.activeTodoId, injectTodoSpec: todoOptions.injectTodoSpec }
+        : undefined
+      if (specFocusMode && activeTodo) {
+        merged = {
+          ...merged,
+          specFocus: true,
+          activeTodoId: merged?.activeTodoId ?? activeTodo.id,
+          injectTodoSpec: Boolean(merged?.injectTodoSpec ?? todoOptions?.injectTodoSpec),
+        }
+      }
+      const result = await send(text, { ...merged, ...sendExtras })
       if (result.queued) {
         const trimmed = text.trim()
         setSnackbar({
@@ -1704,7 +2105,7 @@ function AppShell({
       }
       return result
     },
-    [send, stallWatch]
+    [send, stallWatch, specFocusMode, activeTodo]
   )
 
   const handleEscalateRouter = useCallback(async () => {
@@ -1903,36 +2304,93 @@ function AppShell({
   )
 
   const handleGenerateSpec = useCallback(
-    async (todoId: string, prompt: string, mode: 'generate' | 'refine') => {
+    async (
+      todoId: string,
+      prompt: string,
+      mode: 'generate' | 'refine',
+      options?: { section?: SpecLayerSection | 'all'; contextPaths?: string[] }
+    ) => {
       const sid = sessionInfo?.session_id
       const client = httpClient ?? todoApiClient
       if (!sid || !isRunning) {
         setSnackbar({ message: 'Start a session to generate specs with AI', severity: 'info' })
         return
       }
+      const section = options?.section ?? 'all'
       specGenerateAbortRef.current?.abort()
       const ac = new AbortController()
       specGenerateAbortRef.current = ac
       setSpecGenerating(true)
+      setSpecJobMode(mode)
+      setSpecJobSection(section === 'all' ? null : section)
+      setSpecJobPrompt(prompt)
+      const phaseLabel =
+        mode === 'refine'
+          ? 'REFINING SPEC'
+          : section !== 'all'
+            ? sectionActivityLabel(section)
+            : 'GENERATING SPEC'
       setSnackbar({
-        message: 'Generating spec in background — chat stays available',
+        message: `${phaseLabel}: ${truncatePromptPreview(prompt, 96)}`,
         severity: 'info',
       })
+      const jobStartedMs = Date.now()
+      const taskTitle = todoStore?.todos.find((t) => t.id === todoId)?.title
+      const notifySpecJob = (outcome: 'saved' | 'ears_blocked' | 'error') => {
+        void maybeNotifySpecJobComplete(ntfyAlertsPrefsRef.current, {
+          durationMs: Date.now() - jobStartedMs,
+          documentVisible: document.visibilityState === 'visible',
+          mode,
+          section,
+          taskTitle,
+          outcome,
+        })
+      }
       try {
-        await client.generateWorkspaceTodoSpec(
+        const gen = await client.generateWorkspaceTodoSpec(
           savedConfig.workingDir,
           sid,
           todoId,
-          { prompt, mode, apply: true, background: true },
+          {
+            prompt,
+            mode,
+            section,
+            context_paths: options?.contextPaths ?? [],
+            apply: true,
+            enforce_ears: true,
+            background: true,
+          },
           ac.signal
         )
         await reloadTodos()
-        setSnackbar({
-          message: mode === 'refine' ? 'Spec refined and saved' : 'Spec generated and saved',
-          severity: 'info',
-        })
+        if (gen.ears_blocked) {
+          notifySpecJob('ears_blocked')
+          setSnackbar({
+            message:
+              'Spec draft returned but not saved — fix EARS errors (Validate EARS), then refine again',
+            severity: 'warning',
+          })
+        } else {
+          notifySpecJob('saved')
+          setSpecIndexRefreshToken((n) => n + 1)
+          setSpecTraceHint(null)
+          setSnackbar({
+            message:
+              mode === 'refine'
+                ? 'Spec refined and saved'
+                : section === 'requirements'
+                  ? 'Requirements generated and saved'
+                  : section === 'design'
+                    ? 'Design generated and saved'
+                    : section === 'tasks_md'
+                      ? 'Implementation tasks generated and saved'
+                      : 'Spec generated and saved',
+            severity: 'info',
+          })
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return
+        notifySpecJob('error')
         setSnackbar({
           message: err instanceof Error ? err.message : String(err),
           severity: 'error',
@@ -1943,10 +2401,98 @@ function AppShell({
           specGenerateAbortRef.current = null
         }
         setSpecGenerating(false)
+        setSpecJobPrompt(null)
+        setSpecJobMode(null)
+        setSpecJobSection(null)
       }
     },
-    [sessionInfo?.session_id, httpClient, todoApiClient, isRunning, savedConfig.workingDir, reloadTodos]
+    [sessionInfo?.session_id, httpClient, todoApiClient, isRunning, savedConfig.workingDir, reloadTodos, todoStore?.todos]
   )
+
+  const handleRefineWithTraceHint = useCallback(() => {
+    if (!activeTodo) return
+    const prompt = specTraceHint?.refinePrompt ?? defaultRefinePrompt()
+    void handleGenerateSpec(activeTodo.id, prompt, 'refine', { contextPaths: filesInChat })
+  }, [activeTodo, specTraceHint, handleGenerateSpec, filesInChat])
+
+  const handleAddContextPath = useCallback(
+    async (path: string) => {
+      if (!isRunning) {
+        setSnackbar({ message: 'Start a session to add files to context', severity: 'info' })
+        return
+      }
+      const trimmed = path.trim().replace(/^@/, '')
+      if (!trimmed) return
+      const normalized = normalizeAddCommandPath(trimmed) ?? trimmed
+      try {
+        const info = await addFiles([normalized])
+        await applyFilesAdded([normalized], info, `Added ${normalized} to session context`)
+      } catch (err) {
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+    },
+    [isRunning, addFiles, applyFilesAdded]
+  )
+
+  const handleSpecSend = async () => {
+    if (!specInputValue.trim() || !isRunning || !activeTodo) return
+    const text = specInputValue.trim()
+    const addPath = parseAddCommandPath(text)
+    if (addPath) {
+      setSpecInputValue('')
+      try {
+        const info = await addFiles([addPath])
+        await applyFilesAdded([addPath], info, `Added ${addPath} to session context`)
+      } catch (err) {
+        setSpecInputValue(text)
+        setSnackbar({
+          message: err instanceof Error ? err.message : String(err),
+          severity: 'error',
+        })
+      }
+      return
+    }
+    setSpecInputValue('')
+    rememberUserMessageForRetry(text)
+    specTurnCaptureRef.current = true
+    appendUserMessageToSpecChat(text, true)
+    const todoOptions = { activeTodoId: activeTodo.id, injectTodoSpec: true }
+    try {
+      const result = await deliverUserMessage(text, todoOptions, {
+        specFocus: true,
+        preproc: false,
+      })
+      if (result.queued) {
+        setSnackbar({
+          message: 'Spec message queued — will send when the current turn finishes',
+          severity: 'info',
+        })
+      } else {
+        void reloadTodos()
+      }
+    } catch (err) {
+      specTurnCaptureRef.current = false
+      turnWallStartMsRef.current = null
+      turnAssistantMessageIdRef.current = null
+      turnHadAssistantOutputRef.current = false
+      turnTimingActiveRef.current = false
+      setTrackTurnResources(false)
+      thinkingTimingRef.current.reset()
+      if (err instanceof Error && err.name === 'AbortError') {
+        setStatusMessage('Stopped')
+        return
+      }
+      removeLastPendingSpecUserMessage()
+      setSpecInputValue(text)
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }
 
   const handleImplementStep = useCallback(
     async (todo: TodoItem, step: ImplementationStep) => {
@@ -2114,17 +2660,27 @@ function AppShell({
 
   const sessionFiles = filesInChat
 
+  const connectionTone = resolveConnectionTone({
+    isStarting,
+    isRunning,
+    apiReachable: visionApiControls.apiReachable,
+  })
+
   const headerExtra = (
     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
       <Typography
         variant="caption"
         color="text.secondary"
-        sx={{ maxWidth: 280 }}
+        sx={{ maxWidth: 320 }}
         noWrap
         data-testid="session-status"
       >
-        {statusMessage ||
-          (isStarting ? 'Starting…' : isRunning ? 'Session live' : 'Stopped')}
+        {resolveConnectionStatusLabel({
+          statusMessage,
+          isStarting,
+          isRunning,
+          apiReachable: visionApiControls.apiReachable,
+        })}
       </Typography>
       {isRunning && sessionInfo && (
         <SessionContextChip
@@ -2139,6 +2695,16 @@ function AppShell({
           size="small"
           color="primary"
           variant="outlined"
+        />
+      )}
+      {specGenerating && (
+        <Chip
+          label="Spec job running"
+          size="small"
+          color="info"
+          variant="outlined"
+          data-testid="spec-generating-chip"
+          onDelete={() => specGenerateAbortRef.current?.abort()}
         />
       )}
       {queuedCount > 0 && (
@@ -2181,10 +2747,27 @@ function AppShell({
         activeTab={activeTab}
         onTabChange={(id) => setActiveTab(id as TabId)}
         process={process.snapshot}
-        isRunning={isRunning}
+        specJob={
+          specGenerating
+            ? {
+                active: true,
+                label:
+                  specJobMode === 'refine'
+                    ? 'REFINING SPEC'
+                    : specJobSection
+                      ? sectionActivityLabel(specJobSection)
+                      : 'GENERATING SPEC',
+                detail: specJobPrompt
+                  ? truncatePromptPreview(specJobPrompt, 96)
+                  : 'Background job on Vision API',
+              }
+            : null
+        }
         liveTiming={thinkingTiming.live}
         turnEta={turnEta}
         headerExtra={headerExtra}
+        connectionTone={connectionTone}
+        onLogoClick={() => setAboutOpen(true)}
         railFooter={
           resourceOverlay.enabled ? (
             <ResourceOverlay
@@ -2203,16 +2786,45 @@ function AppShell({
                 enginePath={engineInstallPath}
                 onChooseProject={handleChooseProject}
                 onOpenSettings={() => setActiveTab('settings')}
-                onStart={() => {
-                  setActiveTab('terminal')
-                  void handleStart()
-                }}
+                onOpenSpec={() => setActiveTab('spec')}
+                onStart={() => void handleStart()}
                 onDismiss={dismissWelcome}
               />
             )}
             <ChatPanel
               messages={chatMessages}
               toolEvents={toolEvents}
+              modelSwitchBanner={
+                isRunning &&
+                sessionInfo &&
+                sessionInfo.model.trim() !== savedConfig.model.trim()
+                  ? {
+                      activeModel: sessionInfo.model,
+                      settingsModel: savedConfig.model,
+                      onRestart: () => void handleRestartSession(),
+                      restarting: lifecycleActive,
+                    }
+                  : undefined
+              }
+              easyStart={
+                !isRunning && !showWelcome
+                  ? {
+                      onStart: () => void handleStart(),
+                      starting: lifecycleActive,
+                      startLabel: process.snapshot.label,
+                      startDetail: process.snapshot.detail,
+                      disabled: !savedConfig.workingDir?.trim(),
+                      disabledReason: !savedConfig.workingDir?.trim()
+                        ? 'Choose a project folder in Settings or Welcome first.'
+                        : undefined,
+                      llmModel: config.model,
+                      showLocalLlmStep:
+                        isTauriRuntime() &&
+                        config.manageLocalLlm &&
+                        isOllamaVisionModel(config.model),
+                    }
+                  : undefined
+              }
               inputValue={inputValue}
               isRunning={isRunning}
               isBusy={isBusy}
@@ -2258,6 +2870,10 @@ function AppShell({
               lastUserMessageForRetry={lastUserMessageForRetry}
               onRetryEmptyLlm={(mode) => void handleRetryEmptyLlm(mode)}
               onOpenInEditor={isTauriRuntime() ? handleOpenInEditor : undefined}
+              canApplyEdits={isTauriRuntime()}
+              onApplyProposedEdit={
+                isTauriRuntime() ? (id, seg) => handleApplyProposedEdit(id, seg) : undefined
+              }
               modelRouterEnabled={modelRouterActive}
               lastModelRoute={lastModelRoute}
               routerEscalateOffer={routerEscalateOffer}
@@ -2266,8 +2882,113 @@ function AppShell({
               onDismissRouterEscalate={() => setRouterEscalateOffer(null)}
               subagents={subagents}
               agentModeAvailable={agentModeAvailable}
+              suppressEmptyHint={showWelcome}
             />
             </>
+          )}
+
+          {activeTab === 'spec' && (
+            <SpecAgentPanel
+              messages={specChatMessages}
+              inputValue={specInputValue}
+              isRunning={isRunning}
+              isBusy={isBusy}
+              sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
+              activeTodo={activeTodo}
+              sessionMode={savedConfig.sessionMode}
+              liveSessionMode={liveSessionMode}
+              sessionRunning={isRunning}
+              onSessionModeChange={handleSessionModeChange}
+              specGenerating={specGenerating}
+              specJobPrompt={specJobPrompt}
+              earsLinting={specAgentEarsLinting}
+              specTracing={specAgentTracing}
+              chatEndRef={specChatEndRef}
+              onInputChange={setSpecInputValue}
+              onSend={() => void handleSpecSend()}
+              onCancelSend={handleCancelSend}
+              onOpenTasks={() => setActiveTab('tasks')}
+              onClearHistory={() => setSpecChatMessages([])}
+              commands={commands}
+              pathSuggestions={specPathSuggestions}
+              pathAssistActive={specPathAssistActive}
+              onPickCommand={(cmd) => setSpecInputValue(cmd)}
+              contextFiles={sessionFiles}
+              contextUsage={contextUsage}
+              onOpenContextInEditor={
+                isTauriRuntime() ? (path) => handleOpenInEditor(path) : undefined
+              }
+              onAttachContextDirectory={
+                isTauriRuntime() ? () => void handleAttachContextDirectory() : undefined
+              }
+              onAttachFolderPath={
+                !isTauriRuntime() ? (path) => void handleAttachFolderPath(path) : undefined
+              }
+              onGenerateSpec={
+                activeTodo && isRunning
+                  ? (prompt) =>
+                      void handleGenerateSpec(activeTodo.id, prompt, 'generate', {
+                        contextPaths: sessionFiles,
+                      })
+                  : undefined
+              }
+              onRefineSpec={
+                activeTodo && isRunning
+                  ? (prompt) =>
+                      void handleGenerateSpec(activeTodo.id, prompt, 'refine', {
+                        contextPaths: sessionFiles,
+                      })
+                  : undefined
+              }
+              traceHint={specTraceHint}
+              onRefineWithHint={
+                activeTodo && isRunning ? () => handleRefineWithTraceHint() : undefined
+              }
+              onDismissTraceHint={() => setSpecTraceHint(null)}
+              onValidateEars={
+                activeTodo && todosHttpReady
+                  ? () => {
+                      setSpecAgentEarsLinting(true)
+                      void lintRequirements(activeTodo.id, activeTodo.requirements ?? '')
+                        .then((r) => {
+                          setSnackbar({
+                            message: r.ok
+                              ? 'EARS OK for active task requirements'
+                              : `${r.error_count} EARS error(s) on requirements`,
+                            severity: r.ok ? 'info' : 'warning',
+                          })
+                        })
+                        .catch((err) => {
+                          setSnackbar({
+                            message: err instanceof Error ? err.message : String(err),
+                            severity: 'error',
+                          })
+                        })
+                        .finally(() => setSpecAgentEarsLinting(false))
+                    }
+                  : undefined
+              }
+              onTraceSpec={
+                activeTodo && todosHttpReady
+                  ? () => {
+                      setSpecAgentTracing(true)
+                      void traceSpec(activeTodo.id, {
+                        requirements: activeTodo.requirements ?? '',
+                        design: activeTodo.design ?? '',
+                        tasks_md: activeTodo.tasks_md ?? '',
+                      })
+                        .then((r) => applySpecTraceResult(r))
+                        .catch((err) => {
+                          setSnackbar({
+                            message: err instanceof Error ? err.message : String(err),
+                            severity: 'error',
+                          })
+                        })
+                        .finally(() => setSpecAgentTracing(false))
+                    }
+                  : undefined
+              }
+            />
           )}
 
           {activeTab === 'tasks' && (
@@ -2278,11 +2999,24 @@ function AppShell({
               templates={todoStore?.templates}
               onCreate={(title, spec, template) => void createTodo(title, spec, template)}
               onUpdate={(id, patch) => void updateTodo(id, patch)}
-              onDelete={(id) => void deleteTodo(id)}
+              onDelete={(id) => {
+                void (async () => {
+                  try {
+                    await deleteTodo(id)
+                    setSnackbar({ message: 'Task deleted', severity: 'info' })
+                  } catch (err) {
+                    setSnackbar({
+                      message: err instanceof Error ? err.message : String(err),
+                      severity: 'error',
+                    })
+                  }
+                })()
+              }}
               onMoveTodo={(id, dir) => void moveTodo(id, dir)}
               onSyncSpecFromDisk={async (id) => {
                 try {
                   await syncSpecFromDisk(id)
+                  setSpecIndexRefreshToken((n) => n + 1)
                   setSnackbar({ message: 'Spec layers loaded from disk', severity: 'info' })
                 } catch (err) {
                   setSnackbar({
@@ -2291,6 +3025,61 @@ function AppShell({
                   })
                 }
               }}
+              onLintRequirements={(id, draft) => lintRequirements(id, draft)}
+              onFetchSpecIndex={
+                todosHttpReady ? () => fetchSpecIndex() : undefined
+              }
+              onRepairSpecFolders={
+                todosHttpReady || todosTauriLocal
+                  ? async () => {
+                      const r = await repairSpecFolders()
+                      setSnackbar({
+                        message:
+                          r.created_count > 0
+                            ? `Created ${r.created_count} spec folder(s) and synced markdown`
+                            : 'Spec folders synced from tasks',
+                        severity: 'info',
+                      })
+                      return r
+                    }
+                  : undefined
+              }
+              onPruneOrphanSpecFolders={
+                todosHttpReady || todosTauriLocal
+                  ? async () => {
+                      const r = await pruneOrphanSpecFolders()
+                      setSnackbar({
+                        message:
+                          r.removed_count > 0
+                            ? `Removed ${r.removed_count} orphan spec folder(s)`
+                            : 'No orphan spec folders found',
+                        severity: 'info',
+                      })
+                      return r
+                    }
+                  : undefined
+              }
+              specFocusMode={specFocusMode}
+              onSpecFocusChange={(on) => {
+                setSpecFocusMode(on)
+                saveSpecFocusPref(on)
+                setSnackbar({
+                  message: on
+                    ? 'Spec focus on — chat will inject steering + active task spec'
+                    : 'Spec focus off',
+                  severity: 'info',
+                })
+              }}
+              onTraceSpec={
+                todosHttpReady
+                  ? (id, draft) =>
+                      traceSpec(id, {
+                        requirements: draft.requirements,
+                        design: draft.design,
+                        tasks_md: draft.tasks_md,
+                      })
+                  : undefined
+              }
               onCancelSpecGenerate={() => specGenerateAbortRef.current?.abort()}
               onSetActive={(id) => void setActiveTodo(id)}
               onMarkDone={(id) => void markDone(id)}
@@ -2302,7 +3091,15 @@ function AppShell({
               sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
               sessionBusy={isBusy}
               specGenerating={specGenerating}
-              onGenerateSpec={(id, prompt, mode) => handleGenerateSpec(id, prompt, mode)}
+              specIndexRefreshToken={specIndexRefreshToken}
+              onGenerateSpec={(id, prompt, mode, opts) => handleGenerateSpec(id, prompt, mode, opts)}
+              contextPaths={sessionFiles}
+              contextUsage={contextUsage}
+              onOpenSpec={() => setActiveTab('spec')}
+              onAddContextPath={(path) => void handleAddContextPath(path)}
+              onOpenContextInEditor={
+                isTauriRuntime() ? (path) => handleOpenInEditor(path) : undefined
+              }
               onExportMarkdown={async () => {
                 try {
                   const md = await exportMarkdown()
@@ -2341,6 +3138,12 @@ function AppShell({
                   onManageChange={(manageLocalLlm) => setConfig({ ...config, manageLocalLlm })}
                   onLogLines={appendTerminalLog}
                 />
+                <Box sx={{ mt: 1.5 }}>
+                  <VisionApiActionButtons
+                    controls={visionApiControls}
+                    sessionActive={lifecycleActive}
+                  />
+                </Box>
               </Box>
               <Typography
                 variant="caption"
@@ -2397,6 +3200,26 @@ function AppShell({
                 gitLoading={gitLoading}
                 onRefreshGit={refreshGit}
                 onUndo={handleUndo}
+                onOpenInEditor={
+                  isTauriRuntime() ? (path) => handleOpenInEditor(path) : undefined
+                }
+                onRevertFile={
+                  isTauriRuntime()
+                    ? async (path) => {
+                        const { gitRestoreWorktreePaths } = await import('./ipc/gitStatus')
+                        try {
+                          await gitRestoreWorktreePaths(savedConfig.workingDir, [path])
+                          bumpGitRefresh()
+                          setSnackbar({ message: `Reverted ${path}`, severity: 'info' })
+                        } catch (err) {
+                          setSnackbar({
+                            message: err instanceof Error ? err.message : String(err),
+                            severity: 'error',
+                          })
+                        }
+                      }
+                    : undefined
+                }
                 isRunning={isRunning}
                 refreshToken={gitRefreshKey}
               />
@@ -2447,6 +3270,8 @@ function AppShell({
                 }
                 resourceOverlayPrefs={resourceOverlayPrefs}
                 onResourceOverlayPrefsChange={setResourceOverlayPrefs}
+                ntfyAlertsPrefs={ntfyAlertsPrefs}
+                onNtfyAlertsPrefsChange={setNtfyAlertsPrefs}
                 suggestedFilesPrefs={suggestedFilesPrefs}
                 onSuggestedFilesPrefsChange={handleSuggestedFilesPrefsChange}
                 editorLanguagePrefs={editorLanguagePrefs}
@@ -2454,16 +3279,22 @@ function AppShell({
                 modelRouterPrefs={modelRouterPrefs}
                 onModelRouterPrefsChange={handleModelRouterPrefsChange}
                 sessionModel={config.model}
+                onSessionModeChange={handleSessionModeChange}
+                liveSessionMode={liveSessionMode}
                 onSave={handleSave}
                 onReset={handleReset}
                 appVersions={appVersions}
                 subagents={subagents}
                 agentModeAvailable={agentModeAvailable}
                 sessionActive={isRunning}
+                sessionId={sessionInfo?.session_id}
+                onExportSessionDebug={handleExportSessionDebug}
               />
             </Box>
           )}
       </AppChrome>
+
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} versions={appVersions} />
 
       <Snackbar
         open={snackbar !== null}
@@ -2498,6 +3329,9 @@ export default function App() {
   const [modelRouterPrefs, setModelRouterPrefs] = useState<ModelRouterPrefs>(() =>
     loadModelRouterPrefs()
   )
+  const [ntfyAlertsPrefs, setNtfyAlertsPrefs] = useState<NtfyAlertsPrefs>(() =>
+    loadNtfyAlertsPrefs()
+  )
   const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
   const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
 
@@ -2518,6 +3352,8 @@ export default function App() {
           setSuggestedFilesPrefs={setSuggestedFilesPrefs}
           resourceOverlayPrefs={resourceOverlayPrefs}
           setResourceOverlayPrefs={setResourceOverlayPrefs}
+          ntfyAlertsPrefs={ntfyAlertsPrefs}
+          setNtfyAlertsPrefs={setNtfyAlertsPrefs}
           editorLanguagePrefs={editorLanguagePrefs}
           setEditorLanguagePrefs={setEditorLanguagePrefs}
           modelRouterPrefs={modelRouterPrefs}

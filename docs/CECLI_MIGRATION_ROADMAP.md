@@ -5,7 +5,7 @@
 **Status:** Gate A4/A8 + submodule verify PASS — `bright-vision-core` @ `f448ab67d`; dogfood `source activate.sh && yarn tauri dev`  
 **Last updated:** 2026-05-25
 
-This is the **single execution plan** for moving the desktop shell from `aider_vision_core` to **cecli + `bright_vision_core`**, without cherry-picking git history. Tier rules: [CORE_FILE_MERGE.md](./CORE_FILE_MERGE.md). Pivot context: [BRIGHT_VISION_PIVOT.md](./BRIGHT_VISION_PIVOT.md).
+This is the **single execution plan** for moving the desktop shell from `bright_vision_core` to **cecli + `bright_vision_core`**, without cherry-picking git history. Tier rules: [CORE_FILE_MERGE.md](./CORE_FILE_MERGE.md). Pivot context: [BRIGHT_VISION_PIVOT.md](./BRIGHT_VISION_PIVOT.md).
 
 ---
 
@@ -23,13 +23,13 @@ This is the **single execution plan** for moving the desktop shell from `aider_v
 
 **Definition of done (product):** above + user dogfood sign-off in [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) — optional row in [ROADMAP.md](./ROADMAP.md) #19.
 
-The agent should **not** deinit `aider-vision-core` until Gate A4 passes.
+The agent should **not** deinit `bright_vision_core` until Gate A4 passes.
 
 ---
 
 ## Scope (what we are porting)
 
-Measured delta (`994947a55^` → `aider-vision-core` HEAD, excl. `website/`):
+Measured delta (`994947a55^` → `bright_vision_core` HEAD, excl. `website/`):
 
 | Bucket | Lines / files | Action |
 |--------|---------------|--------|
@@ -46,7 +46,7 @@ Measured delta (`994947a55^` → `aider-vision-core` HEAD, excl. `website/`):
 
 ```mermaid
 flowchart TB
-  subgraph outer["aider-vision/ (outer repo, in place)"]
+  subgraph outer["BrightVision/ (outer repo, in place)"]
     Tauri["Tauri main.rs :8741"]
     React["React App + events.ts"]
   end
@@ -72,7 +72,7 @@ flowchart TB
 | 0.1 | Record submodule SHAs in this doc (table below) | `git submodule status` |
 | 0.2 | Run `python3 scripts/compare-cores.py` | output saved in commit or session notes |
 | 0.3 | Run `./scripts/measure-true-diff.sh` | confirms ~3k Vision layer |
-| 0.4 | `cd aider-vision-core && pytest tests/basic/test_http_api.py tests/basic/test_git_workspace.py -q` | green on current engine |
+| 0.4 | `cd bright_vision_core && pytest tests/basic/test_http_api.py tests/basic/test_git_workspace.py -q` | green on current engine |
 
 **Rollback:** none (read-only).
 
@@ -106,14 +106,14 @@ Work on branch `port/vision-api-on-cecli` **inside** `bright-vision-core` repo.
 
 Replace in `bright_vision_core/`:
 
-- `from aider_vision_core` → `from bright_vision_core` (internal)
-- `from aider_vision_core.coders` → `from cecli.coders`
-- `from aider_vision_core.commands` → map to `cecli.commands` (see A4)
-- `from aider_vision_core.main` / `models` / `repo` → `cecli.*`
+- `from bright_vision_core` → `from bright_vision_core` (internal)
+- `from bright_vision_core.coders` → `from cecli.coders`
+- `from bright_vision_core.commands` → map to `cecli.commands` (see A4)
+- `from bright_vision_core.main` / `models` / `repo` → `cecli.*`
 
 | ID | Task | Verify |
 |----|------|--------|
-| A3.1 | `rg 'aider_vision_core' bright-vision-core/bright_vision_core` | zero hits |
+| A3.1 | `rg 'bright_vision_core' bright-vision-core/bright_vision_core` | zero hits |
 | A3.2 | `python -c "import bright_vision_core.http_api"` | no ImportError |
 
 #### A4 — Async session adapter (critical path)
@@ -175,7 +175,7 @@ pytest tests/basic/test_http_api.py tests/basic/test_git_workspace.py \
 
 Commit and note SHA in § Submodule pins.
 
-**Rollback:** outer repo still uses `aider-vision-core`; discard bright branch.
+**Rollback:** outer repo still uses `bright_vision_core`; discard bright branch.
 
 ---
 
@@ -188,11 +188,11 @@ Only after **Gate A4**.
 | B1 | Pin `bright-vision-core` submodule to port branch SHA | `.gitmodules` + parent commit |
 | B2 | `activate.sh` — `pip install -e bright-vision-core`, `ENGINE=bright-vision-core` | shell activate |
 | B3 | `src-tauri/src/main.rs` — resolve `vision_serve.py` under bright root | file exists |
-| B4 | Env aliases: `BRIGHT_VISION_*` read; `AIDER_VISION_*` fallback one release | grep both in Rust/TS |
+| B4 | Env aliases: `BRIGHT_VISION_*` read; `BRIGHT_VISION_*` fallback one release | grep both in Rust/TS |
 | B5 | `yarn test:local` | green |
-| B6 | `git submodule deinit -f aider-vision-core` + remove from `.gitmodules` | only after B5 |
+| B6 | `git submodule deinit -f bright_vision_core` + remove from `.gitmodules` | only after B5 |
 
-**Rollback:** repoint submodule to previous `aider-vision-core` SHA; restore `.gitmodules`.
+**Rollback:** repoint submodule to previous `bright_vision_core` SHA; restore `.gitmodules`.
 
 ---
 
@@ -233,7 +233,7 @@ Execute in order; one phase per session unless blocked.
 | **S4** | B1–B5 | outer repo on bright engine; `yarn test:local` |
 | **S5** | C1–C5 + dogfood doc update | rebrand mechanical; optional user sign-off |
 
-If A4 blocks >2 iterations, document blocker in § Blockers and keep `aider-vision-core`.
+If A4 blocks >2 iterations, document blocker in § Blockers and keep `bright_vision_core`.
 
 ---
 
@@ -243,7 +243,7 @@ Copy into PR description; agent checks all before claiming “migration complete
 
 ```markdown
 ### Phase A (bright-vision-core)
-- [ ] Tier-1 modules in `bright_vision_core/` (no `aider_vision_core` imports)
+- [ ] Tier-1 modules in `bright_vision_core/` (no `bright_vision_core` imports)
 - [ ] `bright-vision-core-serve` entrypoint works
 - [ ] Async session: `run_turn` streams tokens + `done` event
 - [ ] `test_http_api.py` green
@@ -256,7 +256,7 @@ Copy into PR description; agent checks all before claiming “migration complete
 - [x] Tauri `BRIGHT_VISION_HEADLESS` + engine env aliases
 - [x] Product rebrand (window title, bundle id, `brand.ts`, localStorage migration)
 - [x] Commit `bright-vision-core` port (`f448ab67d`) + pin submodule SHA in parent (stage/commit parent when ready)
-- [ ] `aider-vision-core` deinit (optional after dogfood)
+- [ ] `bright_vision_core` deinit (optional after dogfood)
 
 ### Parity (shell unchanged)
 - [ ] `src/ipc/events.ts` types still satisfied
@@ -270,7 +270,7 @@ Copy into PR description; agent checks all before claiming “migration complete
 
 | Submodule | Branch / SHA | Notes |
 |-----------|--------------|-------|
-| `aider-vision-core` | `789ead8aa` | legacy fallback (`BRIGHT_VISION_ENGINE=aider-vision-core`) |
+| `bright_vision_core` | `789ead8aa` | legacy fallback (`BRIGHT_VISION_ENGINE=bright_vision_core`) |
 | `bright-vision-core` | `f448ab67d` | `bright_vision_core` on cecli; parent submodule pointer staged |
 
 ---
@@ -318,7 +318,7 @@ python3 scripts/compare-cores.py --list vision-only
 ./scripts/port-vision-core-to-bright.sh --apply
 
 # Test (current engine)
-cd aider-vision-core && pytest tests/basic/test_http_api.py -q
+cd bright_vision_core && pytest tests/basic/test_http_api.py -q
 
 # Test (target engine)
 cd bright-vision-core && pip install -e . && pytest tests/basic/test_http_api.py -q

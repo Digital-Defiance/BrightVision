@@ -39,12 +39,12 @@ test.describe('Tasks workspace (roadmap #18, charter § spec-driven)', () => {
 
   test('generate spec fills requirements (roadmap #18 v5)', async ({ page }) => {
     await page.getByText('First task').click()
-    await expect(page.getByRole('button', { name: 'Generate spec' })).toBeEnabled({
+    await expect(page.getByTestId('todo-generate-spec-wizard')).toBeEnabled({
       timeout: 10_000,
     })
-    await page.getByRole('button', { name: 'Generate spec' }).click()
+    await page.getByTestId('todo-generate-spec-wizard').click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Run' }).click()
-    await expect(page.getByText('Generated requirements')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('REQ-001')).toBeVisible({ timeout: 15_000 })
   })
 })

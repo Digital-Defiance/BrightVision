@@ -1,6 +1,6 @@
 /**
  * Split assistant markdown into prose vs fenced blocks that look like
- * aider SEARCH/REPLACE proposals (often shown but not yet applied).
+ * Cecli SEARCH/REPLACE proposals (often shown but not yet applied).
  */
 
 export type ProposedEditKind = 'search_replace' | 'fenced_file' | 'code'
@@ -29,7 +29,7 @@ export function isSearchReplaceBlock(body: string): boolean {
   return body.includes(SEARCH_MARK) || body.includes(REPLACE_MARK)
 }
 
-/** Likely a repo-relative file path on its own line (aider editblock convention). */
+/** Likely a repo-relative file path on its own line (editblock convention). */
 export function looksLikeFilePath(line: string): boolean {
   const t = line.trim()
   if (!t || /\s/.test(t)) return false
@@ -127,7 +127,52 @@ export function parseAssistantContent(content: string): AssistantContentSegment[
     if (close === -1) break
   }
 
-  return segments
+  return dedupeAssistantSegments(segments)
+}
+
+/** Reduce path-only fences and raw SEARCH/REPLACE duplicated in prose. */
+export function dedupeAssistantSegments(
+  segments: AssistantContentSegment[]
+): AssistantContentSegment[] {
+  const out: AssistantContentSegment[] = []
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    const next = segments[i + 1]
+
+    if (seg.type === 'display_fence') {
+      const line = seg.body.trim()
+      const pathOnly =
+        line &&
+        looksLikeFilePath(line) &&
+        !line.includes('\n') &&
+        !isSearchReplaceBlock(seg.body)
+      if (pathOnly && next?.type === 'proposed_edit') {
+        continue
+      }
+    }
+
+    if (seg.type === 'prose' && isSearchReplaceBlock(seg.content) && !seg.content.includes('```')) {
+      const marker = seg.content.indexOf('<<<<<<< SEARCH')
+      const body = marker >= 0 ? seg.content.slice(marker) : seg.content
+      if (marker > 0) {
+        const intro = seg.content.slice(0, marker).trim()
+        if (intro) out.push({ type: 'prose', content: intro })
+      }
+      out.push({
+        type: 'proposed_edit',
+        title: editTitle(undefined, '', body),
+        language: '',
+        body,
+        kind: 'search_replace',
+      })
+      continue
+    }
+
+    out.push(seg)
+  }
+
+  return out
 }
 
 export function normalizeRepoPath(p: string): string {

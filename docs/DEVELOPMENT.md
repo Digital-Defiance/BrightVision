@@ -21,13 +21,13 @@ source activate.sh   # venv + editable cecli + bright_vision_core
 yarn install
 ```
 
-**Optional `local-llm.env`:** `cp local-llm.env.example local-llm.env` at repo root (`DATA_MODEL`, `OLLAMA_HOST`). In-app **Local LLM** uses Rust; chat uses the Vision API — not `local-llm.sh`. See [LOCAL_LLM.md](./LOCAL_LLM.md).
+**Optional `local-llm.env`:** `cp local-llm.env.example local-llm.env` at repo root (`DATA_MODEL`, `OLLAMA_HOST`; optional `MODEL_ROUTER`, `FAST_MODEL`, `HEAVY_MODEL` for the hopper). In-app **Local LLM** uses Rust; chat uses the Vision API — not `local-llm.sh`. See [LOCAL_LLM.md](./LOCAL_LLM.md).
 
-PyPI / release workflow for the Vision wheel: track in [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md) milestone U3. PyPI-only install: `AIDER_VISION_CORE_INSTALL=pypi source activate.sh`
+PyPI / release workflow for the Vision wheel: track in [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md) milestone U3. PyPI-only install: `BRIGHT_VISION_CORE_INSTALL=pypi source activate.sh`
 
 ## Run the desktop app
 
-From the **superproject root** (e.g. `/Volumes/Code/aider-vision`):
+From the **superproject root** (e.g. `/Volumes/Code/BrightVision`):
 
 ```bash
 yarn tauri dev
@@ -43,7 +43,7 @@ Use **Terminal → Start** to spawn `scripts/vision_serve.py` and open an HTTP s
 ## Web-only dev (API already running)
 
 ```bash
-cd aider-vision-core && python scripts/vision_serve.py --port 8741
+cd bright_vision_core && python scripts/vision_serve.py --port 8741
 yarn dev   # Vite proxies /api/core → :8741
 ```
 
@@ -70,7 +70,8 @@ Import from `src/progress` or use `useProcess()` in components.
 | `src/assets/brand/*.svg` | Wordmarks (inline in UI when `BRAND_LOGO_MODE === 'vector'`) |
 | `src/assets/brand/*.png` | Raster fallbacks |
 | `src/assets/fonts/Inter-Black.woff2`, `Inter-Thin.woff2` | Wordmark text in inline SVG logos |
-| `src/assets/fonts/Glass_TTY_VT220.woff2` | Glass TTY VT220 chat preset (optional) |
+| `src/assets/fonts/Inter-*.woff2` | UI + chat (copy from `assets/Inter/`; see `src/assets/fonts/README.md`) |
+| `src/assets/fonts/Glass_TTY_VT220.woff2` | Optional retro chat font in Settings → Appearance |
 | `src/assets/brand/logo.png` | Source for `yarn tauri icon …` → dock/installer icons |
 
 ## macOS release DMG
@@ -95,11 +96,11 @@ Details and tiers: [TESTING.md](./TESTING.md).
 
 ## Compatibility audit
 
-After changing `aider-vision-core`, run:
+After changing `bright_vision_core`, run:
 
 ```bash
-python aider-vision-core/scripts/audit_rename_compat.py
-pytest aider-vision-core/tests/basic/test_vision_runtime.py -q
+python bright_vision_core/scripts/audit_rename_compat.py
+pytest bright_vision_core/tests/basic/test_vision_runtime.py -q
 ```
 
 See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for `No module named 'aider'` and headless/TUI issues.

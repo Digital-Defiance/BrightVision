@@ -2,6 +2,8 @@
 
 All checks run on **your machine**. Nothing here requires GitHub Actions — workflow files under `.github/workflows/` stay in the repo for optional use later.
 
+**Feature / roadmap testing policy:** [TESTING_POLICY.md](./TESTING_POLICY.md) (definition of done, tiers, what stays manual).
+
 ## Quick reference
 
 | When | Command | Rough time |
@@ -9,7 +11,18 @@ All checks run on **your machine**. Nothing here requires GitHub Actions — wor
 | After a small TS/UI change | `yarn test:fast` | ~5s |
 | Before pushing (default) | `yarn test:local` | ~15s |
 | Before a larger UI/session change | `yarn test:full` | ~1–2 min |
-| Before a release / submodule bump | `sh scripts/test-local.sh release` | full + verify |
+| Real core + Tasks bridge (no mocks) | `yarn test:e2e:integration` | ~2–3 min |
+| Before a release / submodule bump | `sh scripts/test-local.sh release` | full + bright-core pytest + integration e2e + verify |
+| **Agent dogfood (default self-dev)** | `yarn dogfood:agent` | check + gate; optional `DOGFOOD_LLM=1` — [DOGFOOD.md](./DOGFOOD.md) |
+| Self-dev preflight only | `yarn dogfood:check` | ~20s |
+| Full dogfood gate only | `yarn dogfood:gate` | release tier; optional `DOGFOOD_LLM=1` |
+| Scenario matrix (all registered SSE outputs) | `yarn test:e2e shipped-scenarios` | ~2–3 min |
+| Fixture-pack structure preflight | `yarn test:e2e:fixtures` | ~1s |
+| **100% automated confidence** (dogfood check + release + fixtures + full LLM incl. superproject) | `yarn test:everything` (`bright_vision_core.test_suite` CLI) | ~20–35 min with Ollama; superset of `DOGFOOD_LLM=1 DOGFOOD_SUPERPROJECT_LLM=1 yarn dogfood:agent` + `test:e2e:fixtures`. **Optional lanes** (Test Lab checkboxes / CLI): `--llm-router`, `--cloud-llm`, `--verify-ears`, `--shipped-scenarios`, `--strict-phased-pytest`. Timing history in `.bright-vision/test-everything-timing.json`; on Apple Silicon, [`bgpucap` 0.1.4+](https://github.com/Digital-Defiance/gpucap) via Homebrew or `yarn install:bgpucap` (`SKIP_GPU=1` to skip; non-AS uses **btime-only** dumb mode). See [BRIGHT_UTILS.md](./BRIGHT_UTILS.md). |
+| **Test Lab UI** (desktop) | `yarn test-lab:dev` | Separate Tauri app (`apps/test-lab`): progress bar, GitHub-style step accordions, GPU chips; orchestrator default **:8743** (`BV_TEST_ORCHESTRATOR_PORT`; LAN proxy stays :8742). See [apps/test-lab/README.md](../apps/test-lab/README.md). |
+| Full transcript on disk | `yarn test:everything -- --logged` or Test Lab **Save full transcript** | `.bright-vision/test-suite-runs/run-*.log` (or `TEST_EVERYTHING_LOG` / `test-everything-log.txt`) |
+| Legacy shell wrapper | `yarn test:everything:shell` / `yarn test:everything:logged` | Same Python CLI; `:logged` passes `--logged` |
+| Cloud / custom OpenAI base URL smoke | `yarn test:cloud-llm` (needs `cloud-llm.env`, `E2E_CLOUD_LLM=1` inside script) | ~15–45 s when passing |
 
 Same tiers via shell:
 
@@ -17,6 +30,7 @@ Same tiers via shell:
 sh scripts/test-local.sh fast      # tsc + Vitest
 sh scripts/test-local.sh local     # + Rust
 sh scripts/test-local.sh full      # + Playwright e2e
+sh scripts/test-local.sh integration  # + real :8741 Playwright (no mockCoreApi)
 sh scripts/test-local.sh release     # + verify:submodule if .venv exists
 ```
 
@@ -43,6 +57,29 @@ yarn test:watch
 
 Covers chat stream parsing (including optimistic user-message reconcile), commit graph layout, auto-stage policy, session lifecycle, git labels.
 
+**Cecli session persistence / encryption** (run with activated venv):
+
+```bash
+source activate.sh
+# Cecli submodule (upstream PR surface)
+python -m pytest cecli/tests/basic/test_session_crypto.py \
+  cecli/tests/basic/test_session_args.py \
+  cecli/tests/basic/test_sessions_manager.py -q
+# Optional: /add attachment staging-path regression only (class is TestCommands)
+python -m pytest \
+  cecli/tests/basic/test_commands.py::TestCommands::test_cmd_add_skips_create_on_attachment_staging_path -q
+# Or full cecli session + commands module:
+# python -m pytest cecli/tests/basic/test_session_*.py cecli/tests/basic/test_commands.py -q
+# BrightVision integration
+python -m pytest \
+  tests/core/test_session_crypto.py \
+  tests/core/test_headless_persistence.py \
+  tests/core/test_sessions.py \
+  tests/core/test_http_session_persistence.py -q
+```
+
+Or `yarn test:bright-core` (BrightVision `tests/core/*` modules; run cecli tests before upstream PR).
+
 ## Rust (Tauri git_ops)
 
 ```bash
@@ -66,13 +103,24 @@ yarn test:e2e
 | `session-lifecycle.spec.ts` | Start/stop, connecting, health recovery |
 | `navigation.spec.ts` | Main tabs |
 | `chat-ux.spec.ts` | Sections, proposed edits, token stats; optimistic user bubble on send |
+| `proposed-edits-apply.spec.ts` | Apply to workspace (mock Tauri read/write) |
+| `suggested-files.spec.ts` | Tray, add all, add while busy, open in editor |
+| `agents-bar.spec.ts` | Sub-agent bar + Settings list |
+| `ntfy-alerts.spec.ts` | ntfy Settings + test ping |
+| `session-context.spec.ts` | Context chip files + tokens |
+| `resource-overlay.spec.ts` | CPU/RAM/GPU HUD |
+| `local-llm-ping.spec.ts` | Ollama snapshot + Ping LLM |
 | `stream-chat.spec.ts` | Tool output order in timeline; cumulative stream dedupe (#1, #8) |
-| `progress-activity.spec.ts` | Determinate activity bar from core `progress` SSE (repo scan) |
 | `chat-input.spec.ts` | Send clears input + user bubble; queue, stop turn, multiline |
 | `confirm-flow.spec.ts` | Confirm banner |
 | `chat-context.spec.ts` | Folder attach |
 | `tasks-workspace.spec.ts` | Tasks + generate-spec |
-| `settings-config.spec.ts` | Settings persistence |
+| `tasks-generate-spec.spec.ts` | Three-layer generate/refine + `ears_blocked` snackbar (mock) |
+| `tasks-spec-wizard.spec.ts` | Phased wizard: tab gates, nudges, per-tab generate labels, `section` POST body, All layers |
+| `tasks-ears.spec.ts` | Validate EARS (mock lint) |
+| `spec-generate-all-llm.spec.ts` | Real Ollama all-layers generate-spec (default LLM lane) |
+| `spec-generate-phased-llm.spec.ts` | Real Ollama phased wizard (opt-in: Test Lab checkbox / `E2E_SPEC_GEN_PHASED=1`) |
+| `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
 | `path-completion.spec.ts` | `/add` Tab (desktop vs web) |
 | `file-upload.spec.ts` | Upload + native attach mock |
@@ -114,38 +162,141 @@ Exercises a **live** `bright-vision-core` on `:8741` and your **Ollama** model (
 1. [Ollama](https://ollama.com/) running (`ollama serve` or the desktop app).
 2. Ollama running (`ollama serve`). LLM tests default to `llama3.2:3b` and run **`ollama pull`** automatically if the model is missing (disable with `E2E_OLLAMA_AUTO_PULL=0`).
 3. Python env: `source activate.sh` from **one** repo path (installs cecli, `bright_vision_core`, uvicorn, pytest). If the repo is reachable as both `/Users/.../BrightVision` and `/Volumes/.../BrightVision`, use the same path for the shell and Playwright (`cd "$(pwd -P)"`).
-4. Port **8741** free (or stop a leftover server: `kill $(lsof -ti tcp:8741)`).
+4. Port **8741** free (or stop a leftover server: `sh scripts/free-core-port.sh`). Use **listeners only** — bare `lsof -ti tcp:8741` can include the Vite preview’s proxy connections and kill **:4173** during `restartRealCoreServer()`.
 
 **Run**
 
 ```bash
-# Core-only (SSE + Ollama; hello + /agent) — uses llama3.2:3b via package.json
+# Core-only (SSE + Ollama) — hello, /agent, context, todo, edit-block, transcript
 yarn test:llm:core
 
-# Full UI path: Terminal Start → Chat → hello + /agent
+# Full UI path (skips @router — two long chat turns, often flaky on one GPU)
 yarn test:e2e:llm
+
+LLM specs run in the order in `e2e/llm-suite-order.ts` (sequential Playwright `projects`). Default lane ends with **`spec-generate-all-llm.spec.ts`** only. **Phased spec-gen LLM** checkbox (or `E2E_SPEC_GEN_PHASED=1`) adds **`spec-generate-phased-llm.spec.ts`** before all-layers. Both use **`BV_COMPACT_SPEC_GEN=1`** and **`LLM_SPEC_GEN_TIMEOUT_S=1800`** on `llama3.2:3b`. Mocked phased UX: `tasks-spec-wizard.spec.ts`. Use `BV_SKIP_SPEC_GEN_E2E=1` to skip both spec files.
+
+# Opt-in router lane (fast + heavy model turns)
+yarn test:e2e:llm:router
+
+# Opt-in: repo root workspace (slow RepoSet map; README via contextFiles at session start)
+E2E_SUPERPROJECT_LLM=1 yarn test:e2e:llm:superproject
+
+# All of the above + dogfood:check + release + fixtures (100% confidence bar)
+source activate.sh && yarn test:everything
+
+# Test Lab GUI (`yarn test-lab:dev`) runs the same manifest and `llm_core_step_env` as CLI; see `apps/test-lab/README.md`.
+
+# Same as test:e2e:llm with explicit default model tag
+yarn test:e2e:llm:single
 
 # Explicit env (override model or host):
 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:llm:core
 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:e2e:llm
+# Example bigger model:
+E2E_OLLAMA_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_LLM=1 yarn test:e2e:llm
+# Router lane with explicit fast/heavy tags:
+E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_HEAVY_MODEL=ollama_chat/qwen3.6:27b-q4_K_M yarn test:e2e:llm:router
 ```
 
 Optional env:
 
 | Variable | Purpose |
 |----------|---------|
-| `E2E_OLLAMA_MODEL` | LiteLLM id or bare tag (`yarn test:llm:core` sets `ollama_chat/llama3.2:3b`) |
+| `E2E_OLLAMA_MODEL` | LiteLLM id or bare Ollama tag (`ollama_chat/…` or `llama3.2:3b`); `openai/…` / `azure/…` pass through unchanged |
+| `E2E_MODEL_ROUTER` | `1` required for `yarn test:e2e:llm:router` (`router-llm.spec.ts`) |
+| `E2E_FAST_MODEL` | Router fast tier model tag/id (falls back to `FAST_MODEL`) |
+| `E2E_HEAVY_MODEL` | Router heavy tier model tag/id (falls back to `HEAVY_MODEL`) |
+| Router lane (Test Lab / suite) | Requires **both** `FAST_MODEL` and `HEAVY_MODEL` in `local-llm.env` (distinct tags). Using only `llama3.2:3b` for both is rejected — not a real router test. `router-llm.spec.ts` asserts chip + reply, then allows **post-answer settle** (60s grace) when SSE `done` lags after the answer is visible. |
+| `BV_SUITE_STRICT_PHASED_PYTEST` | `1` on `llm:core`: phased pytest fails on EARS gate instead of skip. With `BV_COMPACT_SPEC_GEN=1`, deterministic repair adds SHALL to any parsed EARS clause missing normative text (bullets, WHEN/IF/WHERE/WHILE prose) before the gate runs. |
+| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar) |
+| `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |
+| `BV_SUITE_USE_ENV_TIMEOUTS` | `1`: keep your shell `LLM_*_TIMEOUT_S` values instead of suite defaults |
+| `BV_SUITE_USE_BRIGHTDATE` | `1`: step/run durations and ETC in BrightDate (BD/md); `btime --no-color`. BD wall bounds (`start_bd`/`end_bd`) are always parsed from `btime` and saved in timing history; Test Lab shows a BD interval chip when present |
 | `E2E_OLLAMA_AUTO_PULL` | `1` (default): run `ollama pull` when the model is missing; `0` to fail fast |
 | `E2E_OLLAMA_HOST` | Ollama base URL (default `http://127.0.0.1:11434`) |
+| `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
+| `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
+| `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
+| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. |
+| `E2E_SPEC_GEN_PHASED` | `1` runs phased wizard LLM e2e (3 jobs). Also: `yarn test:e2e:llm:phased`, Test Lab **Phased spec-gen LLM**, `yarn test:everything --spec-gen-phased`. Must appear in `suite env:` on the `e2e:llm` step (export alone is not enough if the orchestrator was started without it). |
+| `BV_SKIP_SPEC_GEN_E2E` | `1` omits both `spec-generate-*-llm.spec.ts` from `yarn test:e2e:llm` (faster iteration; full bar still needs all-layers) |
+| `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Defaults **`1800`** in `yarn test:llm:core`, `yarn test:e2e:llm`, Test Lab `llm:core` / `e2e:llm`, and Vision API spawn (`e2e/helpers/realCoreServer.ts`). |
+| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; same `1200` defaults as above; CLI `900` when unset) |
+| `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
+| `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
+| `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |
+| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/ollama-warmup-for-tests.sh` before suite `llm:core` |
+| `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
+| `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |
 
 E2E clears **`PYTHONPATH`**. Do not export `PYTHONPATH=$PWD` — the repo’s `cecli/` folder is not the Python package and will break `import cecli` (`unknown location`).
 
-LLM UI e2e uses workspace `e2e/fixtures/hello-workspace` (minimal git repo), not the BrightVision superproject tree.
+### Cloud / OpenAI-compatible LLM (opt-in)
 
-Default `yarn test:e2e` **does not** run `hello-llm.spec.ts` or `agent-llm.spec.ts`.
+Not part of `yarn test:everything` or `DOGFOOD_LLM` (those stay Ollama-first). Use this to validate a custom **`OPENAI_API_BASE`** (proxy, Azure-compatible gateway, etc.) without pulling Ollama.
 
-`/agent` LLM tests use a strict no-tools prompt; large models may take several minutes (Playwright timeout 7m per test).
+1. Copy `cloud-llm.env.example` → `cloud-llm.env` (gitignored). For Azure’s **OpenAI v1** portal sample use `OPENAI_API_BASE=https://<resource>.openai.azure.com/openai/v1` (not `…/chat/completions`) and `E2E_VISION_MODEL=openai/<deployment>` (e.g. `openai/gpt-5.3-chat`).
+2. Put your regenerated key in `OPENAI_API_KEY` only in `cloud-llm.env` — never commit it.
+3. Run:
+
+```bash
+source activate.sh
+yarn test:cloud-llm
+```
+
+**Desktop manual check** (same env vars must exist **before** you click Start — Tauri does not write `OPENAI_API_BASE` for you):
+
+```bash
+set -a && source cloud-llm.env && set +a
+# Settings → LLM model: openai/<model> (not ollama_chat/…)
+# Turn off “Manage local LLM” if you only want cloud → Save → Chat → Start
+```
+
+Playwright cloud UI tests are not wired yet; use `yarn test:cloud-llm` for API-level smoke, then dogfood in the app.
+
+| Workspace | Use |
+|-----------|-----|
+| `e2e/fixtures/hello-workspace` | Smoke LLM (`hello-llm`, `agent-llm`) — **no** files in context |
+| `e2e/fixtures/context-workspace` | Context LLM (`context-llm`, `test_context_llm`) — `/add src/e2e_widget.ts`, assert `E2E_CONTEXT_MAGIC` |
+| `e2e/fixtures/edit-block-workspace` | Edit LLM (`edit-block-llm`, `test_edit_block_llm`) — SEARCH/REPLACE on `src/patchme.ts` |
+| `e2e/fixtures/integration-workspace` | Real core HTTP (`yarn test:e2e:integration`) — todos/import, not chat context |
+| BrightVision repo root | Superproject LLM only when `E2E_SUPERPROJECT_LLM=1` — Vision API: session + README in `files`, one message with `preproc: false` (avoids UI slash preproc + active-task inject) |
+
+Do **not** use the BrightVision superproject as the default LLM `workingDir` (slow repo map, flaky).
+
+For larger regression packs, prefer a small pinned fixture repo (or submodule) and set `E2E_FIXTURE_PACK_ROOT` so `hello-workspace` / `context-workspace` resolve from that external pack.
+When `e2e/fixture-pack` exists (submodule), LLM/integration fixture resolution prefers it automatically; set `E2E_FIXTURE_PACK_ROOT` only to override.
+
+Validate the fixture-pack layout (and show submodule pin status when applicable):
+
+```bash
+yarn test:e2e:fixtures
+# or:
+sh scripts/verify-e2e-fixture-pack.sh /absolute/path/to/my-fixture-pack
+```
+
+Tip: when your repo is reachable by multiple mount aliases (`/Users/...` and `/Volumes/...`), pass a canonical path:
+
+```bash
+E2E_FIXTURE_PACK_ROOT="$(cd /path/to/my-fixture-pack && pwd -P)" yarn test:e2e:fixtures
+```
+
+Default `yarn test:e2e` **does not** run `hello-llm.spec.ts`, `agent-llm.spec.ts`, `context-llm.spec.ts`, or `e2e/integration/*`.
+
+### Real core integration (no mocked Vision API)
+
+Spawns **live** `bright-vision-core` on `:8741`; Vite preview **proxies** `/api/core` (no `installMockCoreApi`). **Ollama not required.**
+
+```bash
+source activate.sh
+yarn test:e2e:integration
+# or: sh scripts/test-local.sh integration
+```
+
+See [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md#real-core-integration-no-mocked-apicore).
+
+`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
 
 ## Manual smoke (not Playwright)
 

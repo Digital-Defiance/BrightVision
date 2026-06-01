@@ -199,7 +199,7 @@ Drop duplicate `cecli/commands/add.py` and `cecli/models.py` patches from fork w
 
 ## Phase 6 — Cleanup
 
-- [ ] Deinit `aider-vision-core` submodule (if still present)
+- [ ] Deinit `bright_vision_core` submodule (if still present)
 - [ ] Remove `BrightVision-core` from docs, ROADMAP pins, `sync_bright_vision.sh` paths (or repoint to cecli + parent)
 - [ ] Update [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md) milestones U2–U5
 - [ ] GitHub: rename BrightVision-core repo description → archived; primary engine link → Cecli

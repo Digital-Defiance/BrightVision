@@ -4,12 +4,15 @@ LLM-assisted three-layer todo spec generation and parsing.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Literal
 
+from bright_vision_core.ears.prompt import format_spec_quality_for_prompt
 from bright_vision_core.workspace_todos import TodoItem
 
 GenerateMode = Literal["generate", "refine"]
+SpecSection = Literal["all", "requirements", "design", "tasks_md"]
 
 _SECTION_HEADERS = {
     "## requirements": "requirements",
@@ -17,46 +20,267 @@ _SECTION_HEADERS = {
     "## implementation tasks": "tasks_md",
 }
 
-_GENERATE_TEMPLATE = """\
-You are writing a spec-driven development plan for this repository. Do not edit any files.
+# --- Kiro-style layer guidance (no curly braces: these are concatenated into
+# --- .format() templates, so any "{" would be parsed as a field). ---
 
-Feature request:
-{prompt}
-
-{existing}
-
-Respond with markdown only, using exactly these three level-2 headings (no other top-level structure):
-
-## Requirements
-Use EARS-style bullets: **WHEN** … **THE** system **SHALL** …
-
-## Design
-Overview, architecture, components, and data flow for this repo.
-
-## Implementation tasks
-Numbered checklist items, one per line, format:
-- [ ] 1. Short title (depends: none)
-- [ ] 2. Next step (depends: 1)
+_REQUIREMENTS_FORMAT = """\
+Write thorough, Kiro-style requirements:
+- Begin with a `### Introduction` paragraph describing the feature, its users, and scope.
+- Add one `### REQ-NNN: <title>` section per requirement (unique id; a short title may follow the id).
+- Under each requirement, write a `**User Story:** As a <role>, I want <capability>, so that <benefit>.` line.
+- Then an `**Acceptance Criteria**` numbered list of EARS clauses. Each clause uses **THE** system **SHALL** with a trigger: **WHEN** <event>, **IF** <condition> **THEN**, **WHILE** <state>, or **WHERE** <feature> — or a ubiquitous **THE** system **SHALL** statement.
+- Give every requirement at least two acceptance criteria; cover the happy path, edge cases, invalid input / error handling, and relevant non-functional needs (performance, security, accessibility).
+- Prefer at least three requirements unless the feature is genuinely trivial.
 """
 
-_REFINE_TEMPLATE = """\
-You are reviewing a spec-driven task for consistency. Do not edit any files.
+_DESIGN_FORMAT = """\
+Be comprehensive and concrete. Use these level-3 (###) subsections:
+- `### Overview` — what is being built and why, tied to the requirements.
+- `### Architecture` — the major pieces and how requests/data flow between them (a diagram is welcome).
+- `### Components and Interfaces` — each component, its responsibility, and key function/endpoint signatures.
+- `### Data Models` — important types, their fields, and how they are persisted.
+- `### Error Handling` — failure modes and how the system responds.
+- `### Testing Strategy` — unit, integration, and e2e coverage.
+Reference concrete modules/files in this repository where relevant, and cite the REQ ids each part satisfies (e.g. REQ-001). Every requirement must be covered.
+"""
 
-Task title: {title}
+_TASKS_FORMAT = """\
+Break the work into incremental, test-driven coding steps:
+- Use a numbered checklist; add sub-steps (e.g. 1.1, 1.2) for larger steps.
+- Each step is an actionable coding task (write or change code/tests), not project management.
+- Note the requirement ids each step implements (e.g. `_Requirements: REQ-001, REQ-002_`) and a `(depends: none|N)` marker.
+- Order steps so each builds on previous ones, and wire tests alongside the code they cover.
+"""
+
+# Shorter prompts for LLM e2e / dogfood on small Ollama models (BV_COMPACT_SPEC_GEN=1).
+# Product UI keeps full Kiro-grade prompts unless the env is set.
+_REQUIREMENTS_FORMAT_COMPACT = """\
+Write concise requirements only:
+- `### Introduction` — 2-3 sentences.
+- Exactly **two** `### REQ-NNN` sections; each with one short **User Story** and **two** numbered acceptance lines.
+- Every acceptance line MUST include both **WHEN** and **THE** system **SHALL** (copy the example shape exactly).
+"""
+
+_REQUIREMENTS_EXAMPLE_COMPACT = """\
+Format example (replace feature text; keep the EARS shape):
+
+### Introduction
+Clients need a minimal health check before pairing.
+
+### REQ-001: Liveness
+**User Story:** As a client, I want a health endpoint, so that I can detect uptime.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status field.
+2. **WHEN** the core is starting **THE** system **SHALL** respond with HTTP 503 until ready.
+
+### REQ-002: Payload
+**User Story:** As a client, I want a stable body shape, so that parsers do not break.
+
+**Acceptance Criteria**
+1. **WHEN** the health endpoint returns 200 **THE** system **SHALL** include a `status` string in the JSON body.
+2. **WHEN** the status is ok **THE** system **SHALL** use the literal value `ok`.
+"""
+
+_DESIGN_FORMAT_COMPACT = """\
+Keep the design under 35 lines. Use only these subsections:
+- `### Overview` — 2-4 sentences citing REQ ids.
+- `### Architecture` — a short bullet list citing REQ ids.
+Do not add Components, Data Models, Error Handling, or Testing Strategy sections.
+"""
+
+_TASKS_FORMAT_COMPACT = """\
+Exactly **two** numbered checklist items with `(depends: none|1)`; cite REQ ids in each line.
+"""
+
+
+def compact_spec_gen_enabled() -> bool:
+    """True when LLM lanes should use shorter generate-spec prompts (faster 3b runs)."""
+    return os.environ.get("BV_COMPACT_SPEC_GEN", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _requirements_format() -> str:
+    return _REQUIREMENTS_FORMAT_COMPACT if compact_spec_gen_enabled() else _REQUIREMENTS_FORMAT
+
+
+def _requirements_example() -> str:
+    return (
+        _REQUIREMENTS_EXAMPLE_COMPACT
+        if compact_spec_gen_enabled()
+        else _REQUIREMENTS_EXAMPLE
+    )
+
+
+def _design_format() -> str:
+    return _DESIGN_FORMAT_COMPACT if compact_spec_gen_enabled() else _DESIGN_FORMAT
+
+
+def _tasks_format() -> str:
+    return _TASKS_FORMAT_COMPACT if compact_spec_gen_enabled() else _TASKS_FORMAT
+
+
+def _design_example() -> str:
+    return _DESIGN_EXAMPLE_COMPACT if compact_spec_gen_enabled() else _DESIGN_EXAMPLE
+
+
+def _generate_all_layers_body() -> str:
+    return (
+        "## Requirements\n"
+        + _requirements_format()
+        + "\n"
+        "## Design\n"
+        + _design_format()
+        + "\n"
+        "## Implementation tasks\n"
+        + _tasks_format()
+        + "\n"
+        + _ALL_EXAMPLE
+    )
+
+_REQUIREMENTS_EXAMPLE = """\
+Format example (replace with the real feature; do not copy this content):
+
+### Introduction
+The health endpoint lets clients confirm the API is reachable before pairing.
+
+### REQ-001: Health check
+**User Story:** As a client app, I want a health endpoint, so that I can confirm the API is up.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status body.
+2. **IF** the core is still starting **THEN THE** system **SHALL** respond with HTTP 503 and a retry hint.
+"""
+
+_DESIGN_EXAMPLE = """\
+Format example (structure only):
+
+### Overview
+Implements REQ-001 as an HTTP route.
+### Architecture
+FastAPI app -> health handler -> status payload.
+### Components and Interfaces
+- `health()` returns the status payload — REQ-001.
+### Data Models
+A Status value with an "ok" boolean field.
+### Error Handling
+Return HTTP 503 while the core is starting (REQ-001).
+### Testing Strategy
+An HTTP test asserts 200 and a JSON body for REQ-001.
+"""
+
+_DESIGN_EXAMPLE_COMPACT = """\
+Format example (structure only):
+
+### Overview
+Implements REQ-001 as an HTTP route (REQ-001).
+### Architecture
+- FastAPI route `GET /health` — REQ-001.
+"""
+
+_TASKS_EXAMPLE = """\
+Format example:
+
+- [ ] 1. Add the health route and status payload — _Requirements: REQ-001_ (depends: none)
+  - [ ] 1.1 Return HTTP 503 while the core is starting (depends: none)
+- [ ] 2. Add an HTTP test asserting 200 and a JSON body — _Requirements: REQ-001_ (depends: 1)
+"""
+
+_ALL_EXAMPLE = """\
+Format example (structure only; replace with the real feature):
 
 ## Requirements
-{requirements}
+### Introduction
+The health endpoint lets clients confirm the API is reachable.
+
+### REQ-001: Health check
+**User Story:** As a client, I want a health endpoint, so that I can confirm the API is up.
+
+**Acceptance Criteria**
+1. **WHEN** a client sends `GET /health` **THE** system **SHALL** respond with HTTP 200 and a JSON status.
+2. **IF** the core is still starting **THEN THE** system **SHALL** respond with HTTP 503.
 
 ## Design
-{design}
+### Overview
+Implements REQ-001 as an HTTP route.
+### Architecture
+FastAPI app -> health handler -> status payload.
+### Components and Interfaces
+- `health()` returns the status payload — REQ-001.
+### Data Models
+A Status value with an "ok" boolean field.
+### Error Handling
+Return HTTP 503 while starting (REQ-001).
+### Testing Strategy
+An HTTP test asserts 200 for REQ-001.
 
 ## Implementation tasks
-{tasks_md}
-
-User note: {prompt}
-
-Output an improved version with the same three ## headings. Fix contradictions between layers and align implementation tasks with requirements and design.
+- [ ] 1. Add the health route — _Requirements: REQ-001_ (depends: none)
+- [ ] 2. Add an HTTP test for the route — _Requirements: REQ-001_ (depends: 1)
 """
+
+_GENERATE_TEMPLATE_PREFIX = (
+    "You are writing a complete spec-driven development plan for this repository. "
+    "Do not edit any files.\n\n"
+    "Feature request:\n{prompt}\n\n"
+    "{existing}{ears_context}\n\n"
+    "Respond with markdown only. Use exactly these three level-2 (##) headings and no other "
+    "level-2 headings; use level-3 (###) for every subsection:\n\n"
+)
+
+_REQUIREMENTS_SECTION_PREFIX = (
+    "You are writing the requirements layer for a spec-driven task. Do not edit any files.\n\n"
+    "Feature request:\n{prompt}\n\n"
+    "{existing_requirements}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Requirements\n"
+)
+
+_DESIGN_SECTION_PREFIX = (
+    "You are writing the design layer for a spec-driven task. Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements (approved — the design must satisfy every REQ id)\n{requirements}\n\n"
+    "Design note:\n{prompt}\n\n"
+    "{existing_design}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Design\n"
+)
+
+_TASKS_SECTION_PREFIX = (
+    "You are writing the implementation tasks layer for a spec-driven task. "
+    "Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements\n{requirements}\n\n"
+    "## Design\n{design}\n\n"
+    "Implementation note:\n{prompt}\n\n"
+    "{existing_tasks}{ears_context}\n\n"
+    "Respond with markdown only, under a single level-2 heading:\n\n"
+    "## Implementation tasks\n"
+)
+
+_REFINE_TEMPLATE_PREFIX = (
+    "You are reviewing and improving a spec-driven task. Do not edit any files.\n\n"
+    "Task title: {title}\n\n"
+    "## Requirements\n{requirements}\n\n"
+    "## Design\n{design}\n\n"
+    "## Implementation tasks\n{tasks_md}\n\n"
+    "User note: {prompt}\n{ears_context}\n\n"
+    "Output an improved version with the same three level-2 (##) headings "
+    "(## Requirements, ## Design, ## Implementation tasks). Deepen any thin section, fix "
+    "contradictions between layers, ensure every REQ id is covered by the design and tasks, "
+    "and resolve every EARS issue listed above. Follow this structure:\n\n"
+)
+
+
+def _optional_existing_block(label: str, text: str) -> str:
+    body = (text or "").strip()
+    if not body:
+        return ""
+    return f"Existing {label} (improve and extend):\n{body}\n\n"
 
 
 def build_generate_message(
@@ -64,15 +288,57 @@ def build_generate_message(
     *,
     mode: GenerateMode = "generate",
     item: TodoItem | None = None,
+    section: SpecSection = "all",
 ) -> str:
+    ears_context = ""
+    if item and (mode == "refine" or section in ("all", "requirements")):
+        ears_context = format_spec_quality_for_prompt(
+            item.requirements,
+            item.design,
+            item.tasks_md,
+        )
     if mode == "refine" and item:
-        return _REFINE_TEMPLATE.format(
+        return _REFINE_TEMPLATE_PREFIX.format(
             title=item.title,
             requirements=item.requirements.strip() or "(empty)",
             design=item.design.strip() or "(empty)",
             tasks_md=item.tasks_md.strip() or "(empty)",
             prompt=prompt.strip() or "Review for consistency.",
+            ears_context=ears_context,
+        ) + (
+            _requirements_format()
+            + "\n"
+            + _design_format()
+            + "\n"
+            + _tasks_format()
         )
+    if section == "requirements":
+        existing = _optional_existing_block(
+            "requirements draft",
+            item.requirements if item else "",
+        )
+        return _REQUIREMENTS_SECTION_PREFIX.format(
+            prompt=prompt.strip(),
+            existing_requirements=existing,
+            ears_context=ears_context,
+        ) + (_requirements_format() + "\n" + _requirements_example())
+    if section == "design" and item:
+        return _DESIGN_SECTION_PREFIX.format(
+            title=item.title,
+            requirements=item.requirements.strip() or "(empty)",
+            prompt=prompt.strip(),
+            existing_design=_optional_existing_block("design draft", item.design),
+            ears_context=ears_context,
+        ) + (_design_format() + "\n" + _design_example())
+    if section == "tasks_md" and item:
+        return _TASKS_SECTION_PREFIX.format(
+            title=item.title,
+            requirements=item.requirements.strip() or "(empty)",
+            design=item.design.strip() or "(empty)",
+            prompt=prompt.strip(),
+            existing_tasks=_optional_existing_block("implementation tasks draft", item.tasks_md),
+            ears_context=ears_context,
+        ) + (_tasks_format() + "\n" + _TASKS_EXAMPLE)
     existing = ""
     if item and (item.requirements or item.design or item.tasks_md):
         existing = (
@@ -81,10 +347,14 @@ def build_generate_message(
             f"Design:\n{item.design}\n\n"
             f"Implementation tasks:\n{item.tasks_md}\n"
         )
-    return _GENERATE_TEMPLATE.format(prompt=prompt.strip(), existing=existing)
+    return _GENERATE_TEMPLATE_PREFIX.format(
+        prompt=prompt.strip(),
+        existing=existing,
+        ears_context=ears_context,
+    ) + _generate_all_layers_body()
 
 
-def parse_generated_layers(text: str) -> dict[str, str]:
+def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[str, str]:
     """Extract requirements, design, and tasks_md from model markdown."""
     sections: dict[str, list[str]] = {k: [] for k in ("requirements", "design", "tasks_md")}
     current: str | None = None
@@ -101,8 +371,55 @@ def parse_generated_layers(text: str) -> dict[str, str]:
     if not any(out.values()):
         cleaned = _strip_fences(text)
         if cleaned:
-            out["requirements"] = cleaned
+            if section == "design":
+                out["design"] = cleaned
+            elif section == "tasks_md":
+                out["tasks_md"] = cleaned
+            else:
+                out["requirements"] = cleaned
     return out
+
+
+def merge_generated_layers(
+    item: TodoItem,
+    parsed: dict[str, str],
+    *,
+    section: SpecSection,
+) -> dict[str, str]:
+    """Merge parsed output with stored layers for phased apply."""
+    if section == "all":
+        return {
+            "requirements": parsed.get("requirements", "") or item.requirements,
+            "design": parsed.get("design", "") or item.design,
+            "tasks_md": parsed.get("tasks_md", "") or item.tasks_md,
+        }
+    if section == "requirements":
+        return {
+            "requirements": parsed.get("requirements", "") or item.requirements,
+            "design": item.design,
+            "tasks_md": item.tasks_md,
+        }
+    if section == "design":
+        return {
+            "requirements": item.requirements,
+            "design": parsed.get("design", "") or item.design,
+            "tasks_md": item.tasks_md,
+        }
+    return {
+        "requirements": item.requirements,
+        "design": item.design,
+        "tasks_md": parsed.get("tasks_md", "") or item.tasks_md,
+    }
+
+
+def validate_section_prerequisites(item: TodoItem, section: SpecSection) -> None:
+    if section == "design" and not item.requirements.strip():
+        raise ValueError("Generate requirements before design")
+    if section == "tasks_md":
+        if not item.requirements.strip():
+            raise ValueError("Generate requirements before implementation tasks")
+        if not item.design.strip():
+            raise ValueError("Generate design before implementation tasks")
 
 
 def _strip_fences(text: str) -> str:

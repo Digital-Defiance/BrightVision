@@ -4,6 +4,8 @@ import type { VisionConfig } from '../ipc/config'
 import {
   formatLlmPingHint,
   formatLlmPingSummary,
+  llmPingAlertSeverity,
+  llmPingNeedsSessionStart,
   isOllamaVisionModel,
   resolveLocalLlmForConfig,
   type LlmPingResult,
@@ -93,6 +95,8 @@ export function useLocalLlmControls(
       onLogLines?.(r.logs.map((l) => `[ping] ${l}`))
       if (!r.generateOk) {
         setError(r.error ?? 'LLM ping failed — see Terminal for details')
+      } else if (llmPingNeedsSessionStart(r)) {
+        setError(null)
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -144,6 +148,7 @@ export function useLocalLlmControls(
     clearError,
     formatLlmPingSummary,
     formatLlmPingHint,
+    llmPingAlertSeverity,
   }
 }
 

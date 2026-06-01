@@ -35,7 +35,7 @@ export function ChatAgentBar({
             key={cmd}
             title={
               cmd === '/agent'
-                ? 'Autonomous agent mode for one prompt'
+                ? 'Runs the full agent tool loop before the main reply (no default time cap — use Stop). For quick UI tweaks, type your request without /agent.'
                 : cmd === '/invoke-agent'
                   ? 'Blocking sub-agent run — add name + prompt after click'
                   : cmd === '/spawn-agent'

@@ -50,4 +50,4 @@ yarn tauri dev   # smoke: Terminal Start/Stop, Tasks tab, Generate spec, Git tab
 
 - `yarn build:mac` — see [BUILD_MACOS.md](./BUILD_MACOS.md)
 - Bump `package.json` / `tauri.conf.json` version if shipping a desktop build
-- `BRIGHT_VISION_ENGINE=aider-vision-core` — legacy fallback until submodule deinit
+- `BRIGHT_VISION_ENGINE=bright_vision_core` — legacy fallback until submodule deinit

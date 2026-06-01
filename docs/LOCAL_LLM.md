@@ -22,7 +22,23 @@ You only need **Ollama** installed plus a small env file (below). Use the in-app
 
 ### Dynamic model tiering (#39)
 
-**Settings → Local model router** (Ollama sessions only) classifies each prompt and picks from the **model hopper**: enable one or more **fast** and **heavy** models (switches per row), set tier, reorder priority. Empty heavy id uses your main LLM model. Fast tier uses `keep_alive: 5m`; heavy uses `keep_alive: 0`. Pull tags (`ollama pull …`) and enable **Auto before session** so swaps stay warm.
+**Settings → Local model router** (Ollama sessions only) classifies each prompt and picks from the **model hopper**: enable one or more **fast** and **heavy** models (switches per row), set tier, reorder priority. Empty heavy id uses your main LLM model. Fast tier uses `keep_alive: 5m`; heavy uses `keep_alive: 0`.
+
+**Configure from disk** (optional) — add to `local-llm.env`:
+
+```bash
+MODEL_ROUTER=1
+FAST_MODEL=deepseek-coder:6.7b
+HEAVY_MODEL=qwen3.6:27b-q4_K_M
+```
+
+Tags are bare Ollama names (no `ollama_chat/` prefix). Omit `HEAVY_MODEL` to use `DATA_MODEL` / the session LLM for the heavy tier. Then **Settings → Ollama env files → Sync from env files** (overwrites hopper + router flag) or rely on launch **fill empty** for unset hopper slots.
+
+On **Terminal → Start** with the router enabled, BrightVision pulls only the resolved fast/heavy tags (not every hopper row) so startup stays fast when `OLLAMA_MAX_LOADED_MODELS=1`.
+
+**Routing rules (Vision):** Tier choice uses **your message size** for intent (UI wording → fast; architect/refactor keywords → heavy). When the session’s **live context** (Cecli `token_count` on current messages) plus a completion reserve would exceed the **fast model’s `max_input_tokens`**, the router picks **heavy** even for short messages — avoids `exceeds the 16,384 token limit` on small fast models. The capped per-file bump in **~tok** display still does not alone force heavy. Middle-band code tasks default **fast** when context fits (escalate to heavy on failure if enabled).
+
+**Headless** (`bright-vision-core-serve` without the desktop UI): use `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_HEAVY_MODEL` — see [ROADMAP.md](./ROADMAP.md#39--local-model-router).
 
 ### What **Start session** does (Python)
 
@@ -54,14 +70,21 @@ cp local-llm.env.example local-llm.env
 ```bash
 OLLAMA_HOST=http://127.0.0.1:11434
 DATA_MODEL=qwen3.6:27b-q4_K_M
+# Optional — model router (see § Dynamic model tiering)
+# MODEL_ROUTER=1
+# FAST_MODEL=deepseek-coder:6.7b
+# HEAVY_MODEL=qwen3.6:27b-q4_K_M
 ```
 
 | Variable | BrightVision setting |
 |----------|----------------------|
 | `OLLAMA_HOST` | **Ollama API base** → injected as `OLLAMA_API_BASE` when spawning the core |
 | `DATA_MODEL` / `LLM_MODEL` / `CHAT_MODEL` | **LLM model** as `ollama_chat/<tag>` |
+| `FAST_MODEL` | **Model router** — fast-tier Ollama tag (hopper) |
+| `HEAVY_MODEL` | **Model router** — heavy-tier tag; omit to use session / `DATA_MODEL` for heavy |
+| `MODEL_ROUTER` | `1` / `true` — enable **Settings → Local model router** on sync |
 
-On launch, Vision **fills empty** fields from those files. Use **Settings → Ollama env files → Sync from env files** to overwrite model and Ollama base from disk, then **Start Local LLM** and **Ping LLM** in the same section (same as **Terminal → Local LLM**). **Save**, then **Terminal → Start** (session).
+On launch, Vision **fills empty** fields from those files (including hopper fast/heavy when router slots are empty). Use **Settings → Ollama env files → Sync from env files** to overwrite model, Ollama base, and router hopper from disk, then **Start Local LLM** and **Ping stack** in the same section (same as **Terminal → Local LLM**). **Save** (persists Settings), then **Terminal → Start** (session).
 
 ## Quick path (macOS)
 
@@ -72,16 +95,17 @@ On launch, Vision **fills empty** fields from those files. Use **Settings → Ol
 cp local-llm.env.example local-llm.env
 # edit DATA_MODEL
 
-# 3. BrightVision → Settings: ollama_chat/<DATA_MODEL>
+# 3. BrightVision → Settings → Sync from env files (or launch fill-empty)
 #    Terminal → Local LLM → Start
 #    Terminal → Start (session)
+# Optional: MODEL_ROUTER + FAST_MODEL / HEAVY_MODEL in local-llm.env
 ```
 
 Or leave **Auto before session** on and use **Terminal → Start** once.
 
-## Ping LLM
+## Ping stack (UI: **Ping stack**)
 
-**Ping LLM** runs two checks (no repo edits):
+**Ping stack** (formerly “Ping LLM”) runs two checks (no repo edits). It does **not** start the Vision API:
 
 1. **Ollama** — `/api/tags`, `/api/ps`, then a 1-token `/api/generate` probe.
 2. **Vision API** — `GET {coreApiUrl}/health` (default `http://127.0.0.1:8741`).
@@ -91,9 +115,9 @@ Or leave **Auto before session** on and use **Terminal → Start** once.
 | Part | Meaning |
 |------|---------|
 | **LLM OK (Nms)** | Ollama is up, your model is pulled, and a tiny generate succeeded — local inference works. |
-| **Vision API not running** | `bright-vision-core-serve` is not listening on `:8741` yet. That is normal when the session is **Stopped**. |
+| **Vision API not running** | `bright-vision-core-serve` is not listening on `:8741` yet. That is normal when the session is **Stopped**. The UI shows a **warning** (not green) with the connect error when available. |
 
-Fix: **Terminal → Start** (starts `bright-vision-core-serve` and the session). **Ping LLM** again; you should see **Vision API OK**. Local LLM (**Start Local LLM**) and the session (**Start**) are separate steps unless **Auto before session** is on.
+Fix: **Settings → Start Vision API** (HTTP only) or **Terminal → Start** (API + coding session). **Ping stack** again; you should see **Vision API OK**. Local LLM (**Start Local LLM**), the API, and the session (**Start**) are separate steps unless **Auto before session** is on.
 
 **Not in /api/ps** only means the model is not loaded in RAM; ping can still pass if the tag is pulled.
 
