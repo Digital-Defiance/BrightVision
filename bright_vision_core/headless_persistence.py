@@ -28,9 +28,9 @@ def apply_persistence_to_args(
 
 
 def session_crypto_key_available(session_key_file: str | None = None) -> bool:
-    from cecli import session_crypto
+    from bright_vision_core.cecli_session_crypto import resolve_key
 
-    return session_crypto.resolve_key(key_file=session_key_file) is not None
+    return resolve_key(key_file=session_key_file) is not None
 
 
 def persistence_env_active() -> bool:

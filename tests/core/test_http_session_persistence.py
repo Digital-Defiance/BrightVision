@@ -18,7 +18,10 @@ except ImportError:
     configure_auth = None
     reset_auth_for_tests = None
 
-from cecli import session_crypto
+from bright_vision_core.cecli_session_crypto import (
+    require_session_crypto_module,
+    session_crypto_available,
+)
 from cecli.sessions import SessionManager
 from cecli.utils import GitTemporaryDirectory
 
@@ -75,6 +78,9 @@ class TestHttpSessionPersistence(unittest.TestCase):
             )
 
     def test_encrypted_save_via_session_manager(self):
+        if not session_crypto_available():
+            self.skipTest("cecli v0.100.2+ required (cecli.helpers.crypto)")
+        session_crypto = require_session_crypto_module()
         self._set_session_key()
         with GitTemporaryDirectory() as root:
             client = TestClient(app)
@@ -101,6 +107,9 @@ class TestHttpSessionPersistence(unittest.TestCase):
             self.assertIn("version", data)
 
     def test_plaintext_save_when_encryption_off(self):
+        if not session_crypto_available():
+            self.skipTest("cecli v0.100.2+ required (cecli.helpers.crypto)")
+        session_crypto = require_session_crypto_module()
         with GitTemporaryDirectory() as root:
             client = TestClient(app)
             res = client.post(

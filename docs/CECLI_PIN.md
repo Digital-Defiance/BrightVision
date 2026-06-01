@@ -49,9 +49,10 @@ Default dev path is **editable submodule**, not PyPI `cecli` latest.
 
 1. **Source of truth:** the `cecli` entry in the parent repo (gitlink SHA). Document in PRs: `cecli @ <short-sha> (<branch or tag label>)`.
 2. **Integration branches:** when a PR merges to cecli-dev (e.g. `v0.100.1`) before PyPI, pin that branch tip or merge commit — not `main`.
-3. **Fork:** [Digital-Defiance/cecli](https://github.com/Digital-Defiance/cecli) is for **open PRs** and short-lived integration; do not treat “fork `main`” as automatic latest.
+3. **Fork:** [Digital-Defiance/cecli](https://github.com/Digital-Defiance/cecli) **`main` tracks cecli-dev `main` exactly** (fast-forward after upstream merges). Use the fork for open PRs; submodule URL stays `Digital-Defiance/cecli.git`.
 4. **Vision-only changes** stay in `bright_vision_core/` — do not copy cecli patches into the parent tree.
 5. **After upstream tags PyPI** (e.g. `cecli==0.100.1`): bump submodule to that tag, then align `requirements-core.txt` / `pyproject.toml` when packaging splits (see UPSTREAM_CECLI U3).
+6. **Session encryption (PR [#533](https://github.com/cecli-dev/cecli/pull/533))** is in **`v0.100.2+`** as `cecli.helpers.crypto` (not `from cecli import session_crypto`). BrightVision resolves it via `bright_vision_core.cecli_session_crypto`. After syncing the fork: `cd cecli && git pull origin main && cd .. && pip install -e cecli`.
 
 ---
 

@@ -7,7 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from cecli import session_crypto
+from bright_vision_core.cecli_session_crypto import (
+    require_session_crypto_module,
+    session_crypto_available,
+)
+
+pytestmark = pytest.mark.skipif(
+    not session_crypto_available(),
+    reason="cecli v0.100.2+ required (cecli.helpers.crypto)",
+)
+
+session_crypto = require_session_crypto_module()
 
 
 @pytest.fixture
@@ -32,10 +42,12 @@ def test_is_encrypted_rejects_plain_json():
     assert not session_crypto.is_encrypted_payload(raw)
 
 
-def test_decrypt_plain_json_without_encrypt_flag(key32):
-    payload = {"version": 1, "session_name": "legacy"}
-    raw = json.dumps(payload).encode("utf-8")
-    assert session_crypto.decrypt_session_bytes(raw, key32) == payload
+def test_decrypt_plain_json_rejected(key32):
+    """v0.100.2+ crypto: callers must use is_encrypted_payload before decrypt."""
+    raw = json.dumps({"version": 1, "session_name": "legacy"}).encode("utf-8")
+    assert not session_crypto.is_encrypted_payload(raw)
+    with pytest.raises(session_crypto.SessionCryptoError):
+        session_crypto.decrypt_session_bytes(raw, key32)
 
 
 def test_wrong_key_raises(key32):

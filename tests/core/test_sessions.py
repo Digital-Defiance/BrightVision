@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cecli import session_crypto
+from bright_vision_core.cecli_session_crypto import (
+    require_session_crypto_module,
+    session_crypto_available,
+)
 from cecli.io import InputOutput
 from cecli.sessions import SessionManager
 
@@ -115,7 +118,14 @@ def session_key32():
 
 
 @pytest.fixture
-def session_key_env(monkeypatch, session_key32):
+def session_crypto():
+    if not session_crypto_available():
+        pytest.skip("cecli v0.100.2+ required (cecli.helpers.crypto)")
+    return require_session_crypto_module()
+
+
+@pytest.fixture
+def session_key_env(monkeypatch, session_key32, session_crypto):
     b64 = base64.urlsafe_b64encode(session_key32).decode().rstrip("=")
     monkeypatch.setenv(session_crypto.KEY_ENV, b64)
     return session_key32
@@ -404,7 +414,7 @@ def test_save_session_saves_edit_format(session_manager, mock_coder, tmp_path, e
     assert session_data["edit_format"] == edit_format
 
 
-def test_save_session_encrypted_on_disk(encrypt_coder, session_key32, tmp_path):
+def test_save_session_encrypted_on_disk(encrypt_coder, session_key32, session_crypto, tmp_path):
     session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
     _prepare_workspace(encrypt_coder, tmp_path)
     session_dir = Path(tmp_path) / ".cecli" / "sessions"
@@ -418,7 +428,9 @@ def test_save_session_encrypted_on_disk(encrypt_coder, session_key32, tmp_path):
     assert data["model"] == "test_model"
 
 
-def test_save_session_encrypt_without_key_fails(mock_coder, monkeypatch, tmp_path):
+def test_save_session_encrypt_without_key_fails(
+    mock_coder, monkeypatch, session_crypto, tmp_path
+):
     monkeypatch.delenv(session_crypto.KEY_ENV, raising=False)
     _prepare_workspace(mock_coder, tmp_path)
     mock_coder.args = SimpleNamespace(
@@ -436,7 +448,9 @@ def test_save_session_encrypt_without_key_fails(mock_coder, monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_load_encrypted_session_switch_false(encrypt_coder, session_key32, tmp_path):
+async def test_load_encrypted_session_switch_false(
+    encrypt_coder, session_key32, session_crypto, tmp_path
+):
     session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
     _prepare_workspace(encrypt_coder, tmp_path)
     encrypt_coder.edit_format = "ask"
@@ -463,7 +477,9 @@ def test_list_sessions_encrypted_with_key(encrypt_coder, tmp_path):
     assert sessions[0].get("encrypted") is True
 
 
-def test_list_sessions_encrypted_without_key(encrypt_coder, monkeypatch, tmp_path):
+def test_list_sessions_encrypted_without_key(
+    encrypt_coder, monkeypatch, session_crypto, tmp_path
+):
     """Encrypted files list as placeholders when CECLI_SESSION_KEY is unset."""
     _prepare_workspace(encrypt_coder, tmp_path)
     session_manager = SessionManager(encrypt_coder, encrypt_coder.io)
@@ -487,7 +503,9 @@ def test_list_sessions_encrypted_without_key(encrypt_coder, monkeypatch, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_load_encrypted_file_with_env_key_only(encrypt_coder, session_key_env, tmp_path):
+async def test_load_encrypted_file_with_env_key_only(
+    encrypt_coder, session_key_env, session_crypto, tmp_path
+):
     """Decrypt on load uses CECLI_SESSION_KEY even when session_encrypt is false on args."""
     _prepare_workspace(encrypt_coder, tmp_path)
     encrypt_coder.edit_format = "architect"

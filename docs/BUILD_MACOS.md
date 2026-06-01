@@ -146,6 +146,36 @@ xcrun stapler staple "path/to/BrightVision_0.2.0_universal.dmg"
 
 `yarn build:mac` prompts for these if missing. Tauri notarizes during the build when they are set — see [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/).
 
+### Notarization timeout (`NSURLErrorDomain Code=-1001`)
+
+If the log shows **codesign succeeded** (`replacing existing signature`) but the build fails on:
+
+`failed to notarize app` → `appstoreconnect.apple.com/notary/v2/submissions` → **The request timed out**
+
+that is **Apple’s notary API or your network**, not a signing identity or entitlements problem. It is **not** caused by **BrightVision Test Lab** (`apps/test-lab` is a separate Tauri app and is not bundled into `BrightVision.app`).
+
+**Retry:**
+
+```bash
+yarn build:mac 0.2.0 --publish --push-tap
+```
+
+**Split sign and notarize** (useful when Apple’s API is slow; Tauri’s inline submit uses a short HTTP timeout):
+
+```bash
+yarn build:mac 0.2.0 -- --skip-notarize
+_DMG="src-tauri/target/universal-apple-darwin/release/bundle/dmg/BrightVision_0.2.0_universal.dmg"
+xcrun notarytool submit "$_DMG" \
+  --apple-id "$APPLE_ID" \
+  --password "$APPLE_PASSWORD" \
+  --team-id "$APPLE_TEAM_ID" \
+  --wait
+xcrun stapler staple "$_DMG"
+# then publish DMG / update cask manually, or re-run with --publish if you add a notarize-only path
+```
+
+Check VPN/firewall, [Apple System Status](https://developer.apple.com/system-status/) (Notary Service), and that `APPLE_PASSWORD` is an app-specific password (not your Apple ID login).
+
 ## Notes for BrightVision
 
 - The DMG is the **Tauri shell** only. The app still expects **Python + `bright-vision-core`** on the user machine (or a future bundled runtime).
