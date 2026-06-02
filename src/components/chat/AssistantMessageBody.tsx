@@ -11,6 +11,7 @@ import {
   type AssistantContentSegment,
 } from '../../utils/proposedEdits'
 import { ChatFenceBlock } from './ChatFenceBlock'
+import { CollapsibleJsonBlock } from './CollapsibleJsonBlock'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ProposedEditBlock } from './ProposedEditBlock'
 
@@ -44,6 +45,9 @@ function renderSegment(
     const text = seg.content.trim()
     if (!text) return null
     return <ChatMarkdown key={key} content={seg.content} />
+  }
+  if (seg.type === 'json_block') {
+    return <CollapsibleJsonBlock key={key} value={seg.value} text={seg.raw} />
   }
   if (seg.type === 'display_fence') {
     return (

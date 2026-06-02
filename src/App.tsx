@@ -2774,15 +2774,27 @@ function AppShell({
         return
       }
       if (clientCmd.id === 'turns') {
+        thinkingTiming.refreshStats()
         appendTurnsTableToChat(
-          thinkingTiming.statsStore,
-          (content) => {
+          loadThinkingStats(),
+          (msg) => {
             const id = nextChatMessageId()
             setChatMessages((prev) =>
-              capList([...prev, { id, role: 'system' as const, content }], MAX_CHAT_MESSAGES)
+              capList(
+                [
+                  ...prev,
+                  {
+                    id,
+                    role: 'assistant' as const,
+                    content: msg.content,
+                    turnsTable: msg.turnsTable,
+                  },
+                ],
+                MAX_CHAT_MESSAGES
+              )
             )
           },
-          { brightDate: thinkingTimingPrefs.brightDateMode }
+          { filterModel: null }
         )
         return
       }
@@ -3141,6 +3153,8 @@ function AppShell({
               onSend={handleSend}
               onCancelSend={handleCancelSend}
               thinkingTimingPrefs={thinkingTimingPrefs}
+              thinkingStatsStore={thinkingTiming.statsStore}
+              currentModel={savedConfig.model}
               turnActivityHint={stallWatch.hint}
               turnStalled={stallWatch.stalled}
               onConfirmAnswer={handleConfirmAnswer}
