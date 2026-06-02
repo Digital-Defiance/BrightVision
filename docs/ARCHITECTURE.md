@@ -84,6 +84,6 @@ Configure `local-llm.env` or `~/.config/local-llm/env` (`DATA_MODEL`, `OLLAMA_HO
 ## Related docs
 
 - `docs/IPC.md` — HTTP routes, SSE shapes, todos API
-- `docs/DEVELOPMENT.md` — setup, `yarn tauri dev`, testing
+- `docs/DEVELOPMENT.md` — setup, `yarn vision`, testing
 - `docs/CECLI_MIGRATION_ROADMAP.md` — engine port history (cecli + `bright_vision_core`)
 - `AGENTS.md` — agent charter and repo map

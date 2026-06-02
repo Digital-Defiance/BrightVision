@@ -310,8 +310,10 @@ After `yarn test:full`, when you change engine or desktop integration:
 
 ```bash
 source activate.sh
-yarn tauri dev
+yarn vision          # recommended; BV_RESET_PIP=1 after engine/submodule pulls
 ```
+
+Or `yarn tauri dev` (same window; `yarn vision` also clears stale orchestrator on `:8751`).
 
 Check: Terminal Start/Stop, Chat send, Tasks tab, Git tab (real `git`), attach images.
 

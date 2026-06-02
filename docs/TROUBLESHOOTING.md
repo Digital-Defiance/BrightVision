@@ -230,6 +230,19 @@ source activate.sh
 
 (`activate.sh` installs `uvicorn[standard]`; only run `pip install "uvicorn[standard]"` manually if you skipped activate.)
 
+## `pip install -e .`: `Invalid version: 'v0.2.1-bright1'`
+
+Raw `pip install -e .` without **`SETUPTOOLS_SCM_PRETEND_VERSION`** fails when the repo git tag uses BrightVision’s `*-brightN` suffix (setuptools-scm expects PEP 440).
+
+**Fix:** use `activate.sh` helpers — do not run bare `pip install -e .` from repo root.
+
+```bash
+source activate.sh
+BV_RESET_PIP=1 yarn vision
+```
+
+Or manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]` (match `package.json` version with `-brightN` → `.postN`).
+
 ## Tauri build: `failed to read plugin permissions` under `/Volumes/Code/BrightVision/…`
 
 The `src-tauri/target/` directory has **stale absolute paths** from an old checkout name (old checkout paths, `bright-vision`). Cargo/Tauri then looks for generated files at a path that no longer exists.

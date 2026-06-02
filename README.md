@@ -116,7 +116,7 @@ cd BrightVision
 git submodule update --init cecli
 yarn install
 source activate.sh
-yarn tauri dev
+yarn vision          # or: yarn tauri dev
 ```
 
 1. Install [Ollama](https://ollama.com/) and copy `local-llm.env.example` → `local-llm.env` (`DATA_MODEL`; optional `FAST_MODEL` / `HEAVY_MODEL` / `MODEL_ROUTER` — [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md))  
