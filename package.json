@@ -12,6 +12,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:dev": "BRIGHT_VISION_ROOT=\"$(pwd)\" BV_ROOT=\"$(pwd)\" tauri dev",
     "build:mac": "/usr/bin/env bash scripts/build-macos.sh",
     "audit:core": "echo 'skip audit:core (bright_vision_core in parent repo)'",
     "test": "vitest run",

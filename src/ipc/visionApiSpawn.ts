@@ -1,13 +1,19 @@
 import type { VisionConfig } from './config'
+import { invoke } from '@tauri-apps/api/core'
 import { invokeWithTimeout } from './tauriInvoke'
 import { isTauriRuntime } from './isTauri'
+
+interface EngineInstallInfo {
+  install_root: string
+  default_python_path: string
+}
 
 export const VISION_API_DEFAULT_PORT = 8741
 
 export function visionApiBaseUrl(config: VisionConfig): string {
   const trimmed = config.coreApiUrl?.trim()
   if (trimmed) return trimmed.replace(/\/$/, '')
-  return `http://127.0.0.1:${VISION_API_DEFAULT_PORT}`
+  return `http://localhost:${VISION_API_DEFAULT_PORT}`
 }
 
 /** Spawn `bright-vision-core-serve` via Tauri (idempotent if already running). */
@@ -18,11 +24,16 @@ export async function spawnDesktopVisionApi(cfg: VisionConfig): Promise<string> 
   if (cfg.sessionEncrypt) {
     await invokeWithTimeout<string>('ensure_session_encryption_key', {})
   }
+  const coreEnginePath =
+    cfg.coreEnginePath.trim() === '.' || !cfg.coreEnginePath.trim()
+      ? (await invoke<EngineInstallInfo>('engine_install_info')).install_root
+      : cfg.coreEnginePath
+
   return invokeWithTimeout<string>(
     'start_core_api',
     {
       workingDir: cfg.workingDir,
-      coreEnginePath: cfg.coreEnginePath,
+      coreEnginePath,
       pythonPath: cfg.pythonPath,
       extraParams: cfg.extraParams,
       ollamaApiBase: cfg.ollamaApiBase,

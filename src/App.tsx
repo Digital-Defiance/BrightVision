@@ -243,6 +243,40 @@ const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
 type TabId = 'chat' | 'spec' | 'terminal' | 'git' | 'editor' | 'settings' | 'tasks'
 
+interface EngineInstallInfo {
+  install_root: string
+  default_python_path: string
+}
+
+/** Drop stale Settings paths when the repo moved (e.g. /Users/.../Code vs /Volumes/Code). */
+function alignConfigWithInstallRoot(cfg: VisionConfig, info: EngineInstallInfo): VisionConfig {
+  const root = info.install_root.replace(/\\/g, '/').replace(/\/$/, '')
+  const py = cfg.pythonPath.replace(/\\/g, '/')
+  const wd = cfg.workingDir.replace(/\\/g, '/')
+  let next = cfg
+  if (py && root && !py.startsWith(`${root}/`)) {
+    next = { ...next, pythonPath: info.default_python_path }
+  }
+  // Repo duplicated under /Users/.../Code and /Volumes/Code — prefer paths matching open project.
+  if (
+    wd.includes('/Volumes/Code/BrightVision') &&
+    py.includes('/Users/jessica/Code/BrightVision')
+  ) {
+    next = {
+      ...next,
+      pythonPath: `${wd.replace(/\/$/, '')}/.venv/bin/python3`,
+      coreEnginePath: '.',
+    }
+  }
+  if (next.coreEnginePath.trim() && next.coreEnginePath !== '.' && next.coreEnginePath !== 'bright-vision-core') {
+    const engine = next.coreEnginePath.replace(/\\/g, '/')
+    if (root && engine.startsWith('/') && !engine.startsWith(`${root}/`)) {
+      next = { ...next, coreEnginePath: '.' }
+    }
+  }
+  return next
+}
+
 function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): VisionConfig {
   const merged: VisionConfig = { ...DEFAULT_CONFIG, ...raw }
   if (raw.coreRepoPath && typeof raw.coreRepoPath === 'string') {
@@ -529,18 +563,19 @@ function AppShell({
     }
     if (isTauriRuntime()) {
       Promise.all([
-        merged.pythonPath.trim()
-          ? Promise.resolve(merged.pythonPath)
-          : invoke<string>('default_python_path'),
+        invoke<EngineInstallInfo>('engine_install_info'),
         invoke<LocalLlmSnapshot>('read_local_llm_config', {
           localLlmRoot: merged.localLlmRoot.trim() || null,
         }),
       ])
-        .then(([pythonPath, localLlm]) => {
-          let next = {
-            ...merged,
-            pythonPath: merged.pythonPath.trim() || pythonPath,
-          }
+        .then(([installInfo, localLlm]) => {
+          let next = alignConfigWithInstallRoot(
+            {
+              ...merged,
+              pythonPath: merged.pythonPath.trim() || installInfo.default_python_path,
+            },
+            installInfo
+          )
           next = applyLocalLlmToConfig(next, localLlm, true)
           setModelRouterPrefs((prefs) =>
             applyLocalLlmHopperFromEnv(prefs, localLlm, next.model, true)

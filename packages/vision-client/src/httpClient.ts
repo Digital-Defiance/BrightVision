@@ -11,6 +11,7 @@ import {
   readStreamChunkWithIdleTimeout,
   sseEventResetsIdleTimer,
 } from './sseIdle'
+import { visionFetchError } from './networkError'
 
 export interface ModelRouterPoolEntryApi {
   model: string
@@ -40,7 +41,7 @@ export interface SendMessageOptions {
   escalateFromLast?: boolean
 }
 
-export const DEFAULT_VISION_API_BASE = 'http://127.0.0.1:8741'
+export const DEFAULT_VISION_API_BASE = 'http://localhost:8741'
 const DEFAULT_BASE = DEFAULT_VISION_API_BASE
 
 export interface CecliWorkspaceProjectSummary {
@@ -96,9 +97,13 @@ export class CoreHttpClient {
     auth_required: boolean
     versions?: { bright_vision_core?: string; cecli?: string }
   }> {
-    const res = await fetch(`${this.baseUrl}/health`, { signal })
-    if (!res.ok) throw new Error(`health: ${res.status}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, { signal })
+      if (!res.ok) throw new Error(`health: ${res.status}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, 'GET /health')
+    }
   }
 
   async undo(sessionId: string): Promise<{
@@ -190,20 +195,27 @@ export class CoreHttpClient {
     workspace_name?: string | null
     workspaces?: Record<string, unknown> | null
   }): Promise<CoreSessionInfo> {
-    const res = await fetch(`${this.baseUrl}/sessions`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({
-        stream: true,
-        auto_yes: false,
-        auto_commits: true,
-        dirty_commits: true,
-        dry_run: false,
-        ...body,
-      }),
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          stream: true,
+          auto_yes: false,
+          auto_commits: true,
+          dirty_commits: true,
+          dry_run: false,
+          ...body,
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    } catch (err) {
+      if (err instanceof Error && !err.message.startsWith('Cannot reach Vision API')) {
+        throw visionFetchError(err, this.baseUrl, 'POST /sessions')
+      }
+      throw err
+    }
   }
 
   /**
