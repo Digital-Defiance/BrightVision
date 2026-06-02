@@ -76,7 +76,7 @@ export const DEFAULT_CONFIG: VisionConfig = {
   autoStageOnDone: true,
   coreEnginePath: CORE_ENGINE_DIR,
   pythonPath: '',
-  coreApiUrl: 'http://127.0.0.1:8741',
+  coreApiUrl: 'http://localhost:8741',
   coreApiToken: '',
   contextFiles: [],
   sessionEncrypt: false,

@@ -58,6 +58,33 @@ The chat can show a full **Answer** while the header still says **Thinking** or 
 3. Prefer **Add all** on the suggested-files tray (uses the files API and does not wait for the stuck turn). **Queue /add** while a turn is busy now uses the same fast path.
 4. If nothing changes for ~90s after the answer appeared, the app aborts the stalled SSE stream and shows an error; use **Clear queue** if you no longer want queued messages.
 
+## “Could not start: Load failed” / `POST /sessions: Load failed` (desktop)
+
+WebKit reports **`Load failed`** when the UI cannot complete a request to `http://127.0.0.1:8741` (connection refused, engine crashed mid-request, or something else still bound to `:8741` that is not your spawned engine). This is **not** an Ollama error — Local LLM can show **ready** while the Vision API still fails.
+
+**Typical causes**
+
+| Symptom | Likely cause |
+|--------|----------------|
+| Engine log shows `python=.../Users/.../Code/BrightVision` but you work in `/Volumes/Code/...` | Stale install path from an older checkout; app may talk to the wrong tree or a **orphan** on `:8741` |
+| `GET /health` OK, **Start** fails on `POST /sessions` | Another process still bound to `:8741` (our spawn exited; something else answered health) |
+| Snackbar mentions **wrong Python** / `bright_vision_core` import | Settings → **Python** points at an old venv |
+| `curl` works from a terminal but the app does not | App spawned a different interpreter than your shell (`source activate.sh`) |
+
+**Steps**
+
+1. **Terminal → Stop**, then fully **quit** BrightVision and reopen.
+2. Free the port if needed: `lsof -ti :8741 | xargs kill -9`
+3. From the repo you actually use (e.g. `/Volumes/Code/BrightVision`): `source activate.sh` (note the printed venv path).
+4. **Settings → Python** — clear the field or set `<repo>/.venv/bin/python3`. **Save Settings**, then **Start** (newer builds realign stale `/Users/.../Code` paths automatically).
+5. Watch the Terminal technical log; newer builds append **Engine log** lines from the spawn (e.g. `ModuleNotFoundError: bright_vision_core`).
+6. Confirm the port: `curl -s http://127.0.0.1:8741/health` → `"status":"ok"`, then a quick session:  
+   `curl -s -X POST http://127.0.0.1:8741/sessions -H 'Content-Type: application/json' -d '{"workspace":"/path/to/your/git/repo","model":"ollama_chat/<tag>"}'`
+7. If you set **Settings → Vision API token**, it must match what the spawned engine receives (or leave both empty).
+8. **Open project** must be a real directory; invalid paths fail earlier with a Rust error, not `Load failed`.
+
+Optional: `export BRIGHT_VISION_ROOT=/path/to/BrightVision` before launching the app if you use a non-standard install layout.
+
 ## Stuck on “Connecting” (desktop)
 
 The activity bar can show **Connecting** to `http://127.0.0.1:8741` while the header says **Stopped** if a **Start** is still in progress or a previous start left the UI in a bad state.

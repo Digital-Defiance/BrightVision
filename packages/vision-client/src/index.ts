@@ -1,6 +1,7 @@
 export * from './events'
 export * from './brightdateTiming'
 export * from './sseIdle'
+export { visionFetchError } from './networkError'
 export {
   CoreHttpClient,
   DEFAULT_VISION_API_BASE,

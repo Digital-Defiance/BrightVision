@@ -13,6 +13,21 @@ import { spawnDesktopVisionApi } from './visionApiSpawn'
 import type { ProcessUpdate } from '../progress/types'
 import { isUserCancellationError } from '../utils/abort'
 
+async function visionStartError(err: unknown): Promise<Error> {
+  const base = err instanceof Error ? err : new Error(String(err))
+  if (!isTauriRuntime()) return base
+  try {
+    const lines = await invoke<string[]>('drain_core_api_logs')
+    if (lines.length) {
+      const tail = lines.slice(-10).join('\n')
+      return new Error(`${base.message}\n\nEngine log:\n${tail}`)
+    }
+  } catch {
+    /* best-effort */
+  }
+  return base
+}
+
 export type CoreEventHandler = (event: CoreEventBase) => void
 export type ProcessPhaseHandler = (update: ProcessUpdate) => void
 
@@ -109,7 +124,7 @@ export function createVisionApiSession(
           detail: cfg.workingDir,
           progress: 0.75,
         })
-        const session = await client.createSession({
+        const sessionBody = {
           workspace: cfg.workingDir,
           model: cfg.model,
           model_router: options?.modelRouter,
@@ -122,13 +137,25 @@ export function createVisionApiSession(
           auto_save_session_name: cfg.autoSaveSessionName,
           chat_history_file: cfg.chatHistoryFile,
           session_mode: cfg.sessionMode,
-        })
+        }
+        const session = isTauriRuntime()
+          ? await invoke<CoreSessionInfo>('create_vision_session', {
+              baseUrl: url,
+              bearerToken: cfg.coreApiToken?.trim() || null,
+              body: {
+                stream: true,
+                dirty_commits: true,
+                dry_run: false,
+                ...sessionBody,
+              },
+            })
+          : await client.createSession(sessionBody)
         sessionId = session.session_id
         sessionInfo = session
         return session
       } catch (err) {
         await teardownPartialStart()
-        throw err
+        throw await visionStartError(err)
       } finally {
         startAbort = null
       }
