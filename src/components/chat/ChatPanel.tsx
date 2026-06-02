@@ -21,7 +21,8 @@ import type { CoreConfirmEvent } from '../../ipc/events'
 import { useFileCommandKeyboard } from '../../hooks/useFileCommandKeyboard'
 import { ConfirmBanner } from '../ConfirmBanner'
 import { AssistantMessageBody } from './AssistantMessageBody'
-import { CollapsibleJsonBlock, tryParseJsonText } from './CollapsibleJsonBlock'
+import { CollapsibleJsonBlock } from './CollapsibleJsonBlock'
+import { looksLikeAgentJson } from '../../utils/jsonParse'
 import { ChatFolderAttach } from './ChatFolderAttach'
 import { ChatImageAttach } from './ChatImageAttach'
 import { CommandAssist } from './CommandAssist'
@@ -39,7 +40,10 @@ import { ChatAgentBar } from './ChatAgentBar'
 import { ChatEasyStart } from './ChatEasyStart'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
+import { ChatMarkdown } from './ChatMarkdown'
+import { TurnsTableMessage } from './TurnsTableMessage'
 import type { AssistantContentSegment } from '../../utils/proposedEdits'
+import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 
 export interface ChatMessage {
   id: number
@@ -53,6 +57,11 @@ export interface ChatMessage {
   ollamaStatus?: {
     command: VisionClientCommandId
     snapshot: OllamaModelsSnapshot
+  }
+  /** Client `/turns` — rendered as React table (reads live stats from props). */
+  turnsTable?: {
+    filterModel: string | null
+    capturedAt: string
   }
 }
 
@@ -105,6 +114,9 @@ interface ChatPanelProps {
   onSuggestedDismiss?: (path: string) => void
   onSuggestedClearAll?: () => void
   thinkingTimingPrefs?: ThinkingTimingPrefs
+  /** Live timing store for `/turns` table messages. */
+  thinkingStatsStore?: ThinkingStatsStore
+  currentModel?: string
   turnActivityHint?: string
   turnStalled?: boolean
   lastUserMessageForRetry?: string | null
@@ -184,6 +196,8 @@ export function ChatPanel({
   onSuggestedDismiss,
   onSuggestedClearAll,
   thinkingTimingPrefs,
+  thinkingStatsStore,
+  currentModel = '',
   turnActivityHint = '',
   turnStalled = false,
   lastUserMessageForRetry = null,
@@ -341,6 +355,13 @@ export function ChatPanel({
                       command={entry.item.ollamaStatus.command}
                       snapshot={entry.item.ollamaStatus.snapshot}
                     />
+                  ) : entry.item.role === 'assistant' && entry.item.turnsTable && thinkingStatsStore ? (
+                    <TurnsTableMessage
+                      store={thinkingStatsStore}
+                      filterModel={entry.item.turnsTable.filterModel}
+                      timingPrefs={thinkingTimingPrefs ?? { showLiveTimer: true, showSectionDurations: true, showMessageTurnTotal: true, brightDateMode: false, timingStatsCsvPath: '', timingStatsAutoAppendCsv: false, resourceDisplay: 'avgPeak' }}
+                      capturedAt={entry.item.turnsTable.capturedAt}
+                    />
                   ) : entry.item.role === 'assistant' ? (
                     <AssistantMessageBody
                       content={entry.item.content}
@@ -361,6 +382,10 @@ export function ChatPanel({
                         })
                       }
                     />
+                  ) : entry.item.role === 'user' ? (
+                    <Box sx={{ pr: 3, '& .vision-chat-markdown': { color: 'primary.contrastText' } }}>
+                      <ChatMarkdown content={entry.item.content} />
+                    </Box>
                   ) : (
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pr: 3 }}>
                       {entry.item.content}
@@ -423,7 +448,7 @@ export function ChatPanel({
                     </Typography>
                     {(entry.item.input || entry.item.output) && (
                       <>
-                        {tryParseJsonText(entry.item.input || entry.item.output || '') ? (
+                        {looksLikeAgentJson(entry.item.input || entry.item.output || '') ? (
                           <CollapsibleJsonBlock text={entry.item.input || entry.item.output || ''} />
                         ) : (
                           <Typography

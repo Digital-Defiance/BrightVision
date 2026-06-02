@@ -3,10 +3,13 @@
  * Cecli SEARCH/REPLACE proposals (often shown but not yet applied).
  */
 
+import { parseAgentJsonText } from './jsonParse'
+
 export type ProposedEditKind = 'search_replace' | 'fenced_file' | 'code'
 
 export type AssistantContentSegment =
   | { type: 'prose'; content: string }
+  | { type: 'json_block'; value: unknown; raw: string }
   | {
       type: 'display_fence'
       language: string
@@ -55,10 +58,17 @@ function editTitle(pathHint: string | undefined, language: string, body: string)
   return language ? `Edit (${language})` : 'Proposed edit'
 }
 
-/**
- * Parse assistant text into prose and collapsible proposed-edit fences.
- * Incomplete trailing fences (still streaming) are surfaced as proposed edits when plausible.
- */
+
+function proseOrJson(content: string): AssistantContentSegment[] {
+  const trimmed = content.trim()
+  if (!trimmed) return []
+  const parsed = parseAgentJsonText(trimmed)
+  if (parsed !== null) {
+    return [{ type: 'json_block', value: parsed, raw: trimmed }]
+  }
+  return [{ type: 'prose', content }]
+}
+
 export function parseAssistantContent(content: string): AssistantContentSegment[] {
   const segments: AssistantContentSegment[] = []
   let i = 0
@@ -67,7 +77,7 @@ export function parseAssistantContent(content: string): AssistantContentSegment[
     const fence = content.indexOf('```', i)
     if (fence === -1) {
       const tail = content.slice(i)
-      if (tail.trim()) segments.push({ type: 'prose', content: tail })
+      if (tail.trim()) segments.push(...proseOrJson(tail))
       break
     }
 
@@ -80,7 +90,7 @@ export function parseAssistantContent(content: string): AssistantContentSegment[
       prose = proseLines.slice(0, -1).join('\n')
     }
     if (prose.trim()) {
-      segments.push({ type: 'prose', content: prose })
+      segments.push(...proseOrJson(prose))
     }
 
     const open = content.slice(fence).match(/^```([^\n]*)\n/)
@@ -105,8 +115,15 @@ export function parseAssistantContent(content: string): AssistantContentSegment[
 
     const kind = classifyEdit(body, pathHint)
     const isProposed = kind === 'search_replace' || kind === 'fenced_file'
+    const jsonParsed = !isProposed ? parseAgentJsonText(body) : null
 
-    if (isProposed) {
+    if (jsonParsed !== null) {
+      segments.push({
+        type: 'json_block',
+        value: jsonParsed,
+        raw: body.trim(),
+      })
+    } else if (isProposed) {
       segments.push({
         type: 'proposed_edit',
         title: editTitle(pathHint, language, body),

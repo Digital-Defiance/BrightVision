@@ -1,35 +1,37 @@
-import { useMemo, useState } from 'react'
 import { Box, Collapse, IconButton, Typography } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { useMemo, useState } from 'react'
+import { parseAgentJsonText } from '../../utils/jsonParse'
+import { JsonTreeView } from './JsonTreeView'
 
 export function tryParseJsonText(text: string): unknown | null {
-  const t = text.trim()
-  if (!t.startsWith('{') && !t.startsWith('[')) return null
-  try {
-    return JSON.parse(t) as unknown
-  } catch {
-    return null
-  }
+  return parseAgentJsonText(text)
 }
 
-export function CollapsibleJsonBlock({ text }: { text: string }) {
+function jsonSummary(parsed: unknown): string {
+  if (Array.isArray(parsed)) return `JSON array (${parsed.length} items)`
+  if (parsed !== null && typeof parsed === 'object') {
+    return `JSON object (${Object.keys(parsed as object).length} keys)`
+  }
+  return 'JSON value'
+}
+
+export function CollapsibleJsonBlock({
+  text,
+  value: valueProp,
+}: {
+  text?: string
+  value?: unknown
+}) {
   const [open, setOpen] = useState(true)
-  const parsed = useMemo(() => tryParseJsonText(text), [text])
+  const parsed = useMemo(
+    () => (valueProp !== undefined ? valueProp : text ? parseAgentJsonText(text) : null),
+    [text, valueProp]
+  )
   if (parsed == null) return null
 
-  const pretty = JSON.stringify(parsed, null, 2)
-  const keys =
-    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? Object.keys(parsed as object).length
-      : Array.isArray(parsed)
-        ? (parsed as unknown[]).length
-        : 0
-  const summary = Array.isArray(parsed)
-    ? `JSON array (${keys} items)`
-    : `JSON object (${keys} keys)`
-
   return (
-    <Box sx={{ mt: 0.5, pr: 3 }}>
+    <Box sx={{ mt: 0.5, pr: 3 }} data-testid="collapsible-json-block">
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
         <IconButton
           size="small"
@@ -43,26 +45,11 @@ export function CollapsibleJsonBlock({ text }: { text: string }) {
           <ExpandMoreIcon fontSize="small" />
         </IconButton>
         <Typography variant="caption" color="text.secondary">
-          {summary}
+          {jsonSummary(parsed)}
         </Typography>
       </Box>
       <Collapse in={open}>
-        <Typography
-          component="pre"
-          variant="body2"
-          sx={{
-            m: 0,
-            mt: 0.5,
-            p: 1,
-            borderRadius: 1,
-            bgcolor: 'action.selected',
-            whiteSpace: 'pre-wrap',
-            overflowX: 'auto',
-            fontSize: '0.75rem',
-          }}
-        >
-          {pretty}
-        </Typography>
+        <JsonTreeView value={parsed} />
       </Collapse>
     </Box>
   )

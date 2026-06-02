@@ -10,6 +10,8 @@ import {
   normalizeFenceLanguage,
 } from '../../utils/fenceLanguage'
 import { MermaidFence } from './MermaidFence'
+import { CollapsibleJsonBlock } from './CollapsibleJsonBlock'
+import { parseAgentJsonText } from '../../utils/jsonParse'
 
 interface ChatFenceBlockProps {
   language: string
@@ -22,6 +24,10 @@ export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps
   const label = fenceLanguageLabel(language)
   const langId = normalizeFenceLanguage(language)
   const mermaid = isMermaidFence(language)
+  const jsonValue = useMemo(
+    () => (!mermaid ? parseAgentJsonText(body) : null),
+    [body, mermaid]
+  )
 
   const extensions = useMemo(
     () => (mermaid ? [] : fenceLanguageExtensions(language)),
@@ -75,8 +81,10 @@ export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ p: mermaid ? 1.5 : 0, minHeight: mermaid ? 48 : 0 }}>
-        {mermaid ? (
+      <Box sx={{ p: jsonValue ? 1 : mermaid ? 1.5 : 0, minHeight: mermaid ? 48 : 0 }}>
+        {jsonValue ? (
+          <CollapsibleJsonBlock value={jsonValue} text={body.trim()} />
+        ) : mermaid ? (
           <MermaidFence source={body} complete={complete} />
         ) : extensions.length > 0 ? (
           <Box

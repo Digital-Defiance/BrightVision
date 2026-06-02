@@ -1,9 +1,19 @@
-import type { TodoItem } from './types'
+import type { ChecklistItem, TodoItem } from './types'
 import { migrateTodoLayers } from './layers'
 import type { ImplementationStep } from './tasksMd'
 
 function layerOrPlaceholder(text: string, placeholder: string): string {
   return text.trim() || placeholder
+}
+
+/** GFM checklist in a markdown fence so chat renders task list UI. */
+export function appendChecklistBlock(lines: string[], checklist: ChecklistItem[]): void {
+  if (!checklist?.length) return
+  lines.push('', '## Checklist', '```markdown')
+  for (const entry of checklist) {
+    lines.push(`- [${entry.done ? 'x' : ' '}] ${entry.text}`)
+  }
+  lines.push('```')
 }
 
 /** Prepended once per active-task activation (UI fallback when API inject is off). */
@@ -48,12 +58,7 @@ export function formatTodoContext(todo: TodoItem, allTodos?: TodoItem[]): string
     lines.push('', '## Legacy specification', item.spec.trim())
   }
 
-  if (item.checklist?.length) {
-    lines.push('', '## Checklist')
-    for (const entry of item.checklist) {
-      lines.push(`- [${entry.done ? 'x' : ' '}] ${entry.text}`)
-    }
-  }
+  appendChecklistBlock(lines, item.checklist)
   lines.push('', '---', '')
   return lines.join('\n')
 }
@@ -99,10 +104,7 @@ export function formatTodoContextLight(todo: TodoItem, allTodos?: TodoItem[]): s
   }
 
   if (item.checklist?.length) {
-    lines.push('## Checklist')
-    for (const entry of item.checklist) {
-      lines.push(`- [${entry.done ? 'x' : ' '}] ${entry.text}`)
-    }
+    appendChecklistBlock(lines, item.checklist)
   } else if (item.tasks_md.trim()) {
     lines.push('## Tasks', item.tasks_md.trim())
   }

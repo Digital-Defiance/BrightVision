@@ -173,6 +173,17 @@ class TodoStore:
         return cls(version=int(raw.get("version") or 1), active_id=active, todos=items)
 
 
+def _append_checklist_block(lines: list[str], checklist: list[ChecklistItem]) -> None:
+    """GFM checklist in a markdown fence so the chat UI renders task list formatting."""
+    if not checklist:
+        return
+    lines.extend(["", "## Checklist", "```markdown"])
+    for entry in checklist:
+        mark = "x" if entry.done else " "
+        lines.append(f"- [{mark}] {entry.text}")
+    lines.append("```")
+
+
 def checklist_all_done(item: TodoItem) -> bool:
     if not item.checklist:
         return False
@@ -216,10 +227,7 @@ def format_todo_context(item: TodoItem, *, store: TodoStore | None = None) -> st
     if item.spec.strip() and item.spec.strip() != item.requirements.strip():
         lines += ["", "## Legacy specification", item.spec.strip()]
     if item.checklist:
-        lines += ["", "## Checklist"]
-        for entry in item.checklist:
-            mark = "x" if entry.done else " "
-            lines.append(f"- [{mark}] {entry.text}")
+        _append_checklist_block(lines, item.checklist)
     lines += ["", "---", ""]
     return "\n".join(lines)
 
@@ -246,10 +254,7 @@ def format_todo_context_light(item: TodoItem, *, store: TodoStore | None = None)
         if pending:
             lines += ["**Blocked by:** " + ", ".join(pending), ""]
     if item.checklist:
-        lines += ["## Checklist"]
-        for entry in item.checklist:
-            mark = "x" if entry.done else " "
-            lines.append(f"- [{mark}] {entry.text}")
+        _append_checklist_block(lines, item.checklist)
     elif item.tasks_md.strip() and item.tasks_md.strip() not in _SPEC_LAYER_PLACEHOLDERS:
         lines += ["## Tasks", item.tasks_md.strip()]
     lines += ["", "---", ""]
