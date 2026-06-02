@@ -80,16 +80,20 @@ function StatCard({ label, value, sub }: StatCardProps) {
 function DistRow({
   label,
   dist,
+  brightDate,
 }: {
   label: string
   dist: { count: number; min: number; max: number; mean: number; median: number; p90: number }
+  brightDate?: boolean
 }) {
   if (dist.count === 0) return null
+  const fmtOpts = { brightDate }
   return (
     <Typography variant="body2" color="text.secondary">
-      <strong>{label}</strong> — avg {formatDurationMs(dist.mean)}, median{' '}
-      {formatDurationMs(dist.median)}, p90 {formatDurationMs(dist.p90)}, min{' '}
-      {formatDurationMs(dist.min)}, max {formatDurationMs(dist.max)} ({dist.count} samples)
+      <strong>{label}</strong> — avg {formatDurationMs(dist.mean, fmtOpts)}, median{' '}
+      {formatDurationMs(dist.median, fmtOpts)}, p90 {formatDurationMs(dist.p90, fmtOpts)}, min{' '}
+      {formatDurationMs(dist.min, fmtOpts)}, max {formatDurationMs(dist.max, fmtOpts)} ({dist.count}{' '}
+      samples)
     </Typography>
   )
 }
@@ -117,6 +121,7 @@ export function ThinkingStatsPanel({
   onCsvError,
   onCsvSuccess,
 }: ThinkingStatsPanelProps) {
+  const fmtOpts = { brightDate: timingPrefs.brightDateMode }
   const models = useMemo(() => listModelsInHistory(store), [store])
   const [filter, setFilter] = useState<'all' | 'current'>('current')
   const [csvBusy, setCsvBusy] = useState(false)
@@ -292,8 +297,8 @@ export function ThinkingStatsPanel({
         <StatCard label="Turns" value={String(view.totalTurns)} />
         <StatCard
           label="Avg response"
-          value={formatDurationMs(view.response.mean)}
-          sub={`median ${formatDurationMs(view.response.median)}`}
+          value={formatDurationMs(view.response.mean, fmtOpts)}
+          sub={`median ${formatDurationMs(view.response.median, fmtOpts)}`}
         />
         <StatCard
           label="Avg output TPS"
@@ -302,13 +307,13 @@ export function ThinkingStatsPanel({
         />
         <StatCard
           label="Avg think"
-          value={formatDurationMs(view.think.mean)}
-          sub={`median ${formatDurationMs(view.think.median)}`}
+          value={formatDurationMs(view.think.mean, fmtOpts)}
+          sub={`median ${formatDurationMs(view.think.median, fmtOpts)}`}
         />
         <StatCard
           label="P90 response"
-          value={formatDurationMs(view.response.p90)}
-          sub={`max ${formatDurationMs(view.response.max)}`}
+          value={formatDurationMs(view.response.p90, fmtOpts)}
+          sub={`max ${formatDurationMs(view.response.max, fmtOpts)}`}
         />
         <StatCard
           label="Think share"
@@ -321,8 +326,8 @@ export function ThinkingStatsPanel({
       </Stack>
 
       <Stack spacing={0.75} sx={{ mb: 2 }}>
-        <DistRow label="Response time" dist={view.response} />
-        <DistRow label="Think time" dist={view.think} />
+        <DistRow label="Response time" dist={view.response} brightDate={timingPrefs.brightDateMode} />
+        <DistRow label="Think time" dist={view.think} brightDate={timingPrefs.brightDateMode} />
       </Stack>
 
       {filter === 'all' && view.byModel.length > 1 && (
@@ -348,9 +353,9 @@ export function ThinkingStatsPanel({
                       {m.model}
                     </TableCell>
                     <TableCell align="right">{m.turns}</TableCell>
-                    <TableCell align="right">{formatDurationMs(m.response.mean)}</TableCell>
+                    <TableCell align="right">{formatDurationMs(m.response.mean, fmtOpts)}</TableCell>
                     <TableCell align="right">{formatOutputTps(avgTps)}</TableCell>
-                    <TableCell align="right">{formatDurationMs(m.think.mean)}</TableCell>
+                    <TableCell align="right">{formatDurationMs(m.think.mean, fmtOpts)}</TableCell>
                     <TableCell align="right">{formatThinkSharePct(m.avgThinkShare)}</TableCell>
                   </TableRow>
                 )
@@ -412,11 +417,11 @@ export function ThinkingStatsPanel({
                 >
                   {formatModelLabel(row.model)}
                 </TableCell>
-                <TableCell align="right">{formatDurationMs(row.responseMs)}</TableCell>
+                <TableCell align="right">{formatDurationMs(row.responseMs, fmtOpts)}</TableCell>
                 <TableCell align="right">
                   {formatOutputTps(computeOutputTps(row.tokensReceived, row.responseMs))}
                 </TableCell>
-                <TableCell align="right">{formatDurationMs(row.thinkMs)}</TableCell>
+                <TableCell align="right">{formatDurationMs(row.thinkMs, fmtOpts)}</TableCell>
                 <TableCell align="right">{formatThinkSharePct(thinkShare(row))}</TableCell>
                 {isTauriRuntime() && (
                   <>

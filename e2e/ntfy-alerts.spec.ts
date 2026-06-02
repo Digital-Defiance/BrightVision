@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
 import { defaultTurnEvents, sampleTodoStore } from './helpers/fixtures'
+import { primeOpenProject } from './helpers/openProject'
 import {
   expectTasksListReady,
   openChat,
@@ -8,6 +9,7 @@ import {
   openTasks,
   startMockSession,
 } from './helpers/session'
+import { E2E_CONFIG } from './helpers/testConfig'
 
 const NTFY_ALERTS_STORAGE_KEY = 'bright-vision-ntfy-alerts'
 
@@ -51,15 +53,16 @@ test.describe('Mobile alerts / ntfy (roadmap #42)', () => {
   test('turn done sends push when alerts enabled (mock SSE)', async ({ page }) => {
     const pushes: unknown[] = []
 
+    await primeOpenProject(page, E2E_CONFIG.workingDir)
     await page.addInitScript(
       ([key, prefs]) => {
-        localStorage.setItem('vision-welcome-dismissed', '1')
         localStorage.setItem(key, JSON.stringify(prefs))
       },
       [NTFY_ALERTS_STORAGE_KEY, E2E_NTFY_PREFS] as const
     )
 
     await startMockSession(page, {
+      skipConfigPrime: true,
       messageTurns: [defaultTurnEvents()],
       tauri: {
         handlers: {
@@ -89,15 +92,16 @@ test.describe('Mobile alerts / ntfy (roadmap #42)', () => {
   test('spec job done sends push when alerts enabled', async ({ page }) => {
     const pushes: unknown[] = []
 
+    await primeOpenProject(page, E2E_CONFIG.workingDir)
     await page.addInitScript(
       ([key, prefs]) => {
-        localStorage.setItem('vision-welcome-dismissed', '1')
         localStorage.setItem(key, JSON.stringify(prefs))
       },
       [NTFY_ALERTS_STORAGE_KEY, E2E_NTFY_PREFS] as const
     )
 
     await startMockSession(page, {
+      skipConfigPrime: true,
       initialTodos: sampleTodoStore(),
       tauri: {
         handlers: {

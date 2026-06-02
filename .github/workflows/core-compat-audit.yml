@@ -5,6 +5,7 @@ on:
     paths:
       - 'bright_vision_core/**'
       - 'cecli/**'
+      - 'brightdate-python/**'
       - 'src/**'
       - 'src-tauri/**'
       - 'docs/**'
@@ -24,9 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install bright_vision_core + cecli (editable)
+      - name: Install brightdate + cecli + bright_vision_core (editable)
         run: |
           python -m pip install -U pip
+          pip install -e brightdate-python
           pip install -e cecli
           pip install -e '.[dev]'
       - name: workspace path migration tests

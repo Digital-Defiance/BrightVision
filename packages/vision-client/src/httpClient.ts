@@ -43,6 +43,25 @@ export interface SendMessageOptions {
 export const DEFAULT_VISION_API_BASE = 'http://127.0.0.1:8741'
 const DEFAULT_BASE = DEFAULT_VISION_API_BASE
 
+export interface CecliWorkspaceProjectSummary {
+  name?: string | null
+  path?: string | null
+  repo?: string | null
+  primary?: boolean
+  readonly?: boolean
+}
+
+export interface CecliWorkspaceInfo {
+  present: boolean
+  filename?: string | null
+  name?: string | null
+  project_count: number
+  projects: CecliWorkspaceProjectSummary[]
+  layout?: string | null
+  parse_error?: string | null
+  raw?: string | null
+}
+
 export interface CoreSessionInfo {
   session_id: string
   workspace: string
@@ -168,6 +187,8 @@ export class CoreHttpClient {
     chat_history_file?: boolean
     spec_focus?: boolean
     session_mode?: 'vibe' | 'spec'
+    workspace_name?: string | null
+    workspaces?: Record<string, unknown> | null
   }): Promise<CoreSessionInfo> {
     const res = await fetch(`${this.baseUrl}/sessions`, {
       method: 'POST',
@@ -227,6 +248,15 @@ export class CoreHttpClient {
     return `workspace=${encodeURIComponent(workspace)}`
   }
 
+  async getCecliWorkspace(workspace: string): Promise<CecliWorkspaceInfo> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/cecli-workspace?${this.workspaceQs(workspace)}`,
+      { headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`cecli workspace: ${res.status}`)
+    return res.json() as Promise<CecliWorkspaceInfo>
+  }
+
   async listWorkspaceTodos(workspace: string): Promise<TodoStore> {
     const res = await fetch(`${this.baseUrl}/workspaces/todos?${this.workspaceQs(workspace)}`, {
       headers: this.headers(false),
@@ -243,6 +273,18 @@ export class CoreHttpClient {
     )
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`import agent todo plan: ${res.status} ${await res.text()}`)
+    return normalizeStore(await res.json())
+  }
+
+  /** Sync this session's agent todo.txt ↔ its workspace Tasks (same repo as session create). */
+  async importSessionAgentTodoPlan(sessionId: string): Promise<TodoStore> {
+    const res = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/todos/import-agent-plan`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) {
+      throw new Error(`import session agent todo plan: ${res.status} ${await res.text()}`)
+    }
     return normalizeStore(await res.json())
   }
 

@@ -102,7 +102,13 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
     (
       timing: TurnThinkingTiming,
       resources?: TurnResourceStats,
-      tokens?: { tokensSent: number; tokensReceived: number }
+      tokens?: { tokensSent: number; tokensReceived: number },
+      extras?: {
+        startBd?: number
+        endBd?: number
+        memPressurePeak?: number
+        captureMode?: string
+      }
     ): TurnTimingRecord | null => {
       if (timing.turnDurationMs <= 0) return null
       let recorded: TurnTimingRecord | null = null
@@ -128,6 +134,12 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
                 resourceSampleCount: resources.sampleCount,
               }
             : {}),
+          ...(extras?.startBd != null ? { startBd: extras.startBd } : {}),
+          ...(extras?.endBd != null ? { endBd: extras.endBd } : {}),
+          ...(extras?.memPressurePeak != null
+            ? { memPressurePeak: extras.memPressurePeak }
+            : {}),
+          ...(extras?.captureMode ? { captureMode: extras.captureMode } : {}),
         })
         recorded = next.history[next.history.length - 1] ?? null
         saveThinkingStats(next)
@@ -149,6 +161,11 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
     return () => window.clearInterval(id)
   }, [prefs.showLiveTimer, publishLive])
 
+  const formatDuration = useCallback(
+    (ms: number) => formatDurationMs(ms, { brightDate: prefs.brightDateMode }),
+    [prefs.brightDateMode]
+  )
+
   return {
     live: prefs.showLiveTimer ? live : null,
     beginTurn,
@@ -159,7 +176,8 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
     statsView,
     refreshStats,
     statsStore,
-    formatDuration: formatDurationMs,
+    formatDuration,
+    brightDateMode: prefs.brightDateMode,
     peekActiveKind: (content: string) => getActiveAssistantSection(content),
   }
 }

@@ -18,13 +18,13 @@ def _have_cecli_helpers() -> bool:
 @unittest.skipUnless(_have_cecli_helpers(), "requires cecli submodule")
 class TestCecliToolJsonSubmodule(unittest.TestCase):
     def test_parse_tool_arguments_merges_glued_empty_object_fragments(self):
-        from cecli.tools.utils.helpers import parse_tool_arguments
+        from cecli.helpers.responses import parse_tool_arguments
 
         raw = '{"limit": 15}{}{"path": "."}'
         self.assertEqual(parse_tool_arguments(raw), {"limit": 15, "path": "."})
 
     def test_merge_glued_json_objects_rejects_array_chunks(self):
-        from cecli.tools.utils.helpers import merge_glued_json_objects
+        from cecli.helpers.responses import merge_glued_json_objects
 
         self.assertIsNone(merge_glued_json_objects(['["a"]', '{"b": 1}']))
 

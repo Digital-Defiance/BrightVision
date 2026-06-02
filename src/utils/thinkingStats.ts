@@ -53,6 +53,13 @@ export interface TurnTimingRecord {
   avgGpuPct?: number | null
   /** Resource poll count for this turn (desktop). */
   resourceSampleCount?: number
+  /** BrightDate bounds for the turn (core capture or computed client-side). */
+  startBd?: number
+  endBd?: number
+  /** macOS memory pressure peak 0–2 when bgpucap/heartbeat logged it. */
+  memPressurePeak?: number
+  /** `bgpucap` | `btime_only` | `heartbeat` from core turn_metrics. */
+  captureMode?: string
 }
 
 export interface ThinkingStatsStore {
@@ -213,6 +220,10 @@ export function recordTurnTiming(
     resourceSampleCount?: number
     tokensSent?: number
     tokensReceived?: number
+    startBd?: number
+    endBd?: number
+    memPressurePeak?: number
+    captureMode?: string
   }
 ): ThinkingStatsStore {
   if (sample.responseMs <= 0 && sample.thinkMs <= 0) return store
@@ -244,6 +255,12 @@ export function recordTurnTiming(
           resourceSampleCount: sample.resourceSampleCount ?? 0,
         }
       : {}),
+    ...(sample.startBd != null ? { startBd: sample.startBd } : {}),
+    ...(sample.endBd != null ? { endBd: sample.endBd } : {}),
+    ...(sample.memPressurePeak != null
+      ? { memPressurePeak: sample.memPressurePeak }
+      : {}),
+    ...(sample.captureMode ? { captureMode: sample.captureMode } : {}),
   }
   return {
     version: 2,

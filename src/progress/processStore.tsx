@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { CoreEventBase, CoreProgressEvent } from '../ipc/events'
+import { isBenignTurnStopError } from '../utils/abort'
 import {
   isWaitingForModelProgress,
   progressEventToUpdate,
@@ -188,14 +189,20 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'idle' })
         }
         break
-      case 'error':
+      case 'error': {
         streamedTokensThisTurnRef.current = false
+        const message = String(ev.text ?? 'Unknown error')
+        if (isBenignTurnStopError(message)) {
+          dispatch({ type: 'idle' })
+          break
+        }
         dispatch({
           type: 'fail',
-          message: String(ev.text ?? 'Unknown error'),
+          message,
         })
         window.setTimeout(() => dispatch({ type: 'idle' }), 4000)
         break
+      }
       default:
         break
     }

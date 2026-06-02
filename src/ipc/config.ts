@@ -23,7 +23,9 @@ export interface VisionConfig {
   /** Desktop: built-in Local LLM (Ollama + preload) before Vision session. */
   manageLocalLlm: boolean
   extraParams: string
-  /** Git project the agent edits (any repo; does not need bright-vision-core inside it). */
+  /**
+   * Git project the agent edits. Set via **Open project** (launch gate / header), mirrored here for API/session.
+   */
   workingDir: string
   /** Auto-answer up to N confirmations per session (0 = always prompt). */
   autoApproveLimit: number

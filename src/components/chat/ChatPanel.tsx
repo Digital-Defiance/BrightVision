@@ -30,7 +30,7 @@ import { TokenStatsBar } from './TokenStatsBar'
 import { OllamaStatusMessage } from './OllamaStatusMessage'
 import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
-import type { TurnThinkingTiming } from '../../utils/thinkingTiming'
+import { formatDurationMs, type TurnThinkingTiming } from '../../utils/thinkingTiming'
 import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { ModelRouterBar, type RouterEscalateOffer } from './ModelRouterBar'
@@ -354,6 +354,11 @@ export function ChatPanel({
                       turnTiming={entry.item.turnTiming}
                       showSectionDurations={thinkingTimingPrefs?.showSectionDurations ?? true}
                       showTurnTotal={thinkingTimingPrefs?.showMessageTurnTotal ?? true}
+                      formatDuration={(ms) =>
+                        formatDurationMs(ms, {
+                          brightDate: thinkingTimingPrefs?.brightDateMode,
+                        })
+                      }
                     />
                   ) : (
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pr: 3 }}>

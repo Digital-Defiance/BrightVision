@@ -120,6 +120,7 @@ yarn test:e2e
 | `tasks-ears.spec.ts` | Validate EARS (mock lint) |
 | `spec-generate-all-llm.spec.ts` | Real Ollama all-layers generate-spec (default LLM lane) |
 | `spec-generate-phased-llm.spec.ts` | Real Ollama phased wizard (opt-in: Test Lab checkbox / `E2E_SPEC_GEN_PHASED=1`) |
+| `open-project.spec.ts` | Launch gate vs primed skip; header project bar; open confirm |
 | `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
 | `path-completion.spec.ts` | `/add` Tab (desktop vs web) |
@@ -128,7 +129,9 @@ yarn test:e2e
 | `release-hygiene.spec.ts` | RELEASE / submodule file checks |
 | `roadmap-gaps.spec.ts` | Open roadmap smoke |
 
-Helpers live in `e2e/helpers/` (`mockCoreApi`, `mockTauri`, `session`, `fixtures`, `testConfig`).
+Helpers live in `e2e/helpers/` (`mockCoreApi`, `mockTauri`, `session`, `fixtures`, `testConfig`, `openProject`).
+
+**Open project:** Production shows a launch gate until you open a repo. E2E skips it via `primeVisionApp` / `primeVisionAppConfig` (sets `vision-skip-project-gate` + `vision-current-project`). Tests that use custom `addInitScript` before `startMockSession` should call `primeOpenProject(page, workingDir)` and pass `skipConfigPrime: true`. See `e2e/helpers/openProject.ts`.
 
 Use `startMockSession(page, { tauri: true })` for desktop-only UI in the browser.
 
@@ -151,7 +154,7 @@ yarn test:e2e
 
 If you see `[vite] http proxy error: /health`, an old preview without `E2E=1` was reused — re-run (do not use `reuseExistingServer` for default e2e).
 
-`gotoVision()` installs Playwright API mocks **before** `page.goto()` so health checks never hit a real Vision API.
+`gotoVision()` primes open-project + config, installs Playwright API mocks **before** `page.goto()` so health checks never hit a real Vision API.
 
 ### Real LLM e2e (Ollama + Vision API)
 
@@ -212,6 +215,9 @@ Optional env:
 | `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |
 | `BV_SUITE_USE_ENV_TIMEOUTS` | `1`: keep your shell `LLM_*_TIMEOUT_S` values instead of suite defaults |
 | `BV_SUITE_USE_BRIGHTDATE` | `1`: step/run durations and ETC in BrightDate (BD/md); `btime --no-color`. BD wall bounds (`start_bd`/`end_bd`) are always parsed from `btime` and saved in timing history; Test Lab shows a BD interval chip when present |
+| `BV_USE_BRIGHTDATE` | Optional env mirror of desktop Settings → **BrightDate mode** |
+
+**Desktop BrightDate:** Settings → **Response & think timing** → **BrightDate mode** formats response time, ETA, and timing history as BD / millidays (e.g. `9648.48633`). Each chat turn attaches `turn_capture` on the `done` SSE event: **bgpucap** `--pid` on Apple Silicon when installed, else **heartbeat** fallback (same as Test Lab). Tauri resource polling is still merged when present.
 | `E2E_OLLAMA_AUTO_PULL` | `1` (default): run `ollama pull` when the model is missing; `0` to fail fast |
 | `E2E_OLLAMA_HOST` | Ollama base URL (default `http://127.0.0.1:11434`) |
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |

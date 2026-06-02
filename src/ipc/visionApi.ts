@@ -11,6 +11,7 @@ import { waitForVisionApi } from './health'
 import { isTauriRuntime } from './isTauri'
 import { spawnDesktopVisionApi } from './visionApiSpawn'
 import type { ProcessUpdate } from '../progress/types'
+import { isUserCancellationError } from '../utils/abort'
 
 export type CoreEventHandler = (event: CoreEventBase) => void
 export type ProcessPhaseHandler = (update: ProcessUpdate) => void
@@ -174,6 +175,9 @@ export function createVisionApiSession(
         for await (const event of client.sendMessage(sessionId, content, signal, options)) {
           onEvent(event)
         }
+      } catch (err) {
+        if (isUserCancellationError(err)) return
+        throw err
       } finally {
         sendAbort = null
       }

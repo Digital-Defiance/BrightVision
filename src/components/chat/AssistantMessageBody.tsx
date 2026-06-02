@@ -14,14 +14,18 @@ import { ChatFenceBlock } from './ChatFenceBlock'
 import { ChatMarkdown } from './ChatMarkdown'
 import { ProposedEditBlock } from './ProposedEditBlock'
 
-function sectionLabel(kind: string, durationMs?: number): string {
+function sectionLabel(
+  kind: string,
+  durationMs: number | undefined,
+  formatDuration: (ms: number) => string
+): string {
   let base = ''
   if (kind === 'thinking') base = 'Thinking'
   else if (kind === 'answer') base = 'Answer'
   else if (kind === 'reasoning') base = 'Reasoning'
   if (!base) return ''
   if (durationMs !== undefined && durationMs > 0) {
-    return `${base} · ${formatDurationMs(durationMs)}`
+    return `${base} · ${formatDuration(durationMs)}`
   }
   return base
 }
@@ -76,6 +80,7 @@ interface AssistantMessageBodyProps {
   turnTiming?: TurnThinkingTiming
   showSectionDurations?: boolean
   showTurnTotal?: boolean
+  formatDuration?: (ms: number) => string
 }
 
 export function AssistantMessageBody({
@@ -87,6 +92,7 @@ export function AssistantMessageBody({
   turnTiming,
   showSectionDurations = true,
   showTurnTotal = true,
+  formatDuration = formatDurationMs,
 }: AssistantMessageBodyProps) {
   const segmentOpts = {
     canApply: canApplyEdits,
@@ -108,8 +114,8 @@ export function AssistantMessageBody({
           data-testid="message-turn-timing"
           sx={{ fontFamily: 'var(--vision-font-chat, monospace)', fontSize: '0.7rem' }}
         >
-          Response {formatDurationMs(turnTiming.turnDurationMs)}
-          {turnTiming.thoughtMs > 0 && ` · Think ${formatDurationMs(turnTiming.thoughtMs)}`}
+          Response {formatDuration(turnTiming.turnDurationMs)}
+          {turnTiming.thoughtMs > 0 && ` · Think ${formatDuration(turnTiming.thoughtMs)}`}
         </Typography>
       )}
       {appliedFiles.length > 0 && onOpenInEditor && (
@@ -132,9 +138,9 @@ export function AssistantMessageBody({
       )}
       {sections.map((sec, si) => (
         <Box key={si}>
-          {sectionLabel(sec.kind, durationByIndex.get(si)) && (
+          {sectionLabel(sec.kind, durationByIndex.get(si), formatDuration) && (
             <Chip
-              label={sectionLabel(sec.kind, durationByIndex.get(si))}
+              label={sectionLabel(sec.kind, durationByIndex.get(si), formatDuration)}
               size="small"
               variant="outlined"
               sx={{ mb: 0.5, fontSize: '0.7rem' }}

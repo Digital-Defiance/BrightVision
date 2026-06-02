@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY } from './testConfig'
+import { E2E_CONFIG, primeVisionAppConfig } from './testConfig'
 import { getScenario, type ScenarioName } from './scenarios'
 import {
   ensureAgentTodoCharSplitWorkspace,
@@ -21,11 +21,5 @@ export async function primeScenarioConfig(page: Page, scenario: ScenarioName) {
     autoLoadSession: def.config?.autoLoadSession ?? false,
     autoSaveSession: def.config?.autoSaveSession ?? false,
   }
-  await page.addInitScript(
-    ([key, config]) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(key, JSON.stringify(config))
-    },
-    [E2E_CONFIG_STORAGE_KEY, cfg] as const
-  )
+  await primeVisionAppConfig(page, cfg)
 }

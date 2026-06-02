@@ -38,6 +38,7 @@ cd bright-vision-core
 ## 3. Verify
 
 ```bash
+git submodule update --init cecli brightdate-python
 source activate.sh
 yarn verify:submodule
 yarn test:full         # local: tsc + vitest + rust + e2e (see TESTING.md)

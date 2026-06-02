@@ -10,20 +10,26 @@ Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain a
 
 - Node 18+ and Yarn
 - Rust toolchain (for Tauri)
-- Python 3.10+ (`source activate.sh` installs editable `cecli` + `bright_vision_core`)
+- Python 3.10+ (`git submodule update --init cecli brightdate-python`; `source activate.sh` installs editable `brightdate`, `cecli`, `bright_vision_core`)
 - **LLM:** local [Ollama](https://ollama.com/) recommended — see [LOCAL_LLM.md](./LOCAL_LLM.md)
 
 ## First-time setup
 
+Primary shell: **[BSH](https://bsh.digitaldefiance.org)** (zsh-compatible). `activate.sh` detects `BSH_VERSION` or `ZSH_VERSION` when sourced.
+
 ```bash
-git submodule update --init cecli
-source activate.sh   # venv + editable cecli + bright_vision_core
+git submodule update --init cecli brightdate-python
+source ./activate.sh   # BSH/zsh/bash — from repo root
 yarn install
 ```
+
+Quick check (no pip): `sh scripts/verify-activate-resolve.sh`
 
 **Optional `local-llm.env`:** `cp local-llm.env.example local-llm.env` at repo root (`DATA_MODEL`, `OLLAMA_HOST`; optional `MODEL_ROUTER`, `FAST_MODEL`, `HEAVY_MODEL` for the hopper). In-app **Local LLM** uses Rust; chat uses the Vision API — not `local-llm.sh`. See [LOCAL_LLM.md](./LOCAL_LLM.md).
 
 PyPI / release workflow for the Vision wheel: track in [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md) milestone U3. PyPI-only install: `BRIGHT_VISION_CORE_INSTALL=pypi source activate.sh`
+
+**brightdate:** submodule [BRIGHTDATE_PYTHON.md](./BRIGHTDATE_PYTHON.md) · PyPI package `brightdate` from [brightdate-python](https://github.com/Digital-Defiance/brightdate-python).
 
 ## Run the desktop app
 

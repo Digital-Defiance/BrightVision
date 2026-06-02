@@ -19,6 +19,7 @@ interface VisionActivityBarProps {
   specJob?: SpecJobActivity | null
   liveTiming?: LiveThinkingState | null
   turnEta?: TurnEtaEstimate | null
+  formatDuration?: (ms: number) => string
 }
 
 export function VisionActivityBar({
@@ -26,6 +27,7 @@ export function VisionActivityBar({
   specJob = null,
   liveTiming = null,
   turnEta = null,
+  formatDuration,
 }: VisionActivityBarProps) {
   const specActive = Boolean(specJob?.active)
   const chatActive = process.active
@@ -117,7 +119,13 @@ export function VisionActivityBar({
         </Box>
         {(liveTiming || (etaVisible && etaPct != null)) && (
           <Box className="vision-activity__meta-trailing">
-            {liveTiming && <ThinkingTimerInline live={liveTiming} eta={turnEta} />}
+            {liveTiming && (
+              <ThinkingTimerInline
+                live={liveTiming}
+                eta={turnEta}
+                formatDuration={formatDuration}
+              />
+            )}
             {etaVisible && etaPct != null && (
               <LinearProgress
                 className="vision-activity__bar vision-activity__bar--eta"

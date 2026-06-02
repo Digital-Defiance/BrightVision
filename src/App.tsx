@@ -122,6 +122,11 @@ import { TodoPanel } from './components/todos/TodoPanel'
 import { GitPanel } from './components/GitPanel'
 import { useWorkspaceTodos, type SpecLayerDraft } from './hooks/useWorkspaceTodos'
 import { WelcomePanel } from './components/onboarding/WelcomePanel'
+import { OpenProjectScreen } from './components/project/OpenProjectScreen'
+import { ProjectBar } from './components/project/ProjectBar'
+import { useOpenProject } from './hooks/useOpenProject'
+import { useCecliWorkspace } from './hooks/useCecliWorkspace'
+import { loadCurrentProject } from './ipc/openProject'
 import { AboutDialog } from './components/settings/AboutDialog'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { VisionApiActionButtons } from './components/settings/VisionApiActionButtons'
@@ -174,8 +179,15 @@ import {
   loadThinkingStats,
   saveThinkingStats,
 } from './utils/thinkingStats'
+import type { CoreTurnCapture } from '@brightvision/vision-client'
+import { bdFromUnixMs } from '@brightvision/vision-client'
 import { estimateTurnEta } from './utils/turnEtaEstimate'
+import {
+  mergeTurnCaptureWithResourceStats,
+  turnCaptureExtras,
+} from './utils/turnCapture'
 import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
+import { workspacePathsEqual } from './utils/workspacePath'
 import {
   resolveMessageTurnTiming,
   shouldRecordTurnInHistory,
@@ -443,7 +455,13 @@ function AppShell({
     recordCompletedTurn: (
       t: TurnThinkingTiming,
       resources?: import('./ipc/resourceSnapshot').TurnResourceStats,
-      tokens?: { tokensSent: number; tokensReceived: number }
+      tokens?: { tokensSent: number; tokensReceived: number },
+      extras?: {
+        startBd?: number
+        endBd?: number
+        memPressurePeak?: number
+        captureMode?: string
+      }
     ) => import('./utils/thinkingStats').TurnTimingRecord | null
   }>({
     beginTurn: () => {},
@@ -501,13 +519,16 @@ function AppShell({
         console.error('Failed to parse stored config', e)
       }
     }
+    const storedProject = loadCurrentProject()
+    if (storedProject) {
+      merged = { ...merged, workingDir: storedProject }
+    }
     const apply = (cfg: VisionConfig) => {
       setConfig(cfg)
       setSavedConfig(cfg)
     }
     if (isTauriRuntime()) {
       Promise.all([
-        invoke<string>('detect_workspace', { hint: merged.workingDir || null }),
         merged.pythonPath.trim()
           ? Promise.resolve(merged.pythonPath)
           : invoke<string>('default_python_path'),
@@ -515,10 +536,9 @@ function AppShell({
           localLlmRoot: merged.localLlmRoot.trim() || null,
         }),
       ])
-        .then(([dir, pythonPath, localLlm]) => {
+        .then(([pythonPath, localLlm]) => {
           let next = {
             ...merged,
-            workingDir: dir,
             pythonPath: merged.pythonPath.trim() || pythonPath,
           }
           next = applyLocalLlmToConfig(next, localLlm, true)
@@ -526,7 +546,6 @@ function AppShell({
             applyLocalLlmHopperFromEnv(prefs, localLlm, next.model, true)
           )
           if (
-            dir !== merged.workingDir ||
             next.pythonPath !== merged.pythonPath ||
             next.localLlmRoot !== merged.localLlmRoot ||
             next.ollamaApiBase !== merged.ollamaApiBase ||
@@ -563,23 +582,11 @@ function AppShell({
     localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
   }, [])
 
-  const handleChooseProject = useCallback(async () => {
-    if (!isTauriRuntime()) return
-    try {
-      const selected = await invoke<string | null>('pick_workspace_folder')
-      if (!selected) return
-      const next = { ...config, workingDir: selected }
-      setConfig(next)
-      setSavedConfig(next)
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
-      setSnackbar({ message: 'Project folder updated', severity: 'info' })
-    } catch (err) {
-      setSnackbar({
-        message: err instanceof Error ? err.message : String(err),
-        severity: 'error',
-      })
-    }
-  }, [config])
+  const openProjectShowPickerRef = useRef<() => void>(() => {})
+
+  const handleChooseProject = useCallback(() => {
+    openProjectShowPickerRef.current()
+  }, [])
 
   const stderrBatcherRef = useRef<StderrBatcher | null>(null)
   const flushStderrRef = useRef<(payload: string) => void>(() => {})
@@ -992,10 +999,28 @@ function AppShell({
                 hadExplicitAssistantTarget: turnAssistantId != null,
               })
             ) {
+              const capture = ev.turn_capture as CoreTurnCapture | undefined
+              const resources = mergeTurnCaptureWithResourceStats(
+                takeTurnResourcePeakRef.current(),
+                capture
+              )
+              let captureExtras = turnCaptureExtras(capture)
+              if (
+                thinkingTimingPrefs.brightDateMode &&
+                wallStart != null &&
+                captureExtras.startBd == null
+              ) {
+                captureExtras = {
+                  ...captureExtras,
+                  startBd: bdFromUnixMs(wallStart),
+                  endBd: bdFromUnixMs(Date.now()),
+                }
+              }
               const recorded = thinkingTimingRef.current.recordCompletedTurn(
                 turnTiming,
-                takeTurnResourcePeakRef.current(),
-                turnTokenUsageRef.current ?? undefined
+                resources,
+                turnTokenUsageRef.current ?? undefined,
+                captureExtras
               )
               turnTokenUsageRef.current = null
               setTurnTokenUsage(null)
@@ -1392,6 +1417,7 @@ function AppShell({
       statsStore: thinkingTiming.statsStore,
       progressFraction: process.snapshot.progress,
       liveOutputTps: liveTps,
+      brightDate: thinkingTimingPrefs.brightDateMode,
     })
   }, [
     thinkingTiming.live,
@@ -1400,6 +1426,7 @@ function AppShell({
     process.snapshot.progress,
     turnTokenUsage,
     isRunning,
+    thinkingTimingPrefs.brightDateMode,
   ])
 
   const handleCancelSend = useCallback(() => {
@@ -1422,6 +1449,12 @@ function AppShell({
     [savedConfig.coreApiUrl, savedConfig.coreApiToken]
   )
 
+  const cecliWorkspace = useCecliWorkspace(
+    savedConfig.workingDir,
+    savedConfig.coreApiUrl,
+    savedConfig.coreApiToken
+  )
+
   const appVersions = useAppVersions(httpClient ?? todoApiClient, {
     enginePaths: {
       coreEnginePath: savedConfig.coreEnginePath,
@@ -1435,8 +1468,15 @@ function AppShell({
       client: httpClient ?? todoApiClient,
       workspace: savedConfig.workingDir,
       sessionId: sessionInfo?.session_id ?? null,
+      sessionWorkspace: sessionInfo?.workspace ?? null,
     }),
-    [httpClient, todoApiClient, savedConfig.workingDir, sessionInfo?.session_id]
+    [
+      httpClient,
+      todoApiClient,
+      savedConfig.workingDir,
+      sessionInfo?.session_id,
+      sessionInfo?.workspace,
+    ]
   )
 
   const { paths: pathSuggestions, active: pathAssistActive } = usePathCompletion(
@@ -1851,6 +1891,13 @@ function AppShell({
     }
   }
 
+  const applyProject = useCallback((path: string) => {
+    const next = { ...savedConfigRef.current, workingDir: path }
+    setConfig(next)
+    setSavedConfig(next)
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
+  }, [])
+
   const handleStop = async () => {
     try {
       await stop()
@@ -1882,6 +1929,29 @@ function AppShell({
       })
     }
   }
+
+  const handleStopRef = useRef<() => Promise<void>>(async () => {})
+  handleStopRef.current = handleStop
+
+  const {
+    gateOpen: projectGateOpen,
+    selectedPath: projectSelectedPath,
+    setSelectedPath: setProjectSelectedPath,
+    recents: projectRecents,
+    suggestedPath: projectSuggestedPath,
+    opening: projectOpening,
+    commitOpen: commitOpenProject,
+    pickFolder: pickProjectFolder,
+    showProjectPicker,
+    currentProject,
+  } = useOpenProject({
+    fallbackPath: savedConfig.workingDir,
+    onProjectOpened: applyProject,
+    isSessionActive: lifecycleActive,
+    stopSession: () => handleStopRef.current(),
+  })
+
+  openProjectShowPickerRef.current = showProjectPicker
 
   const handleNativeAttachImages = useCallback(async () => {
     if (!isRunning) return
@@ -2740,6 +2810,20 @@ function AppShell({
     </Stack>
   )
 
+  if (projectGateOpen) {
+    return (
+      <OpenProjectScreen
+        selectedPath={projectSelectedPath}
+        onSelectedPathChange={setProjectSelectedPath}
+        recents={projectRecents}
+        suggestedPath={projectSuggestedPath}
+        opening={projectOpening}
+        onPickFolder={() => void pickProjectFolder()}
+        onOpen={(path) => void commitOpenProject(path)}
+      />
+    )
+  }
+
   return (
     <>
       <AppChrome
@@ -2765,7 +2849,17 @@ function AppShell({
         }
         liveTiming={thinkingTiming.live}
         turnEta={turnEta}
+        formatDuration={thinkingTiming.formatDuration}
         headerExtra={headerExtra}
+        projectBar={
+          currentProject ? (
+            <ProjectBar
+              projectPath={currentProject}
+              onOpenProject={showProjectPicker}
+              workspaceBadge={cecliWorkspace.multiRepoLabel}
+            />
+          ) : undefined
+        }
         connectionTone={connectionTone}
         onLogoClick={() => setAboutOpen(true)}
         railFooter={
@@ -3092,6 +3186,12 @@ function AppShell({
               sessionBusy={isBusy}
               specGenerating={specGenerating}
               specIndexRefreshToken={specIndexRefreshToken}
+              projectPath={savedConfig.workingDir}
+              sessionWorkspaceMismatch={
+                lifecycleActive &&
+                Boolean(sessionInfo?.workspace) &&
+                !workspacePathsEqual(sessionInfo!.workspace, savedConfig.workingDir)
+              }
               onGenerateSpec={(id, prompt, mode, opts) => handleGenerateSpec(id, prompt, mode, opts)}
               contextPaths={sessionFiles}
               contextUsage={contextUsage}
@@ -3289,6 +3389,11 @@ function AppShell({
                 sessionActive={isRunning}
                 sessionId={sessionInfo?.session_id}
                 onExportSessionDebug={handleExportSessionDebug}
+                cecliWorkspace={cecliWorkspace.info}
+                cecliWorkspaceLoading={cecliWorkspace.loading}
+                cecliWorkspaceError={cecliWorkspace.error}
+                onCecliWorkspaceRefresh={cecliWorkspace.refresh}
+                onOpenWorkspaceFileInEditor={handleOpenInEditor}
               />
             </Box>
           )}

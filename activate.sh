@@ -1,7 +1,12 @@
 #!/usr/bin/env sh
 # Dev: editable Cecli (submodule) + bright_vision_core (parent package).
 # Safe to source: does not enable set -e in your interactive shell.
-# When sourced from scripts/lab.sh, $0 is lab.sh — use BRIGHT_VISION_ROOT / BV_ROOT / BASH_SOURCE.
+# When sourced: zsh/BSH use %x; bash uses BASH_SOURCE; lab.sh sets BRIGHT_VISION_ROOT / BV_ROOT.
+# BSH (https://bsh.digitaldefiance.org) is a zsh fork — exposes BSH_VERSION, not ZSH_VERSION.
+_is_zsh_family() {
+  [ -n "${ZSH_VERSION:-}" ] || [ -n "${BSH_VERSION:-}" ]
+}
+
 _resolve_repo_root() {
   if [ -n "${BRIGHT_VISION_ROOT:-}" ] && [ -d "${BRIGHT_VISION_ROOT}/bright_vision_core" ]; then
     cd "${BRIGHT_VISION_ROOT}" && pwd
@@ -11,9 +16,29 @@ _resolve_repo_root() {
     cd "${BV_ROOT}" && pwd
     return 0
   fi
-  if [ -n "${BASH_VERSION:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
-    cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
-    return 0
+  # zsh / BSH: $0 stays the interactive shell when sourced; %x is usually this file.
+  if _is_zsh_family; then
+    _zsh_src="${(%):-%x}"
+    case "$_zsh_src" in
+      bsh | zsh | bash | sh | ksh | dash | "" | -bsh | -zsh | -bash) _zsh_src="" ;;
+    esac
+    if [ -z "$_zsh_src" ] && [ -n "${funcfiletrace[1]:-}" ]; then
+      _zsh_src="${funcfiletrace[1]%%:*}"
+    fi
+    if [ -n "$_zsh_src" ]; then
+      _zsh_dir="$(cd "$(dirname "$_zsh_src")" 2>/dev/null && pwd)" || _zsh_dir=""
+      if [ -n "$_zsh_dir" ] && [ -d "${_zsh_dir}/bright_vision_core" ]; then
+        echo "$_zsh_dir"
+        return 0
+      fi
+    fi
+  fi
+  if [ -n "${BASH_SOURCE[0]:-}" ]; then
+    _bash_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || _bash_dir=""
+    if [ -n "$_bash_dir" ] && [ -d "${_bash_dir}/bright_vision_core" ]; then
+      echo "$_bash_dir"
+      return 0
+    fi
   fi
   case "$0" in
     */activate.sh | ./activate.sh | activate.sh)
@@ -21,12 +46,21 @@ _resolve_repo_root() {
       return 0
       ;;
   esac
+  # sh/dash: executed as ./activate.sh (not sourced).
+  # Already in repo root (common when: cd BrightVision && source ./activate.sh).
+  if [ -d "./bright_vision_core" ] && [ -f "./pyproject.toml" ]; then
+    pwd
+    return 0
+  fi
   return 1
 }
 ROOT="$(_resolve_repo_root)" || {
-  echo "activate.sh: set BRIGHT_VISION_ROOT to the repo root, or run: source ./activate.sh from that directory" >&2
+  echo "activate.sh: cd to the BrightVision repo root and run: source ./activate.sh" >&2
+  echo "  (BSH/zsh/bash; or export BRIGHT_VISION_ROOT=/path/to/BrightVision)" >&2
   return 1 2>/dev/null || exit 1
 }
+export BRIGHT_VISION_ROOT="$ROOT"
+export BV_ROOT="$ROOT"
 VENV="${ROOT}/.venv"
 
 die() {
@@ -140,6 +174,15 @@ else
   if ! "$PYTHON" -m pip install -q -e "${CECLI_ROOT}"; then
     die "editable install failed: cecli at ${CECLI_ROOT}"
     return 1
+  fi
+
+  if [ -f "${ROOT}/brightdate-python/pyproject.toml" ]; then
+    if ! "$PYTHON" -m pip install -q -e "${ROOT}/brightdate-python"; then
+      die "editable install failed: brightdate at ${ROOT}/brightdate-python (git submodule update --init brightdate-python)"
+      return 1
+    fi
+  else
+    echo "activate.sh: warning: brightdate-python missing — run: git submodule update --init brightdate-python" >&2
   fi
 
   if [ ! -f "${ROOT}/pyproject.toml" ]; then

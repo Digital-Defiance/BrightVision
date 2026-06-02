@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 import { buildIntegrationAppConfig } from './integrationEnv'
 import { openChat, openTasks } from './session'
-import { E2E_CONFIG_STORAGE_KEY } from './testConfig'
+import { primeVisionAppConfig } from './testConfig'
 
 /**
  * Prime localStorage for real-core integration (no mockCoreApi, no mockTauri).
@@ -9,13 +9,7 @@ import { E2E_CONFIG_STORAGE_KEY } from './testConfig'
  */
 export async function primeIntegrationApp(page: Page) {
   const cfg = buildIntegrationAppConfig()
-  await page.addInitScript(
-    ([key, config]) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(key, JSON.stringify(config))
-    },
-    [E2E_CONFIG_STORAGE_KEY, cfg] as const
-  )
+  await primeVisionAppConfig(page, cfg)
   return cfg
 }
 

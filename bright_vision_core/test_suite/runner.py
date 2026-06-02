@@ -370,7 +370,7 @@ def run_step(
                 gpu_bin, step.argv, use_json=use_json, use_brightdate=use_brightdate
             )
         elif use_btime:
-            from bright_vision_core.test_suite.brightdate_timing import btime_command_argv
+            from bright_vision_core.brightdate import btime_command_argv
 
             cmd = btime_command_argv(step.argv, use_brightdate=use_brightdate)
         else:

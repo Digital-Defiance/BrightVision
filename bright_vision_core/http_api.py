@@ -162,6 +162,17 @@ class CreateSessionRequest(BaseModel):
         "vibe",
         description="vibe = implementation chat; spec = Kiro-style spec session (steering + inject)",
     )
+    workspace_name: str | None = Field(
+        default=None,
+        description="Cecli clone workspace name (~/.cecli/workspaces/) when using repo: projects",
+    )
+    workspaces: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional workspace config (name + projects with path: or repo:). "
+            "Written to .cecli.workspaces.yml in the project when absent."
+        ),
+    )
 
 
 class ConfirmRequest(BaseModel):
@@ -527,6 +538,8 @@ def create_session(body: CreateSessionRequest):
             chat_history_file=body.chat_history_file,
             spec_focus=body.spec_focus or mode == "spec",
             session_mode=mode,  # type: ignore[arg-type]
+            workspaces=body.workspaces,
+            workspace_name=body.workspace_name,
         )
     except FileNotFoundError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
@@ -774,6 +787,50 @@ def _todo_list_response(store: TodoStore) -> TodoListResponse:
         version=store.version,
         active_id=store.active_id,
         todos=[_todo_item_model(t) for t in store.todos],
+    )
+
+
+class CecliWorkspaceProjectModel(BaseModel):
+    name: str | None = None
+    path: str | None = None
+    repo: str | None = None
+    primary: bool = False
+    readonly: bool = False
+
+
+class CecliWorkspaceResponse(BaseModel):
+    present: bool
+    filename: str | None = None
+    name: str | None = None
+    project_count: int = 0
+    projects: list[CecliWorkspaceProjectModel] = Field(default_factory=list)
+    layout: str | None = None
+    parse_error: str | None = None
+    raw: str | None = Field(
+        default=None,
+        description="Full YAML text when present (for Settings editor)",
+    )
+
+
+@app.get("/workspaces/cecli-workspace", response_model=CecliWorkspaceResponse)
+def get_cecli_workspace(workspace: str, include_raw: bool = True):
+    from bright_vision_core.workspace_config import describe_cecli_workspace
+
+    ws = Path(workspace).expanduser().resolve()
+    if not ws.is_dir():
+        raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace}")
+    info = describe_cecli_workspace(ws)
+    if not include_raw:
+        info = {**info, "raw": None}
+    return CecliWorkspaceResponse(
+        present=info["present"],
+        filename=info.get("filename"),
+        name=info.get("name"),
+        project_count=info.get("project_count", 0),
+        projects=[CecliWorkspaceProjectModel(**p) for p in info.get("projects", [])],
+        layout=info.get("layout"),
+        parse_error=info.get("parse_error"),
+        raw=info.get("raw"),
     )
 
 

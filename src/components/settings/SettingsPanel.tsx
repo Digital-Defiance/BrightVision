@@ -21,7 +21,6 @@ import {
   type OllamaModelsSnapshot,
   resolveLocalLlmForConfig,
 } from '../../ipc/localLlm'
-import { WorkspaceBar } from '../WorkspaceBar'
 import type { AppearanceConfig } from '../../theme/appearance'
 import { AppearanceSection } from './AppearanceSection'
 import { ThinkingTimingSection } from './ThinkingTimingSection'
@@ -52,6 +51,8 @@ import {
   SessionModeToggle,
   type SessionMode,
 } from '../session/SessionModeToggle'
+import type { CecliWorkspaceInfo } from '../../ipc/httpClient'
+import { CecliWorkspaceSection } from './CecliWorkspaceSection'
 
 interface SettingsPanelProps {
   config: VisionConfig
@@ -87,6 +88,11 @@ interface SettingsPanelProps {
   sessionActive: boolean
   sessionId?: string | null
   onExportSessionDebug?: () => void | Promise<void>
+  cecliWorkspace?: CecliWorkspaceInfo
+  cecliWorkspaceLoading?: boolean
+  cecliWorkspaceError?: string | null
+  onCecliWorkspaceRefresh?: () => void | Promise<void>
+  onOpenWorkspaceFileInEditor?: (relativePath: string) => void
 }
 
 export function SettingsPanel({
@@ -123,6 +129,11 @@ export function SettingsPanel({
   sessionActive,
   sessionId,
   onExportSessionDebug,
+  cecliWorkspace,
+  cecliWorkspaceLoading,
+  cecliWorkspaceError,
+  onCecliWorkspaceRefresh,
+  onOpenWorkspaceFileInEditor,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
@@ -166,9 +177,21 @@ export function SettingsPanel({
         Model & system
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Choose a <strong>project</strong> for git edits. Cecli + Vision API are bundled with
-        the app — you only set the project path, not a separate engine install per repo.
+        Open or switch the active <strong>project</strong> from the header folder control (not here).
+        Cecli + Vision API are bundled with the app — no per-repo engine install.
       </Typography>
+
+      {cecliWorkspace != null && onCecliWorkspaceRefresh && (
+        <CecliWorkspaceSection
+          workingDir={config.workingDir}
+          info={cecliWorkspace}
+          loading={cecliWorkspaceLoading ?? false}
+          error={cecliWorkspaceError ?? null}
+          onRefresh={onCecliWorkspaceRefresh}
+          onOpenInEditor={onOpenWorkspaceFileInEditor}
+          onMessage={onTimingStatsMessage}
+        />
+      )}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
@@ -300,15 +323,11 @@ export function SettingsPanel({
             slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
             helperText="Passed as LITELLM_EXTRA_PARAMS when spawning the API on desktop."
           />
-          <Box>
-            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-              Project (git repository)
-            </Typography>
-            <WorkspaceBar
-              workingDir={config.workingDir}
-              onChange={(workingDir) => onChange({ ...config, workingDir })}
-            />
-          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            The git project you edit is chosen when {DISPLAY_VISION} opens (or via the project name in
+            the header), not here. Model, API, and session options below apply to whichever project is
+            open.
+          </Typography>
           <TextField
             label="Context files (one per line, relative to workspace)"
             fullWidth

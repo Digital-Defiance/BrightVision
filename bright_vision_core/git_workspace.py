@@ -192,10 +192,19 @@ def create_git_workspace(io, fnames, git_dname, **git_repo_kwargs):
     Create a GitRepo, or a RepoSet when the superproject has submodules.
 
     Returns GitRepo when there are no submodules (backward compatible).
+    Repo-local ``.cecli.workspaces.yml`` (path: projects) uses cecli workspace mode only.
     """
     workspace_root = _resolve_workspace_root(fnames, git_dname)
     if workspace_root is None:
         return GitRepo(io, fnames, git_dname, **git_repo_kwargs)
+
+    try:
+        from cecli.helpers.monorepo.local_workspace import find_workspace_config_file
+
+        if find_workspace_config_file(Path(workspace_root)):
+            return GitRepo(io, [workspace_root], git_dname, **git_repo_kwargs)
+    except ImportError:
+        pass
 
     primary = GitRepo(io, [workspace_root], git_dname, **git_repo_kwargs)
     sub_paths = discover_submodule_paths_with_git(primary.root)

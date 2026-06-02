@@ -2650,6 +2650,16 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@brightchain/brightdate", [\
+      ["npm:0.36.0", {\
+        "packageLocation": "../../../Users/jessica/.yarn/berry/cache/@brightchain-brightdate-npm-0.36.0-f1515b8c3a-10c0.zip/node_modules/@brightchain/brightdate/",\
+        "packageDependencies": [\
+          ["@brightchain/brightdate", "npm:0.36.0"],\
+          ["tslib", "npm:2.8.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@brightvision/remote", [\
       ["workspace:apps/remote", {\
         "packageLocation": "./apps/remote/",\
@@ -2672,6 +2682,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./apps/test-lab/",\
         "packageDependencies": [\
           ["@brightvision/test-lab", "workspace:apps/test-lab"],\
+          ["@brightvision/vision-client", "workspace:packages/vision-client"],\
           ["@emotion/react", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.0"],\
           ["@emotion/styled", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:11.14.1"],\
           ["@mui/icons-material", "virtual:5afbcf4b4292869aa604dff1dc4dfe9a10ab988436177d12b79be9ba686c3d170f4166cb69fafba4a1aa00c6f7d595d87954fd7c56abbd5ed7217892b325635e#npm:6.5.0"],\
@@ -2695,6 +2706,7 @@ const RAW_RUNTIME_STATE =
       ["workspace:packages/vision-client", {\
         "packageLocation": "./packages/vision-client/",\
         "packageDependencies": [\
+          ["@brightchain/brightdate", "npm:0.36.0"],\
           ["@brightvision/vision-client", "workspace:packages/vision-client"],\
           ["typescript", "patch:typescript@npm%3A5.9.3#optional!builtin<compat/typescript>::version=5.9.3&hash=5786d5"],\
           ["vitest", "virtual:65071057716c6e2696ebe327c2c40600629ed88ed2bce3e7c12beafd26c55fdd764e9b0627dddecf9bff0b83f5ccf0fefe42f56a3639f90720d3752303316598#npm:2.1.9"]\

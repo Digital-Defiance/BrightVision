@@ -10,6 +10,18 @@ test.describe('Navigation', () => {
     await expect(page.getByTestId('nav-chat')).toBeVisible()
   })
 
+  test('header shows open project bar', async ({ page }) => {
+    await expect(page.getByTestId('project-bar-open')).toBeVisible()
+  })
+
+  test('settings omits project folder field (open project at launch)', async ({ page }) => {
+    await page.getByTestId('nav-settings').click()
+    await expect(page.getByText('Project (git repository)')).toHaveCount(0)
+    await expect(
+      page.getByText(/chosen when .* opens/i)
+    ).toBeVisible()
+  })
+
   test('git tab shows desktop-only hint on web', async ({ page }) => {
     await page.getByTestId('nav-git').click()
     await expect(page.getByTestId('git-panel')).toBeVisible()

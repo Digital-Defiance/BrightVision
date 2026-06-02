@@ -36,6 +36,23 @@ export interface CoreTokenEvent extends CoreEventBase {
   text: string
 }
 
+/** Resource capture from Vision API ``turn_metrics`` (bgpucap or heartbeat fallback). */
+export interface CoreTurnCapture {
+  captureMode?: string
+  elapsedSecs?: number
+  startBd?: number
+  endBd?: number
+  cpuPeak?: number
+  cpuAvg?: number
+  memPeak?: number
+  memAvg?: number
+  gpuPeak?: number | null
+  gpuAvg?: number | null
+  memPressurePeak?: number
+  sampleCount?: number
+  chipBrand?: string
+}
+
 export interface CoreDoneEvent extends CoreEventBase {
   type: 'done'
   assistant_text?: string
@@ -45,6 +62,7 @@ export interface CoreDoneEvent extends CoreEventBase {
   commits?: unknown
   active_todo_id?: string
   error?: boolean
+  turn_capture?: CoreTurnCapture
 }
 
 export interface CoreConfirmEvent extends CoreEventBase {
