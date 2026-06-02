@@ -311,3 +311,41 @@ def test_http_start_run_not_blocked_by_orchestrator_flag(monkeypatch):
     res = client.post("/test-suite/runs", json={"skip_llm": True, "skip_gpu": True})
     assert res.status_code == 200
     assert res.json()["run_id"] == "fake-run-id"
+
+
+def test_run_suite_fail_fast_stops_after_first_failure(monkeypatch):
+    from bright_vision_core.test_suite import runner as runner_mod
+
+    steps = [
+        SuiteStep("a", "step a", ("true",)),
+        SuiteStep("b", "step b", ("true",)),
+        SuiteStep("c", "step c", ("true",)),
+    ]
+    calls: list[str] = []
+    events: list[dict] = []
+
+    monkeypatch.setattr(runner_mod, "plan_steps", lambda **_: steps)
+    monkeypatch.setattr(runner_mod, "_shutil_which", lambda _: True)
+    monkeypatch.setattr(runner_mod, "resolve_capture_mode", lambda **_: "off")
+    monkeypatch.setattr(runner_mod, "gpu_wrap_enabled", lambda **_: False)
+    monkeypatch.setattr(runner_mod, "record_total", lambda *a, **k: None)
+    monkeypatch.setattr(runner_mod, "record_step", lambda *a, **k: None)
+
+    def fake_run_step(step, **kwargs):
+        calls.append(step.id)
+        return step.id != "b", 1.0, None, None, ""
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+
+    ok = runner_mod.run_suite(
+        skip_llm=True,
+        skip_gpu=True,
+        skip_time=True,
+        fail_fast=True,
+        on_event=events.append,
+    )
+    assert ok is False
+    assert calls == ["a", "b"]
+    finished = [e for e in events if e.get("type") == "run_finished"][-1]
+    assert finished["failFast"] is True
+    assert finished["skippedStepIds"] == ["c"]

@@ -505,6 +505,7 @@ def run_suite(
     skip_gpu: bool = False,
     skip_time: bool = False,
     use_brightdate: bool = False,
+    fail_fast: bool = False,
     spec_gen_phased: bool = False,
     run_options: SuiteRunOptions | None = None,
     on_event: EventCallback | None = None,
@@ -667,6 +668,23 @@ def run_suite(
         ran_ids.append(step.id)
         if not ok:
             all_ok = False
+            if fail_fast:
+                remaining = [s.id for s in steps[idx:] if s.id not in ran_ids]
+                if remaining:
+                    _emit(
+                        on_event,
+                        {
+                            "type": "step_line",
+                            "stepId": step.id,
+                            "stream": "stderr",
+                            "line": (
+                                f"fail-fast: stopping suite ({len(remaining)} step(s) skipped)"
+                            ),
+                        },
+                    )
+                break
+
+    skipped_ids = [s.id for s in steps if s.id not in ran_ids]
 
     if total_seconds > 0:
         record_total(total_seconds, all_ok, ran_ids)
@@ -678,6 +696,8 @@ def run_suite(
             "ok": all_ok,
             "totalSeconds": total_seconds,
             "elapsedSeconds": time.time() - start,
+            "failFast": bool(fail_fast and skipped_ids),
+            "skippedStepIds": skipped_ids,
         },
     )
     return all_ok

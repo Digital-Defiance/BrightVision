@@ -165,6 +165,7 @@ class TestSpecFocusGating(unittest.TestCase):
             )
             self.assertEqual(tid, item.id)
             self.assertIn("## Checklist", text)
+            self.assertIn("```markdown", text)
             self.assertIn("List crates", text)
             self.assertNotIn("Requirements", text)
 

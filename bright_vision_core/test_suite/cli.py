@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-gpu", action="store_true")
     parser.add_argument("--skip-time", action="store_true")
     parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop the suite after the first failing step.",
+    )
+    parser.add_argument(
         "--use-brightdate",
         action="store_true",
         help="Show step/run durations and ETC in BrightDate (BD/md); bgpucap uses %%Ws/%%Wt.",
@@ -148,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_gpu=args.skip_gpu,
             skip_time=args.skip_time,
             use_brightdate=args.use_brightdate,
+            fail_fast=args.fail_fast,
             run_options=run_options,
             on_event=on_event,
         )

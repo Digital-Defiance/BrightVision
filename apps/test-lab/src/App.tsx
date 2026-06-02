@@ -16,6 +16,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
+import SkipNextIcon from '@mui/icons-material/SkipNext'
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StepLogPanel from './StepLogPanel'
 import {
@@ -54,7 +55,7 @@ import {
 type StepState = {
   id: string
   label: string
-  status: 'pending' | 'running' | 'ok' | 'fail'
+  status: 'pending' | 'running' | 'ok' | 'fail' | 'skipped'
   lines: string[]
   seconds?: number
   gpuAvg?: number
@@ -85,6 +86,7 @@ export default function App() {
   const [useBrightDate, setUseBrightDate] = useState(false)
   const [btimeOnPath, setBtimeOnPath] = useState(true)
   const [saveTranscript, setSaveTranscript] = useState(false)
+  const [failFast, setFailFast] = useState(false)
   const [transcriptPath, setTranscriptPath] = useState<string | null>(null)
   const [digestMsg, setDigestMsg] = useState<string | null>(null)
   const [plan, setPlan] = useState<SuiteStepPlan[]>([])
@@ -271,6 +273,7 @@ export default function App() {
         skipGpu,
         saveTranscript,
         useBrightDate,
+        failFast,
         ...laneOpts,
       })
       setRunUseBrightDate(useBrightDate)
@@ -375,6 +378,7 @@ export default function App() {
       setActiveRunId(null)
       const elapsedSeconds = ev.elapsedSeconds ?? 0
       const totalSeconds = ev.totalSeconds ?? 0
+      const skipped = new Set(ev.skippedStepIds ?? [])
       setSteps((prev) => {
         const failedStepIds = prev.filter((s) => s.status === 'fail').map((s) => s.id)
         void maybeNotifySuiteRunFinished(ntfyPrefsRef.current, {
@@ -383,7 +387,10 @@ export default function App() {
           totalSeconds,
           failedStepIds,
         })
-        return prev
+        if (skipped.size === 0) return prev
+        return prev.map((s) =>
+          skipped.has(s.id) && s.status === 'pending' ? { ...s, status: 'skipped' } : s
+        )
       })
     }
     if (ev.type === 'error' && ev.text) {
@@ -417,6 +424,7 @@ export default function App() {
   const statusIcon = (status: StepState['status']) => {
     if (status === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
     if (status === 'fail') return <ErrorIcon color="error" fontSize="small" />
+    if (status === 'skipped') return <SkipNextIcon color="disabled" fontSize="small" />
     if (status === 'running') return <HourglassEmptyIcon color="primary" fontSize="small" />
     return <HourglassEmptyIcon color="disabled" fontSize="small" />
   }
@@ -510,6 +518,16 @@ export default function App() {
         <FormControlLabel
           control={<Checkbox checked={skipGpu} onChange={(_, v) => setSkipGpu(v)} disabled={running} />}
           label="Skip GPU capture"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={failFast}
+              onChange={(_, v) => setFailFast(v)}
+              disabled={running}
+            />
+          }
+          label="Fail fast (stop after first failure)"
         />
         <FormControlLabel
           control={

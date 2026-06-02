@@ -51,6 +51,7 @@ class StartRunRequest(BaseModel):
     strict_phased_pytest: bool = False
     save_transcript: bool = False
     transcript_path: str | None = None
+    fail_fast: bool = False
 
 
 def _run_options_from_query(
@@ -247,6 +248,7 @@ def start_run(body: StartRunRequest) -> StartRunResponse:
             run_options=_run_options_from_body(body),
             save_transcript=body.save_transcript,
             transcript_path=body.transcript_path,
+            fail_fast=body.fail_fast,
         )
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err

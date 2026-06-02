@@ -45,6 +45,8 @@ export function secondsUntilStepStart(
     }
     if (step.status === 'ok' || step.status === 'fail') {
       offset += step.seconds ?? med
+    } else if (step.status === 'skipped') {
+      continue
     } else if (step.status === 'running') {
       const elapsed = i === runningPlanIndex ? runningStepElapsed : 0
       offset += Math.max(0, med - elapsed)
@@ -133,7 +135,7 @@ export function suiteRunningTimingSummary(opts: {
 }
 
 export function stepTimingLabels(opts: {
-  status: 'pending' | 'running' | 'ok' | 'fail'
+  status: 'pending' | 'running' | 'ok' | 'fail' | 'skipped'
   planIndex: number
   plan: Array<{ id: string }>
   steps: Array<{ id: string; status: string; seconds?: number }>
@@ -148,6 +150,8 @@ export function stepTimingLabels(opts: {
   const timing = id ? opts.medians[id] : undefined
   const median = timing?.medianSeconds ?? 0
   const hasHistory = (timing?.sampleCount ?? 0) > 0
+
+  if (opts.status === 'skipped') return {}
 
   if (opts.status === 'pending') {
     if (!hasHistory || median <= 0) return {}
