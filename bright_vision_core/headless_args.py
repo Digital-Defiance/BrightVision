@@ -36,4 +36,10 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         auto_save_session_name="brightvision",
         session_encrypt=False,
         session_key_file=None,
+        # Git commit attribution (cecli GitRepo.commit reads coder.args)
+        attribute_author=None,
+        attribute_committer=None,
+        attribute_co_authored_by=True,
+        attribute_commit_message_author=False,
+        attribute_commit_message_committer=False,
     )

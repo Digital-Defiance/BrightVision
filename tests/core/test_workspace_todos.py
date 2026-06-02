@@ -54,6 +54,42 @@ class TestWorkspaceTodos(unittest.TestCase):
             loaded = api.import_spec_files(item.id)
             self.assertIn("Updated", loaded.requirements)
 
+    def test_import_spec_files_short_folder_id(self):
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            api = WorkspaceTodos(root)
+            item = api.add("Spec task")
+            full_dir = api.specs_root / item.id
+            if full_dir.is_dir():
+                import shutil
+
+                shutil.rmtree(full_dir)
+            short = item.id[:8]
+            spec_dir = api.specs_root / short
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            (spec_dir / "requirements.md").write_text("### REQ-1\nFrom disk", encoding="utf-8")
+            loaded = api.import_spec_files(item.id)
+            self.assertIn("From disk", loaded.requirements)
+
+    def test_maybe_import_spec_from_disk_when_layers_empty(self):
+        with GitTemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            make_repo(root)
+            api = WorkspaceTodos(root)
+            item = api.add("Spec task")
+            full_dir = api.specs_root / item.id
+            if full_dir.is_dir():
+                import shutil
+
+                shutil.rmtree(full_dir)
+            short = item.id[:8]
+            spec_dir = api.specs_root / short
+            spec_dir.mkdir(parents=True, exist_ok=True)
+            (spec_dir / "requirements.md").write_text("### REQ-1\nAuto", encoding="utf-8")
+            loaded = api.maybe_import_spec_from_disk(item)
+            self.assertIn("Auto", loaded.requirements)
+
     def test_delete_removes_spec_folder(self):
         with GitTemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

@@ -39,6 +39,22 @@ def test_classify_architect_heavy():
     assert d.tier == "heavy"
 
 
+def test_classify_agent_command_heavy():
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/small",
+        heavy_model="ollama_chat/big",
+    )
+    d = classify_prompt(
+        "/agent explore the repo and update the checklist",
+        message_tokens=400,
+        router=router,
+        heavy_model_name="ollama_chat/big",
+    )
+    assert d.tier == "heavy"
+    assert "slash:/agent" in d.reasons
+
+
 def test_classify_high_message_tokens_heavy():
     router = ModelRouterConfig(
         enabled=True,

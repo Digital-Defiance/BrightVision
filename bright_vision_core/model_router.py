@@ -265,6 +265,15 @@ def classify_prompt(
 
     reasons: list[str] = []
 
+    if re.search(r"/agent\b", user_message, re.IGNORECASE):
+        reasons.append("slash:/agent")
+        return RouteDecision(
+            tier="heavy",
+            model_name=heavy_model_name,
+            estimated_tokens=display_tokens,
+            reasons=reasons,
+        )
+
     if context_tokens is not None and context_tokens > 0:
         exceeds_fast, fast_limit = context_exceeds_fast_model_limit(
             context_tokens, router.fast_model

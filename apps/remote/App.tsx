@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { RemoteChatPanel } from './RemoteChatPanel'
 import {
   ActivityIndicator,
   Button,
@@ -23,6 +24,8 @@ export default function App() {
   const [qrPaste, setQrPaste] = useState('')
   const [health, setHealth] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState<'connect' | 'chat'>('connect')
+  const [workspace, setWorkspace] = useState('')
 
   const client = useMemo(
     () => new CoreHttpClient(baseUrl.replace(/\/$/, ''), token.trim() || undefined),
@@ -63,9 +66,20 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>BrightVision Remote</Text>
         <Text style={styles.sub}>
-          R0: enter LAN URL from desktop Settings → BrightVision Remote (LAN Link), or paste QR
-          JSON.
+          LAN Link: Settings → BrightVision Remote. MVP: connect, chat, Stop, status line.
         </Text>
+        <View style={styles.row}>
+          <Button title="Connect" onPress={() => setTab('connect')} />
+          <Button title="Chat" onPress={() => setTab('chat')} />
+        </View>
+        {tab === 'chat' ? (
+          <RemoteChatPanel
+            client={client}
+            defaultWorkspace={workspace}
+            defaultModel="ollama_chat/llama3.2"
+          />
+        ) : (
+          <>
         <Text style={styles.label}>Vision API URL</Text>
         <TextInput
           style={styles.input}
@@ -98,6 +112,16 @@ export default function App() {
         </View>
         {busy ? <ActivityIndicator style={{ marginTop: 12 }} /> : null}
         {health ? <Text style={styles.health}>{health}</Text> : null}
+        <Text style={styles.label}>Default workspace for Chat tab</Text>
+        <TextInput
+          style={styles.input}
+          value={workspace}
+          onChangeText={setWorkspace}
+          autoCapitalize="none"
+          placeholder="/path/on/laptop"
+        />
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   )

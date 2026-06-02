@@ -1,6 +1,7 @@
 /** Heuristics for “thinking” vs likely stall during an in-flight turn. */
 
 import { isOllamaVisionModel } from '../ipc/localLlm'
+import { formatDurationMs } from './thinkingTiming'
 
 export type TurnActivityKind =
   | 'idle'
@@ -15,14 +16,25 @@ export interface TurnActivitySnapshot {
   kind: TurnActivityKind
   /** Ms since last SSE event of any type. */
   sinceLastEventMs: number
+  /** Ms since last tool_output / tool_error (UI), or null if none this turn. */
+  sinceLastToolMs: number | null
+  /** Ms since last meaningful activity (event, tool, or token). */
+  sinceLastActivityMs: number
   /** Ms since last `token` event, or null if none this turn. */
   sinceLastTokenMs: number | null
   lastProgressDetail: string
 }
 
+export interface TurnActivityHintOptions {
+  isAgentTurn?: boolean
+  brightDate?: boolean
+}
+
 /** UI hint only — does not abort the turn (SSE idle timeout is separate). */
 const STALL_WARN_MS = 300_000
 const STREAMING_RECENT_MS = 8_000
+/** Recent tool output resets “stuck” heuristics (agent can be busy without tokens). */
+const TOOL_ACTIVITY_RECENT_MS = 90_000
 /** No tokens / long Ollama wait — suggest Stop or Force FAST. */
 const WAITING_STALL_MS = 8 * 60_000
 const WAITING_WARN_MS = 3 * 60_000
@@ -41,12 +53,15 @@ export function buildTurnActivity(
   lastEventAt: number | null,
   lastTokenAt: number | null,
   lastProgressDetail: string,
-  now = Date.now()
+  now = Date.now(),
+  lastToolAt: number | null = null
 ): TurnActivitySnapshot {
   if (!isBusy || lastEventAt === null) {
     return {
       kind: 'idle',
       sinceLastEventMs: 0,
+      sinceLastToolMs: null,
+      sinceLastActivityMs: 0,
       sinceLastTokenMs: null,
       lastProgressDetail,
     }
@@ -54,11 +69,19 @@ export function buildTurnActivity(
   const sinceLastEventMs = Math.max(0, now - lastEventAt)
   const sinceLastTokenMs =
     lastTokenAt !== null ? Math.max(0, now - lastTokenAt) : null
+  const sinceLastToolMs =
+    lastToolAt !== null ? Math.max(0, now - lastToolAt) : null
+  let lastActivityAt = lastEventAt
+  if (lastToolAt != null) lastActivityAt = Math.max(lastActivityAt, lastToolAt)
+  if (lastTokenAt != null) lastActivityAt = Math.max(lastActivityAt, lastTokenAt)
+  const sinceLastActivityMs = Math.max(0, now - lastActivityAt)
   const hay = lastProgressDetail.toLowerCase()
 
   let kind: TurnActivityKind = 'unknown'
   if (sinceLastTokenMs !== null && sinceLastTokenMs < STREAMING_RECENT_MS) {
     kind = 'streaming'
+  } else if (sinceLastToolMs !== null && sinceLastToolMs < TOOL_ACTIVITY_RECENT_MS) {
+    kind = 'tool'
   } else if (
     PROGRESS_WORKING_RE.test(hay) &&
     sinceLastTokenMs !== null &&
@@ -71,46 +94,49 @@ export function buildTurnActivity(
     kind = /confirm/.test(hay) ? 'confirm' : 'tool'
   }
 
-  return { sinceLastEventMs, sinceLastTokenMs, lastProgressDetail, kind }
+  return {
+    sinceLastEventMs,
+    sinceLastToolMs,
+    sinceLastActivityMs,
+    sinceLastTokenMs,
+    lastProgressDetail,
+    kind,
+  }
 }
 
 export function isLikelyStalled(activity: TurnActivitySnapshot): boolean {
   if (activity.kind === 'idle') return false
   if (activity.kind === 'streaming') return false
+  if (activity.kind === 'tool' || activity.kind === 'confirm') return false
 
   if (activity.kind === 'waiting_model' || activity.kind === 'post_answer_wait') {
-    if (activity.sinceLastEventMs >= WAITING_STALL_MS) return true
-    if (
-      activity.kind === 'post_answer_wait' &&
-      activity.sinceLastTokenMs !== null &&
-      activity.sinceLastTokenMs >= WAITING_STALL_MS
-    ) {
-      return true
-    }
+    if (activity.sinceLastActivityMs >= WAITING_STALL_MS) return true
     return false
   }
 
-  if (activity.kind === 'tool' || activity.kind === 'confirm') {
-    return false
-  }
-  return activity.sinceLastEventMs >= STALL_WARN_MS
+  return activity.sinceLastActivityMs >= STALL_WARN_MS
+}
+
+function formatStallDuration(ms: number, brightDate?: boolean): string {
+  return formatDurationMs(ms, { brightDate })
 }
 
 function waitingModelHint(
   activity: TurnActivitySnapshot,
   queuedCount: number,
-  sessionModel: string | undefined
+  sessionModel: string | undefined,
+  brightDate?: boolean
 ): string {
-  const min = Math.round(activity.sinceLastEventMs / 60_000)
+  const idleLabel = formatStallDuration(activity.sinceLastActivityMs, brightDate)
   const local = isLocalLlmSession(sessionModel)
   let base = local
     ? 'Waiting for the local model (Ollama load can be idle on CPU — not the same as generating tokens).'
     : 'Waiting for the cloud LLM (API latency — not the same as streaming tokens yet).'
-  if (activity.sinceLastEventMs >= WAITING_STALL_MS) {
+  if (activity.sinceLastActivityMs >= WAITING_STALL_MS) {
     base = local
-      ? `Waiting for Ollama for ${min}+ min — likely stuck. Stop, Ping stack, check ollama ps, or Force FAST for UI-style tasks.`
-      : `Waiting for cloud LLM for ${min}+ min — likely stuck. Stop, verify OPENAI_API_KEY / OPENAI_API_BASE in the shell that launched the app, then retry.`
-  } else if (activity.sinceLastEventMs >= WAITING_WARN_MS) {
+      ? `Waiting for Ollama for ${idleLabel} — likely stuck. Stop, Ping stack, check ollama ps, or Force FAST for UI-style tasks.`
+      : `Waiting for cloud LLM for ${idleLabel} — likely stuck. Stop, verify OPENAI_API_KEY / OPENAI_API_BASE in the shell that launched the app, then retry.`
+  } else if (activity.sinceLastActivityMs >= WAITING_WARN_MS) {
     base += local
       ? ' Taking a long time — try Stop, Force FAST (chat bar), or Terminal → Local LLM → Start.'
       : ' Taking a long time — try Stop, confirm Settings model and cloud env, then retry.'
@@ -124,9 +150,12 @@ function waitingModelHint(
 export function turnActivityHint(
   activity: TurnActivitySnapshot,
   queuedCount: number,
-  sessionModel?: string
+  sessionModel?: string,
+  opts?: TurnActivityHintOptions
 ): string {
   const local = isLocalLlmSession(sessionModel)
+  const agent = Boolean(opts?.isAgentTurn)
+  const brightDate = opts?.brightDate
   if (activity.kind === 'idle') {
     if (queuedCount > 0) {
       return `${queuedCount} message${queuedCount === 1 ? '' : 's'} queued — waiting for current turn to finish.`
@@ -143,20 +172,37 @@ export function turnActivityHint(
   }
 
   if (activity.kind === 'waiting_model') {
-    return waitingModelHint(activity, queuedCount, sessionModel)
+    return waitingModelHint(activity, queuedCount, sessionModel, brightDate)
+  }
+
+  if (activity.kind === 'tool') {
+    const base = agent
+      ? 'Agent is running tools — new chat tokens may pause while shell or repo work runs.'
+      : 'Tools are running — the model may not stream tokens during command output.'
+    if (queuedCount > 0) {
+      return `${base} ${queuedCount} message${queuedCount === 1 ? '' : 's'} queued until this turn completes.`
+    }
+    return base
   }
 
   if (activity.kind === 'post_answer_wait') {
-    const min = Math.round((activity.sinceLastTokenMs ?? activity.sinceLastEventMs) / 60_000)
-    let base = local
-      ? 'Answer is visible but the turn has not finished — core may be waiting on Ollama (check Settings → Ollama models /api/ps) or repo work. Queued /add messages will not run until the turn ends.'
-      : 'Answer is visible but the turn has not finished — core may be waiting on the cloud API or repo work. Queued /add messages will not run until the turn ends.'
-    if (activity.sinceLastEventMs >= WAITING_STALL_MS || (activity.sinceLastTokenMs ?? 0) >= WAITING_STALL_MS) {
-      base = local
-        ? `Answer visible but no progress for ${min}+ min — likely stuck on heavy Ollama or repo work. Stop, Force FAST, Ping stack, then retry.`
-        : `Answer visible but no progress for ${min}+ min — likely stuck on cloud LLM or repo work. Stop, verify cloud env, then retry.`
-    } else if (activity.sinceLastEventMs >= WAITING_WARN_MS) {
-      base += ' If this persists, Stop or Force FAST.'
+    const idleLabel = formatStallDuration(
+      activity.sinceLastTokenMs ?? activity.sinceLastActivityMs,
+      brightDate
+    )
+    let base = agent
+      ? 'Answer is visible but the agent has not finished — it may still be waiting on the model, running tools, or repo work. Queued messages send when the agent completes this turn.'
+      : local
+        ? 'Answer is visible but the turn has not finished — core may be waiting on Ollama (check Settings → Ollama models /api/ps) or repo work. Queued /add messages will not run until the turn ends.'
+        : 'Answer is visible but the turn has not finished — core may be waiting on the cloud API or repo work. Queued /add messages will not run until the turn ends.'
+    if (activity.sinceLastActivityMs >= WAITING_STALL_MS) {
+      base = agent
+        ? `Answer visible but no progress for ${idleLabel} — agent may be stuck. Stop, Force FAST, or Ping stack, then retry.`
+        : local
+          ? `Answer visible but no progress for ${idleLabel} — likely stuck on heavy Ollama or repo work. Stop, Force FAST, Ping stack, then retry.`
+          : `Answer visible but no progress for ${idleLabel} — likely stuck on cloud LLM or repo work. Stop, verify cloud env, then retry.`
+    } else if (activity.sinceLastActivityMs >= WAITING_WARN_MS) {
+      base += agent ? ' If this persists, Stop the agent turn.' : ' If this persists, Stop or Force FAST.'
     }
     if (queuedCount > 0) {
       return `${base} Use Add all on suggested files while busy, Clear queue, or Stop — then Ping stack and retry.`
@@ -165,11 +211,11 @@ export function turnActivityHint(
   }
 
   if (isLikelyStalled(activity)) {
-    const sec = Math.round(activity.sinceLastEventMs / 1000)
+    const sec = formatStallDuration(activity.sinceLastActivityMs, brightDate)
     const tail = local
       ? 'Try Stop, check Terminal / Ollama, then retry.'
       : 'Try Stop, check Terminal and cloud API env, then retry.'
-    return `No core activity for ${sec}s — likely stuck (not thinking). ${tail} Clear the queue if you queued many /add messages.`
+    return `No core activity for ${sec} — likely stuck (not thinking). ${tail} Clear the queue if you queued many /add messages.`
   }
 
   if (queuedCount > 0) {

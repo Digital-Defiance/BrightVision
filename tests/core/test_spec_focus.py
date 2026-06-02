@@ -12,7 +12,7 @@ from bright_vision_core.spec_focus import (
     spec_focus_requested,
     todo_has_spec_content,
 )
-from bright_vision_core.workspace_todos import TodoItem, TodoStore, migrate_todo_layers
+from bright_vision_core.workspace_todos import TodoItem, TodoStore, migrate_todo_layers, ChecklistItem
 
 
 def _item(
@@ -61,6 +61,13 @@ class TestSpecFocusGating(unittest.TestCase):
 
     def test_empty_layers_not_spec_content(self):
         item = _item()
+        self.assertFalse(todo_has_spec_content(item))
+        self.assertFalse(
+            spec_focus_preamble_applies(focus_requested=True, item=item)
+        )
+
+    def test_tasks_md_alone_not_spec_content(self):
+        item = _item(tasks_md="- [ ] Explore project structure\n- [ ] Ship feature")
         self.assertFalse(todo_has_spec_content(item))
         self.assertFalse(
             spec_focus_preamble_applies(focus_requested=True, item=item)
@@ -122,6 +129,44 @@ class TestSpecFocusGating(unittest.TestCase):
             self.assertEqual(tid, item.id)
             self.assertIn("[Active task:", text)
             self.assertNotIn("Spec-focus mode", text)
+            self.assertNotIn("(No requirements yet.)", text)
+
+    def test_light_inject_for_checklist_task(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            now = "2026-01-01T00:00:00Z"
+            item = migrate_todo_layers(
+                TodoItem(
+                    id="task-2",
+                    title="Explore repo",
+                    spec="",
+                    requirements="",
+                    design="",
+                    tasks_md="",
+                    depends_on=[],
+                    branch="",
+                    pr_url="",
+                    status="open",
+                    links=[],
+                    checklist=[
+                        ChecklistItem(id="c1", text="List crates", done=False),
+                    ],
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            store = TodoStore(version=1, active_id=item.id, todos=[item])
+            text, active, tid = build_user_message_with_spec_context(
+                tmp,
+                "/agent go",
+                item=item,
+                store=store,
+                focus_requested=False,
+                inject_todo_spec=True,
+            )
+            self.assertEqual(tid, item.id)
+            self.assertIn("## Checklist", text)
+            self.assertIn("List crates", text)
+            self.assertNotIn("Requirements", text)
 
 
 if __name__ == "__main__":

@@ -16,10 +16,12 @@ export interface SessionStallWatch {
 export function useSessionStallWatch(
   isBusy: boolean,
   queuedCount: number,
-  sessionModel = ''
+  sessionModel = '',
+  hintOpts?: { isAgentTurn?: boolean; brightDate?: boolean }
 ): SessionStallWatch {
   const lastEventAtRef = useRef<number | null>(null)
   const lastTokenAtRef = useRef<number | null>(null)
+  const lastToolAtRef = useRef<number | null>(null)
   const lastProgressDetailRef = useRef('')
   const [tick, setTick] = useState(0)
 
@@ -27,10 +29,14 @@ export function useSessionStallWatch(
     const now = Date.now()
     lastEventAtRef.current = now
     if (type === 'token') lastTokenAtRef.current = now
+    if (type === 'tool_output' || type === 'tool_error' || type === 'tool_warning') {
+      lastToolAtRef.current = now
+    }
     if (type === 'progress' && detail) lastProgressDetailRef.current = detail
     if (type === 'done' || type === 'error') {
       lastEventAtRef.current = null
       lastTokenAtRef.current = null
+      lastToolAtRef.current = null
       lastProgressDetailRef.current = ''
     }
   }
@@ -39,6 +45,7 @@ export function useSessionStallWatch(
     if (!isBusy) {
       lastEventAtRef.current = null
       lastTokenAtRef.current = null
+      lastToolAtRef.current = null
       lastProgressDetailRef.current = ''
       return
     }
@@ -52,10 +59,12 @@ export function useSessionStallWatch(
     isBusy,
     lastEventAtRef.current,
     lastTokenAtRef.current,
-    lastProgressDetailRef.current
+    lastProgressDetailRef.current,
+    Date.now(),
+    lastToolAtRef.current
   )
   const stalled = isLikelyStalled(activity)
-  const hint = turnActivityHint(activity, queuedCount, sessionModel)
+  const hint = turnActivityHint(activity, queuedCount, sessionModel, hintOpts)
 
   return { activity, hint, stalled, touchEvent }
 }

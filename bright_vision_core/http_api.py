@@ -43,6 +43,7 @@ from bright_vision_core.session import Session
 from bright_vision_core.session_debug import build_session_debug_export
 from bright_vision_core.session_transcript import transcript_rows_from_coder
 from bright_vision_core.todo_spec_jobs import spec_gen_timeout_s, spec_job_store
+from bright_vision_core.workspace_files import filter_existing_workspace_paths
 from bright_vision_core.workspace_todos import (
     SPEC_LAYER_TEMPLATES,
     TODO_TEMPLATES,
@@ -499,10 +500,17 @@ def _engine_versions() -> dict[str, str]:
 
 @app.get("/health")
 def health():
+    import os
+
+    from bright_vision_core.agent_turn import AGENT_TURN_FEATURES
+
+    engine_root = os.environ.get("BRIGHT_VISION_ROOT") or os.environ.get("BV_ROOT")
     return {
         "status": "ok",
         "auth_required": auth_enabled(),
         "versions": _engine_versions(),
+        "engine_root": engine_root,
+        "agent_turn_features": AGENT_TURN_FEATURES,
     }
 
 
@@ -1025,6 +1033,22 @@ def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
             for i in (getattr(job, "ears_issues", None) or [])
         ],
     )
+
+
+class FilterWorkspacePathsRequest(BaseModel):
+    paths: list[str] = Field(default_factory=list)
+
+
+class FilterWorkspacePathsResponse(BaseModel):
+    existing: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+
+@app.post("/workspaces/filter-paths", response_model=FilterWorkspacePathsResponse)
+def filter_workspace_paths(workspace: str, body: FilterWorkspacePathsRequest):
+    """Return which repo-relative paths exist on disk (suggested-files tray)."""
+    existing, missing = filter_existing_workspace_paths(workspace, body.paths)
+    return FilterWorkspacePathsResponse(existing=existing, missing=missing)
 
 
 @app.post("/workspaces/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)

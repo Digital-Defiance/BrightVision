@@ -6,6 +6,9 @@
 const LEGACY_GITIGNORE_ADD =
   /can't add\s+(.+?)\s+which is in gitignore\.?/i
 
+const NOT_ON_DISK = /^Not on disk:\s+(.+?)\s+—/i
+const LEGACY_NOT_A_FILE = /^Not a file:\s+(.+)$/i
+
 /** Shorten long paths for snackbars and alerts. */
 export function shortDisplayPath(path: string, maxLen = 48): string {
   const p = path.trim().replace(/\\/g, '/')
@@ -17,6 +20,14 @@ export function shortDisplayPath(path: string, maxLen = 48): string {
 /** Rewrite legacy cecli “in gitignore” tool_error text for the chat timeline. */
 export function rewriteAddFileToolMessage(text: string, workspace?: string): string {
   const trimmed = text.trim()
+  const notDisk = trimmed.match(NOT_ON_DISK) ?? trimmed.match(LEGACY_NOT_A_FILE)
+  if (notDisk) {
+    const file = shortDisplayPath(notDisk[1].trim(), 56)
+    return (
+      `Could not add ${file} to context — not on disk yet. ` +
+      'The assistant may have named a planned file in a design outline; create it or pick an existing path.'
+    )
+  }
   const legacy = trimmed.match(LEGACY_GITIGNORE_ADD)
   if (!legacy) return text
 
@@ -49,6 +60,6 @@ export function formatFilesNotAddedSnackbar(missing: string[], workspace?: strin
   const wsHint = ws ? ` Workspace: ${shortDisplayPath(ws, 56)}.` : ''
   return (
     `Not in context: ${listed}.${wsHint} ` +
-    'See tool messages above—ignore rules, wrong project folder, or path outside the repo.'
+    'Path may be missing on disk, excluded by ignore rules, outside the repo, or the project folder may be wrong.'
   )
 }

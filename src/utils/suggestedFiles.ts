@@ -67,6 +67,31 @@ function collectBacktickPaths(block: string, found: Set<string>) {
   }
 }
 
+/** Design bullets like ``- `src/foo.rs`: module …`` — planned paths, not files to add. */
+const DESIGN_OUTLINE_LINE = new RegExp(
+  `^\\s*[-*]\\s+(?:\`([^\`]+)\`|(\\S+\\.(?:${FILE_EXT})))\\s*:`,
+  'im'
+)
+
+function pathMentionedAsDesignOutline(text: string, path: string): boolean {
+  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const backtick = new RegExp(`\`${escaped}\`\\s*:`, 'm')
+  if (backtick.test(text)) return true
+  for (const line of text.split('\n')) {
+    const hit = line.match(DESIGN_OUTLINE_LINE)
+    if (!hit) continue
+    const raw = (hit[1] ?? hit[2] ?? '').trim()
+    const n = normalizeSuggestedPath(raw)
+    if (n === path) return true
+  }
+  return false
+}
+
+/** Drop paths that look like planned modules in a design outline, not real files. */
+export function filterDesignOutlinePaths(text: string, paths: string[]): string[] {
+  return paths.filter((p) => !pathMentionedAsDesignOutline(text, p))
+}
+
 /** Pull likely repo-relative paths from assistant Answer text or full message. */
 export function extractSuggestedFilePaths(text: string): string[] {
   const found = new Set<string>()
@@ -154,14 +179,27 @@ export function buildSuggestedFileEntries(
   return paths.map((path) => ({ path, addCommand: `/add ${path}` }))
 }
 
+/** Merge explicit path lists (e.g. after server-side existence filter). */
+export function mergeSuggestedPathLists(
+  existing: string[],
+  incoming: string[],
+  filesInChat: string[] = []
+): string[] {
+  const set = new Set(existing)
+  for (const p of incoming) set.add(p)
+  return filterPathsNotInChat([...set], filesInChat).sort()
+}
+
 /** Session tray: merge new paths from assistant text, dedupe, drop paths already in chat. */
 export function mergeSuggestedPaths(
   existing: string[],
   assistantText: string,
   filesInChat: string[] = []
 ): string[] {
-  const incoming = filterPathsNotInChat(extractSuggestedFilePaths(assistantText), filesInChat)
-  const set = new Set(existing)
-  for (const p of incoming) set.add(p)
-  return filterPathsNotInChat([...set], filesInChat).sort()
+  const raw = filterDesignOutlinePaths(
+    assistantText,
+    extractSuggestedFilePaths(assistantText)
+  )
+  const incoming = filterPathsNotInChat(raw, filesInChat)
+  return mergeSuggestedPathLists(existing, incoming, filesInChat)
 }

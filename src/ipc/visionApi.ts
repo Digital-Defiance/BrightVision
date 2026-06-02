@@ -6,9 +6,12 @@ import { invoke } from '@tauri-apps/api/core'
 import type { VisionConfig } from './config'
 import type { CoreEventBase } from './events'
 import type { CoreSessionInfo, ModelRouterApiConfig, SendMessageOptions } from './httpClient'
-import { CoreHttpClient } from './httpClient'
+import { createCoreHttpClient } from './httpClient'
+import type { CoreHttpClient } from './httpClient'
 import { waitForVisionApi } from './health'
 import { isTauriRuntime } from './isTauri'
+import { desktopVisionPost } from './desktopVisionApi'
+import { desktopVisionSendMessage } from './desktopVisionSse'
 import { spawnDesktopVisionApi } from './visionApiSpawn'
 import type { ProcessUpdate } from '../progress/types'
 import { isUserCancellationError } from '../utils/abort'
@@ -61,6 +64,7 @@ export function createVisionApiSession(
   let sessionId: string | null = null
   let sessionInfo: CoreSessionInfo | null = null
   let apiUrl: string | null = null
+  let apiToken: string | undefined
   let desktopStartedServe = false
   let sendAbort: AbortController | null = null
   let startAbort: AbortController | null = null
@@ -114,7 +118,8 @@ export function createVisionApiSession(
         }
         if (signal.aborted) throw new DOMException('Start cancelled', 'AbortError')
         apiUrl = url
-        client = new CoreHttpClient(url, cfg.coreApiToken || undefined)
+        apiToken = cfg.coreApiToken?.trim() || undefined
+        client = createCoreHttpClient(url, apiToken)
         onPhase?.({ phase: 'connecting', label: 'Connecting', detail: url, progress: 0.45 })
         await waitForVisionApi(client, signal)
         if (signal.aborted) throw new DOMException('Start cancelled', 'AbortError')
@@ -189,17 +194,28 @@ export function createVisionApiSession(
         desktopStartedServe = false
       }
       apiUrl = null
+      apiToken = undefined
     },
 
     async send(content, options) {
-      if (!client || !sessionId) {
+      if (!client || !sessionId || !apiUrl) {
         throw new Error('Vision API session is not started')
       }
       sendAbort?.abort()
       sendAbort = new AbortController()
       const signal = sendAbort.signal
       try {
-        for await (const event of client.sendMessage(sessionId, content, signal, options)) {
+        const stream = isTauriRuntime()
+          ? desktopVisionSendMessage(
+              apiUrl,
+              sessionId,
+              apiToken,
+              content,
+              options,
+              signal
+            )
+          : client.sendMessage(sessionId, content, signal, options)
+        for await (const event of stream) {
           onEvent(event)
         }
       } catch (err) {
@@ -211,10 +227,15 @@ export function createVisionApiSession(
     },
 
     async addFiles(paths) {
-      if (!client || !sessionId) {
+      if (!client || !sessionId || !apiUrl) {
         throw new Error('Vision API session is not started')
       }
-      const result = await client.addSessionFiles(sessionId, paths)
+      const result = isTauriRuntime()
+        ? await desktopVisionPost<{
+            files_in_chat: string[]
+            events: CoreEventBase[]
+          }>(apiUrl, `sessions/${sessionId}/files`, apiToken, { paths })
+        : await client.addSessionFiles(sessionId, paths)
       sessionInfo = {
         session_id: sessionId,
         workspace: sessionInfo?.workspace ?? '',
@@ -228,10 +249,15 @@ export function createVisionApiSession(
     },
 
     async uploadFiles(files) {
-      if (!client || !sessionId) {
+      if (!client || !sessionId || !apiUrl) {
         throw new Error('Vision API session is not started')
       }
-      const result = await client.uploadSessionFiles(sessionId, files)
+      const result = isTauriRuntime()
+        ? await desktopVisionPost<{
+            files_in_chat: string[]
+            events: CoreEventBase[]
+          }>(apiUrl, `sessions/${sessionId}/files/upload`, apiToken, { files })
+        : await client.uploadSessionFiles(sessionId, files)
       sessionInfo = {
         session_id: sessionId,
         workspace: sessionInfo?.workspace ?? '',
@@ -248,24 +274,45 @@ export function createVisionApiSession(
       sendAbort?.abort()
       sendAbort = null
       const sid = sessionId
-      const c = client
-      if (sid && c) {
-        void c.interruptTurn(sid).catch(() => {})
+      if (!sid || !apiUrl) return
+      if (isTauriRuntime()) {
+        void invoke('cancel_vision_message')
+        void desktopVisionPost(
+          apiUrl,
+          `sessions/${sid}/interrupt`,
+          apiToken,
+          {}
+        ).catch(() => {})
+      } else {
+        void client?.interruptTurn(sid).catch(() => {})
       }
     },
 
     async submitConfirm(confirmId, answer) {
-      if (!client || !sessionId) {
+      if (!client || !sessionId || !apiUrl) {
         throw new Error('Vision API session is not started')
       }
-      await client.submitConfirm(sessionId, confirmId, answer)
+      if (isTauriRuntime()) {
+        await desktopVisionPost(apiUrl, `sessions/${sessionId}/confirm`, apiToken, {
+          confirm_id: confirmId,
+          answer,
+        })
+      } else {
+        await client.submitConfirm(sessionId, confirmId, answer)
+      }
     },
 
     async undo() {
-      if (!client || !sessionId) {
+      if (!client || !sessionId || !apiUrl) {
         throw new Error('Vision API session is not started')
       }
-      const result = await client.undo(sessionId)
+      const result = isTauriRuntime()
+        ? await desktopVisionPost<{
+            events: CoreEventBase[]
+            commits: unknown
+            last_commit_hash: string | null
+          }>(apiUrl, `sessions/${sessionId}/undo`, apiToken, {})
+        : await client.undo(sessionId)
       for (const event of result.events) {
         onEvent(event as CoreEventBase)
       }

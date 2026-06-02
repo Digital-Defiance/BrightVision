@@ -34,6 +34,51 @@ curl -s http://127.0.0.1:11434/api/tags   # Ollama up?
 
 Restart the Vision API after changing env vars (`Terminal → Stop` / **Start**).
 
+## `/agent` showed a shell command but nothing ran (turn ends Ready)
+
+**Symptoms:** The agent writes prose plus a markdown code block like ` ```bash find … ``` `, status goes **Ready**, and there is no **Shell** tool output or observation. Or the turn ends in **~1s** with **no assistant bubble**, empty `assistant_text` in debug export, and only `Running slash commands…` before `done`.
+
+**Cause:** Local models sometimes emit shell commands as markdown instead of Cecli agent tool calls. A pending **Add file to the chat?** confirm can also block work on older builds. **Instant empty `/agent`:** when Tasks injects a checklist **above** the `/agent` line, cecli only runs slash commands when the message **starts with** `/` — injected text prevented `/agent` from running at all (fixed by `synthetic_slash_preproc_input`). **False 300s timeout on `/agent`:** the same injection made Vision apply `VISION_SLASH_PREPROC_TIMEOUT_S` instead of the unlimited agent default — fixed by resolving the slash from the raw message / `agent_cmd` flag.
+
+**Current behavior:**
+
+- **`/agent` auto-approves** routine confirms (e.g. **Add file to the chat?**) during the agent preproc phase — including when the model mentions `Cargo.toml` inside a markdown shell block.
+- The desktop UI also auto-answers confirms for the duration of an **`/agent`** turn.
+- If the turn finishes with a prose shell block and **no tool activity**, Vision emits an orange **tool_warning** explaining the dead end and suggesting retry/nudge.
+- **Read-only recovery:** when the model writes a safe exploration command in a markdown shell block (`find`, `ls`, `git status`, …), Vision auto-runs it and appends the output to the turn (requires restarted core). Look for **Recovered prose shell (read-only)** in the activity log.
+- **Auto-continue:** when cecli runs that shell and adds output but `/agent` stops before analyzing (common with local models), Vision automatically sends one follow-up `/agent continue` turn in the same session.
+
+**If recovery still did not run** (debug export shows prose shell, `tool_invocations: []`, no **Recovered prose shell** and no orange warning): an older core could finish the turn on the main chat path instead of the `/agent` finalize path — reinstall with `pip install -e .`, kill `:8741`, Stop/Start. `agent_turn_features` in `/health` is a capability flag; all listed features must be in the running `session.py` / `event_io.py` build.
+
+**What to do:**
+
+1. Retry with a short nudge: “Use the shell tool to run that find command.”
+2. Answer any pending confirms in the chat if you still see them.
+3. Ensure **Engineer / heavy** model is loaded (`/agent` forces heavy when model router is on).
+4. Restart **bright-vision-core-serve** after pulling fixes so auto-yes and warnings apply.
+
+**Desktop rebuild is not enough:** Tauri starts `.venv/bin/bright-vision-core-serve` from the **engine install root**, not your open project (`brightdate-rust`). After pulling engine fixes run:
+
+```bash
+cd /Volumes/Code/BrightVision   # your BrightVision repo
+source activate.sh
+pip install -e .
+```
+
+Then **Terminal → Stop** / **Start**. If Start still reuses an old listener, kill the orphan:
+
+```bash
+lsof -ti :8741 | xargs kill -9
+```
+
+Verify the running API:
+
+```bash
+curl -s http://127.0.0.1:8741/health | python3 -m json.tool
+```
+
+You should see `"agent_turn_features": { "prose_shell_recovery": true, ... }`. If that key is missing, the stale server is still bound to `:8741` (BrightVision now auto-replaces it on Start when the desktop app is rebuilt with the latest Tauri shell).
+
 ## Stuck on “Sending” / no assistant reply
 
 The header can show **Sending** while the turn timer runs (**Waiting for model** above the chat input). That usually means **Cecli** is waiting on Ollama, not that the UI is frozen.
@@ -85,14 +130,45 @@ WebKit reports **`Load failed`** when the UI cannot complete a request to `http:
 
 Optional: `export BRIGHT_VISION_ROOT=/path/to/BrightVision` before launching the app if you use a non-standard install layout.
 
+**`/add`, `/agent`, Tasks tab, or Stop fail with `Load failed` while Start works:** On macOS desktop, WebKit often breaks `fetch` **POST** to `localhost:8741` even when **GET** `/health` succeeds. Current builds route session chat (SSE), file add/upload, confirm/undo, interrupt, and Tasks CRUD through Tauri/reqwest instead of WebKit. Rebuild the desktop app (`yarn tauri:dev` or your release build) after pulling these fixes.
+
+## “Not on disk” / “Not a file” when adding context
+
+**Cause:** The path is not a real file under **Settings → project folder** (workspace root). Common cases:
+
+- The assistant listed **planned** modules in a design outline (e.g. `` `src/resolver.rs`: BSLP … ``) before those files exist.
+- You clicked **Add all** on suggested paths that were never created.
+- The project folder points at the wrong git root (paths exist elsewhere on disk).
+
+**What to do:**
+
+1. Dismiss or clear the suggested-files tray chips for paths you have not created yet.
+2. Add only files that exist (e.g. `Cargo.toml`, reference trees, `.cecli/specs/.../requirements.md`).
+3. After the agent edits spec markdown on disk, the next turn should pick up layers automatically (import into `todos.json` on turn end). If the Tasks panel still shows “(No requirements yet.)”, use **Reload spec from disk** on that task.
+4. If auto-commit failed with `attribute_author`, update BrightVision core (`default_headless_args` includes git attribution fields) and restart the Vision API.
+
+**Tasks without spec layers:** Normal checklist tasks inject title + checklist only (no “No requirements yet.” placeholders). Turn off **Tasks → Spec focus** unless you are doing EARS/spec-layer work — that toggle adds spec-focus steering, not basic task tracking.
+
+This is not a `/Volumes` vs `/Users` permission issue when the file truly does not exist at the resolved path.
+
 ## Stuck on “Connecting” (desktop)
 
 The activity bar can show **Connecting** to `http://127.0.0.1:8741` while the header says **Stopped** if a **Start** is still in progress or a previous start left the UI in a bad state.
 
 1. Click **Stop** on the Terminal tab — it stays enabled whenever the activity bar shows **Connecting** / **Starting engine** (not only when the session is “live”).
 2. Click **Start** again only after Stop finishes; a second Start while connecting will stop the stuck attempt first.
-3. If the port is still busy, quit the app fully and reopen it (startup clears orphaned listeners on `:8741`).
+3. If the port is still busy, quit the app fully and reopen it (the desktop app now frees `:8741` on **Cmd+Q** / Quit as of the Tauri `ExitRequested` handler; rebuild if an orphan persists from an older build).
 4. Check Terminal → technical log for Python/uvicorn errors from `bright_vision_core-serve`.
+
+## `:8741` still listening after Quit (Cmd+Q)
+
+**Symptoms:** After **Cmd+Q** or Quit from the menu, `lsof -i :8741` still shows `python` / `bright-vision-core-serve`.
+
+**Cause (fixed in current Tauri shell):** Cleanup was hooked only to the window **Close** event and ran in a fire-and-forget async task, so macOS quit could exit before the Vision API child was killed. Reused APIs (healthy orphan on `:8741` with no tracked child) were also left running.
+
+**Fix in app:** Quit now runs `shutdown_vision_api` on `RunEvent::ExitRequested` — kills the tracked serve child, stops LAN remote, then `lsof`/`kill` on the configured API port (same as **Terminal → Stop**).
+
+**If stuck from an older build:** `lsof -ti :8741 | xargs kill -9`, then rebuild the desktop app.
 
 ## `No module named 'aider'`
 

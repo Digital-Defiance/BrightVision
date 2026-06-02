@@ -58,22 +58,82 @@ export function formatTodoContext(todo: TodoItem, allTodos?: TodoItem[]): string
   return lines.join('\n')
 }
 
+export function todoHasSpecLayers(todo: TodoItem): boolean {
+  const item = migrateTodoLayers(todo)
+  const placeholders = new Set([
+    '(No requirements yet.)',
+    '(No design yet.)',
+    '(No implementation tasks yet.)',
+  ])
+  for (const text of [item.requirements, item.design, item.spec]) {
+    const trimmed = text.trim()
+    if (trimmed && !placeholders.has(trimmed)) return true
+  }
+  return false
+}
+
+export function formatTodoContextLight(todo: TodoItem, allTodos?: TodoItem[]): string {
+  const item = migrateTodoLayers(todo)
+  const lines = [`[Active task: ${item.title} · id ${item.id.slice(0, 8)}]`, '']
+  if (item.branch.trim()) {
+    lines.push(`**Git branch:** ${item.branch.trim()}`)
+  }
+  if (item.pr_url.trim()) {
+    lines.push(`**Pull request:** ${item.pr_url.trim()}`)
+  }
+  if (item.branch.trim() || item.pr_url.trim()) {
+    lines.push('')
+  }
+
+  if (item.depends_on.length && allTodos?.length) {
+    const pending: string[] = []
+    for (const depId of item.depends_on) {
+      const dep = allTodos.find((t) => t.id === depId || t.id.startsWith(depId))
+      if (dep && dep.status !== 'done') {
+        pending.push(`${dep.title} (${dep.id.slice(0, 8)})`)
+      }
+    }
+    if (pending.length) {
+      lines.push(`**Blocked by:** ${pending.join(', ')}`, '')
+    }
+  }
+
+  if (item.checklist?.length) {
+    lines.push('## Checklist')
+    for (const entry of item.checklist) {
+      lines.push(`- [${entry.done ? 'x' : ' '}] ${entry.text}`)
+    }
+  } else if (item.tasks_md.trim()) {
+    lines.push('## Tasks', item.tasks_md.trim())
+  }
+  lines.push('', '---', '')
+  return lines.join('\n')
+}
+
 export function buildStartWorkMessage(todo: TodoItem, allTodos: TodoItem[]): string {
   const item = migrateTodoLayers(todo)
   const blocked = item.depends_on.some((depId) => {
     const dep = allTodos.find((t) => t.id === depId || t.id.startsWith(depId))
     return dep && dep.status !== 'done'
   })
-  if (blocked) {
+  if (todoHasSpecLayers(item)) {
+    if (blocked) {
+      return (
+        'Implement the active task per the injected requirements, design, and implementation tasks. ' +
+        'Resolve or acknowledge blocking dependencies first.'
+      )
+    }
     return (
       'Implement the active task per the injected requirements, design, and implementation tasks. ' +
-      'Resolve or acknowledge blocking dependencies first.'
+      'Work through implementation tasks in order; update the checklist as you complete acceptance items.'
     )
   }
-  return (
-    'Implement the active task per the injected requirements, design, and implementation tasks. ' +
-    'Work through implementation tasks in order; update the checklist as you complete acceptance items.'
-  )
+  if (blocked) {
+    return (
+      'Work the active task checklist in order. Resolve or acknowledge blocking dependencies first.'
+    )
+  }
+  return 'Work the active task checklist in order. Mark items done as you complete them.'
 }
 
 export function buildImplementStepMessage(step: ImplementationStep, todo: TodoItem): string {

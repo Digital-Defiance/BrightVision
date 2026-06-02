@@ -53,7 +53,7 @@ import {
   shiftPendingUserMessageId,
 } from './utils/chatStream'
 import { isTauriRuntime } from './ipc/isTauri'
-import { CoreHttpClient } from './ipc/httpClient'
+import { CoreHttpClient, createCoreHttpClient } from './ipc/httpClient'
 import { useVisionSession } from './hooks/useVisionSession'
 import { useTurnResourcePeak } from './hooks/useTurnResourcePeak'
 import { usePathCompletion } from './hooks/usePathCompletion'
@@ -62,18 +62,23 @@ import { buildImplementStepMessage, buildStartWorkMessage } from './todos/format
 import type { ImplementationStep } from './todos/tasksMd'
 import type { TodoItem } from './todos/types'
 import { useCommandCatalog } from './hooks/useCommandCatalog'
-import { parseVisionClientCommand } from './ipc/visionClientCommands'
+import {
+  parseVisionClientCommand,
+  type VisionClientCommandId,
+} from './ipc/visionClientCommands'
+import { buildActivityPresentation } from './utils/progressDisplay'
+import { appendTurnsTableToChat } from './utils/turnsTable'
 import { fetchOllamaModelsSnapshot } from './utils/ollamaModelRows'
-import type { VisionClientCommandId } from './ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from './ipc/localLlm'
 import { useGitStatus } from './hooks/useGitStatus'
 import { autoStageEditedFiles } from './ipc/gitStatus'
 import { useSessionActivity } from './hooks/useSessionActivity'
 import {
   extractSuggestedFilePaths,
+  filterDesignOutlinePaths,
   filterPathsNotInChat,
   isAwaitingFilesCta,
-  mergeSuggestedPaths,
+  mergeSuggestedPathLists,
   normalizeAddCommandPath,
   parseAddCommandPath,
   pathsNotInChat,
@@ -171,6 +176,12 @@ import { useAppVersions } from './hooks/useAppVersions'
 import { StderrBatcher } from './utils/stderrBatch'
 import { useThinkingTiming } from './hooks/useThinkingTiming'
 import { useSessionStallWatch } from './hooks/useSessionStallWatch'
+import { useAgentGuard } from './hooks/useAgentGuard'
+import {
+  loadAgentGuardPrefs,
+  saveAgentGuardPrefs,
+  type AgentGuardPrefs,
+} from './theme/agentGuardPrefs'
 import { useResourceOverlay } from './hooks/useResourceOverlay'
 import {
   clearAllThinkingStats,
@@ -182,6 +193,7 @@ import {
 import type { CoreTurnCapture } from '@brightvision/vision-client'
 import { bdFromUnixMs } from '@brightvision/vision-client'
 import { estimateTurnEta } from './utils/turnEtaEstimate'
+import { estimateAgentPlanEta, mergeTurnAndPlanEta } from './utils/agentPlanEta'
 import {
   mergeTurnCaptureWithResourceStats,
   turnCaptureExtras,
@@ -370,6 +382,8 @@ function AppShell({
   setEditorLanguagePrefs,
   modelRouterPrefs,
   setModelRouterPrefs,
+  agentGuardPrefs,
+  setAgentGuardPrefs,
 }: {
   appearance: AppearanceConfig
   setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
@@ -385,6 +399,8 @@ function AppShell({
   setEditorLanguagePrefs: React.Dispatch<React.SetStateAction<EditorLanguagePrefs>>
   modelRouterPrefs: ModelRouterPrefs
   setModelRouterPrefs: React.Dispatch<React.SetStateAction<ModelRouterPrefs>>
+  agentGuardPrefs: AgentGuardPrefs
+  setAgentGuardPrefs: React.Dispatch<React.SetStateAction<AgentGuardPrefs>>
 }) {
   const ntfyAlertsPrefsRef = useRef(ntfyAlertsPrefs)
   ntfyAlertsPrefsRef.current = ntfyAlertsPrefs
@@ -442,6 +458,10 @@ function AppShell({
   const specPendingUserMessageIdsRef = useRef<number[]>([])
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const streamingAssistantId = useRef<number | null>(null)
+  const agentTurnActiveRef = useRef(false)
+  const [agentTurnLive, setAgentTurnLive] = useState(false)
+  const lastToolSnippetRef = useRef('')
+  const [activityToolTick, setActivityToolTick] = useState(0)
   const pendingUserMessageIdsRef = useRef<number[]>([])
   const chatMessageIdSeqRef = useRef(0)
   const todoInjectedIdRef = useRef<string | null>(null)
@@ -454,6 +474,9 @@ function AppShell({
   const specChatMessagesRef = useRef(specChatMessages)
   specChatMessagesRef.current = specChatMessages
   const ingestSuggestionsRef = useRef<(content: string) => void>(() => {})
+  const filterSuggestedPathsRef = useRef<
+    (paths: string[]) => Promise<string[]>
+  >(async (paths) => paths)
   const suggestedFilesPrefsRef = useRef(suggestedFilesPrefs)
   suggestedFilesPrefsRef.current = suggestedFilesPrefs
   const lastAssistantStreamRef = useRef('')
@@ -761,6 +784,21 @@ function AppShell({
         ? String((ev as { message?: string }).message ?? (ev as { label?: string }).label ?? '')
         : undefined
     stallWatchRef.current(ev.type, progressDetail)
+    if (ev.type === 'tool_output' || ev.type === 'tool_error' || ev.type === 'tool_warning') {
+      const snippet = String((ev as { text?: string }).text ?? '').trim()
+      if (snippet) {
+        lastToolSnippetRef.current = snippet.slice(0, 240)
+        setActivityToolTick((n) => n + 1)
+      }
+    }
+    if (ev.type === 'done' || ev.type === 'error') {
+      if (agentTurnActiveRef.current && ev.type === 'done') {
+        agentGuard.endAgentPhase()
+      }
+      agentTurnActiveRef.current = false
+      setAgentTurnLive(false)
+      lastToolSnippetRef.current = ''
+    }
     process.ingestCoreEvent(ev)
     if (ev.type === 'done') bumpGitRefresh()
     const orderId = nextChatMessageId()
@@ -991,9 +1029,11 @@ function AppShell({
           )
         )
         if (c.auto_answered || !c.confirm_id) break
-        if (remainingAutoRef.current > 0) {
+        if (remainingAutoRef.current > 0 || agentTurnActiveRef.current) {
           void submitConfirmRef.current(c.confirm_id, true).then(() => {
-            setRemainingAutoApproves((p) => Math.max(0, p - 1))
+            if (remainingAutoRef.current > 0) {
+              setRemainingAutoApproves((p) => Math.max(0, p - 1))
+            }
           })
         } else {
           setPendingConfirmRef.current(c)
@@ -1207,14 +1247,21 @@ function AppShell({
             setSuggestedAwaitingProceed(awaiting)
             const prefs = suggestedFilesPrefsRef.current
             if (awaiting && prefs.autoAddSuggested) {
-              const paths = filterPathsNotInChat(
-                extractSuggestedFilePaths(assistantText),
-                filesInChatRef.current
+              const raw = filterDesignOutlinePaths(
+                assistantText,
+                extractSuggestedFilePaths(assistantText)
               )
-              if (paths.length) {
-                void runSuggestedAddAndProceedRef.current(paths, {
-                  proceed: prefs.autoProceedAfterAdd,
-                })
+              const candidates = filterPathsNotInChat(raw, filesInChatRef.current)
+              if (candidates.length) {
+                void filterSuggestedPathsRef
+                  .current(candidates)
+                  .then((paths) => {
+                    if (paths.length) {
+                      void runSuggestedAddAndProceedRef.current(paths, {
+                        proceed: prefs.autoProceedAfterAdd,
+                      })
+                    }
+                  })
               }
             }
           } else {
@@ -1271,7 +1318,16 @@ function AppShell({
   filesInChatRef.current = filesInChat
 
   ingestSuggestionsRef.current = (content: string) => {
-    setSuggestedPaths((prev) => mergeSuggestedPaths(prev, content, filesInChatRef.current))
+    const raw = filterDesignOutlinePaths(content, extractSuggestedFilePaths(content))
+    const candidates = filterPathsNotInChat(raw, filesInChatRef.current)
+    if (!candidates.length) return
+    void filterSuggestedPathsRef.current(candidates).then((existing) => {
+      if (existing.length) {
+        setSuggestedPaths((prev) =>
+          mergeSuggestedPathLists(prev, existing, filesInChatRef.current)
+        )
+      }
+    })
   }
 
   useEffect(() => {
@@ -1412,7 +1468,18 @@ function AppShell({
     [syncSessionFiles, recordAddedContextEstimate, savedConfig.workingDir]
   )
 
-  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model)
+  const agentGuard = useAgentGuard(
+    agentGuardPrefs,
+    thinkingTimingPrefs.brightDateMode,
+    isRunning,
+    isBusy,
+    agentTurnLive
+  )
+
+  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model, {
+    isAgentTurn: agentTurnLive,
+    brightDate: thinkingTimingPrefs.brightDateMode,
+  })
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
   const { resetPeak: resetTurnResourcePeak, takePeak: takeTurnResourcePeak } =
     useTurnResourcePeak(isRunning && trackTurnResources, resourceOverlayPrefs.pollIntervalSec)
@@ -1439,28 +1506,21 @@ function AppShell({
     turnTimingActiveRef.current = true
   }
 
-  const turnEta = useMemo(() => {
-    if (!thinkingTiming.live || !isRunning) return null
-    const liveTps =
-      turnTokenUsage && thinkingTiming.live.responseElapsedMs > 500
-        ? computeOutputTps(turnTokenUsage.tokensReceived, thinkingTiming.live.responseElapsedMs)
-        : null
-    return estimateTurnEta({
-      model: savedConfig.model,
-      promptChars: lastUserPromptCharsRef.current,
-      elapsedMs: thinkingTiming.live.responseElapsedMs,
-      statsStore: thinkingTiming.statsStore,
-      progressFraction: process.snapshot.progress,
-      liveOutputTps: liveTps,
+  const activityPresentation = useMemo(() => {
+    void activityToolTick
+    if (!process.snapshot.active) return null
+    return buildActivityPresentation({
+      processLabel: process.snapshot.label,
+      processDetail: process.snapshot.detail,
+      isAgentTurn: agentTurnLive,
+      lastToolSnippet: lastToolSnippetRef.current,
       brightDate: thinkingTimingPrefs.brightDateMode,
     })
   }, [
-    thinkingTiming.live,
-    thinkingTiming.statsStore,
-    savedConfig.model,
-    process.snapshot.progress,
-    turnTokenUsage,
-    isRunning,
+    process.snapshot.active,
+    process.snapshot.label,
+    process.snapshot.detail,
+    activityToolTick,
     thinkingTimingPrefs.brightDateMode,
   ])
 
@@ -1480,7 +1540,7 @@ function AppShell({
   )
 
   const todoApiClient = useMemo(
-    () => new CoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
+    () => createCoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
     [savedConfig.coreApiUrl, savedConfig.coreApiToken]
   )
 
@@ -1513,6 +1573,18 @@ function AppShell({
       sessionInfo?.workspace,
     ]
   )
+
+  filterSuggestedPathsRef.current = async (paths: string[]) => {
+    const client = workspaceTodosApi.client
+    const workspace = workspaceTodosApi.workspace
+    if (!client || !paths.length) return paths
+    try {
+      const { existing } = await client.filterWorkspacePaths(workspace, paths)
+      return existing
+    } catch {
+      return paths
+    }
+  }
 
   const { paths: pathSuggestions, active: pathAssistActive } = usePathCompletion(
     savedConfig.workingDir,
@@ -1563,6 +1635,43 @@ function AppShell({
       void specLayersSavedRef.current(id, layers)
     },
   })
+
+  const turnEta = useMemo(() => {
+    if (!thinkingTiming.live || !isRunning) return null
+    const liveTps =
+      turnTokenUsage && thinkingTiming.live.responseElapsedMs > 500
+        ? computeOutputTps(turnTokenUsage.tokensReceived, thinkingTiming.live.responseElapsedMs)
+        : null
+    const turn = estimateTurnEta({
+      model: savedConfig.model,
+      promptChars: lastUserPromptCharsRef.current,
+      elapsedMs: thinkingTiming.live.responseElapsedMs,
+      statsStore: thinkingTiming.statsStore,
+      progressFraction: process.snapshot.progress,
+      liveOutputTps: liveTps,
+      brightDate: thinkingTimingPrefs.brightDateMode,
+    })
+    const plan =
+      agentTurnLive && activeTodo?.tasks_md?.trim()
+        ? estimateAgentPlanEta({
+            tasksMd: activeTodo.tasks_md,
+            model: savedConfig.model,
+            statsStore: thinkingTiming.statsStore,
+            brightDate: thinkingTimingPrefs.brightDateMode,
+          })
+        : null
+    return mergeTurnAndPlanEta(turn, plan, thinkingTimingPrefs.brightDateMode)
+  }, [
+    thinkingTiming.live,
+    thinkingTiming.statsStore,
+    savedConfig.model,
+    process.snapshot.progress,
+    turnTokenUsage,
+    isRunning,
+    thinkingTimingPrefs.brightDateMode,
+    agentTurnLive,
+    activeTodo?.tasks_md,
+  ])
 
   const applySpecTraceResult = useCallback((result: TraceabilityResult, opts?: { afterSave?: boolean }) => {
     setSpecTraceHint(buildSpecTraceHint(result))
@@ -1720,6 +1829,7 @@ function AppShell({
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
     saveAppearance(appearance)
     saveThinkingTimingPrefs(thinkingTimingPrefs)
+    saveAgentGuardPrefs(agentGuardPrefs)
     saveResourceOverlayPrefs(resourceOverlayPrefs)
     saveNtfyAlertsPrefs(ntfyAlertsPrefs)
     saveEditorLanguagePrefs(editorLanguagePrefs)
@@ -2182,8 +2292,18 @@ function AppShell({
       todoOptions?: { activeTodoId: string; injectTodoSpec: boolean },
       sendExtras?: SendMessageOptions
     ) => {
+      if (agentGuard.shouldBlockSend) {
+        setSnackbar({ message: agentGuard.blockMessage, severity: 'warning' })
+        return { queued: false }
+      }
       lastUserPromptCharsRef.current = text.length
       lastAssistantStreamRef.current = ''
+      const isAgentCmd = /^\/agent\b/i.test(text.trim())
+      agentTurnActiveRef.current = isAgentCmd
+      setAgentTurnLive(isAgentCmd)
+      if (isAgentCmd) agentGuard.beginAgentPhase()
+      lastToolSnippetRef.current = ''
+      setActivityToolTick((n) => n + 1)
       setRouterEscalateOffer(null)
       stallWatch.touchEvent('user_send')
       let merged: SendMessageOptions | undefined = todoOptions
@@ -2210,8 +2330,17 @@ function AppShell({
       }
       return result
     },
-    [send, stallWatch, specFocusMode, activeTodo]
+    [send, stallWatch, specFocusMode, activeTodo, agentGuard]
   )
+
+  useEffect(() => {
+    if (!agentGuard.shouldInterrupt) return
+    handleCancelSend()
+    setSnackbar({
+      message: agentGuard.blockMessage || 'Agent limit reached — turn stopped.',
+      severity: 'warning',
+    })
+  }, [agentGuard.shouldInterrupt, agentGuard.blockMessage, handleCancelSend])
 
   const handleEscalateRouter = useCallback(async () => {
     const text = routerEscalateOffer?.message?.trim() || lastUserMessageForRetryRef.current?.trim()
@@ -2629,9 +2758,37 @@ function AppShell({
     const clientCmd = parseVisionClientCommand(text)
     if (clientCmd) {
       setInputValue('')
+      if (clientCmd.id === 'pause') {
+        agentGuard.pause(true)
+        setSnackbar({
+          message: isBusy
+            ? 'Agent will pause after the current step — /resume to continue.'
+            : 'Agent paused — /resume to continue.',
+          severity: 'info',
+        })
+        return
+      }
+      if (clientCmd.id === 'resume') {
+        agentGuard.resume()
+        setSnackbar({ message: 'Agent resumed.', severity: 'info' })
+        return
+      }
+      if (clientCmd.id === 'turns') {
+        appendTurnsTableToChat(
+          thinkingTiming.statsStore,
+          (content) => {
+            const id = nextChatMessageId()
+            setChatMessages((prev) =>
+              capList([...prev, { id, role: 'system' as const, content }], MAX_CHAT_MESSAGES)
+            )
+          },
+          { brightDate: thinkingTimingPrefs.brightDateMode }
+        )
+        return
+      }
       try {
         const snapshot = await fetchOllamaModelsSnapshot(savedConfig)
-        appendOllamaStatusToChat(clientCmd.id, snapshot, text)
+        appendOllamaStatusToChat(clientCmd.id as Exclude<VisionClientCommandId, 'turns'>, snapshot, text)
       } catch (err) {
         setSnackbar({
           message: err instanceof Error ? err.message : String(err),
@@ -2802,6 +2959,21 @@ function AppShell({
           variant="outlined"
         />
       )}
+      {agentGuard.snapshot.turnsChip && (
+        <Chip
+          label={agentGuard.snapshot.turnsChip}
+          size="small"
+          color="secondary"
+          variant="outlined"
+          data-testid="agent-turns-chip"
+        />
+      )}
+      {agentGuard.snapshot.pauseState === 'paused' && (
+        <Chip label="Agent paused" size="small" color="warning" variant="filled" />
+      )}
+      {agentGuard.snapshot.pauseState === 'pause_after_turn' && isBusy && (
+        <Chip label="Pausing after step…" size="small" color="warning" variant="outlined" />
+      )}
       {specGenerating && (
         <Chip
           label="Spec job running"
@@ -2885,6 +3057,8 @@ function AppShell({
         liveTiming={thinkingTiming.live}
         turnEta={turnEta}
         formatDuration={thinkingTiming.formatDuration}
+        activityPresentation={activityPresentation}
+        agentPhaseMs={agentTurnLive ? agentGuard.snapshot.agentPhaseMs : null}
         headerExtra={headerExtra}
         projectBar={
           currentProject ? (
@@ -3413,6 +3587,11 @@ function AppShell({
                 onEditorLanguagePrefsChange={handleEditorLanguagePrefsChange}
                 modelRouterPrefs={modelRouterPrefs}
                 onModelRouterPrefsChange={handleModelRouterPrefsChange}
+                agentGuardPrefs={agentGuardPrefs}
+                onAgentGuardPrefsChange={(prefs) => {
+                  setAgentGuardPrefs(prefs)
+                  saveAgentGuardPrefs(prefs)
+                }}
                 sessionModel={config.model}
                 onSessionModeChange={handleSessionModeChange}
                 liveSessionMode={liveSessionMode}
@@ -3472,6 +3651,9 @@ export default function App() {
   const [ntfyAlertsPrefs, setNtfyAlertsPrefs] = useState<NtfyAlertsPrefs>(() =>
     loadNtfyAlertsPrefs()
   )
+  const [agentGuardPrefs, setAgentGuardPrefs] = useState<AgentGuardPrefs>(() =>
+    loadAgentGuardPrefs()
+  )
   const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
   const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
 
@@ -3498,6 +3680,8 @@ export default function App() {
           setEditorLanguagePrefs={setEditorLanguagePrefs}
           modelRouterPrefs={modelRouterPrefs}
           setModelRouterPrefs={setModelRouterPrefs}
+          agentGuardPrefs={agentGuardPrefs}
+          setAgentGuardPrefs={setAgentGuardPrefs}
         />
       </ProcessProvider>
     </ThemeProvider>

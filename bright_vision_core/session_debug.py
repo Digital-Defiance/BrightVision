@@ -209,6 +209,11 @@ def build_session_debug_export(session_id: str, session) -> dict[str, Any]:
             "platform": platform.platform(),
             "versions": _engine_versions(),
         },
+        "agent_turn_features": getattr(
+            __import__("bright_vision_core.agent_turn", fromlist=["AGENT_TURN_FEATURES"]),
+            "AGENT_TURN_FEATURES",
+            None,
+        ),
         "router": router,
         "transcript": transcript_rows_from_coder(coder),
         "messages": messages,

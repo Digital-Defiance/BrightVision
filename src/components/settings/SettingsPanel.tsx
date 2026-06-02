@@ -45,6 +45,8 @@ import { SessionPersistenceSection } from './SessionPersistenceSection'
 import { NtfyAlertsSection } from './NtfyAlertsSection'
 import { MobileRemoteSection } from './MobileRemoteSection'
 import { AgentsSection } from './AgentsSection'
+import { AgentGuardSection } from './AgentGuardSection'
+import type { AgentGuardPrefs } from '../../theme/agentGuardPrefs'
 import type { AppVersions } from '../../hooks/useAppVersions'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import {
@@ -77,6 +79,8 @@ interface SettingsPanelProps {
   onEditorLanguagePrefsChange: (prefs: EditorLanguagePrefs) => void
   modelRouterPrefs: ModelRouterPrefs
   onModelRouterPrefsChange: (prefs: ModelRouterPrefs) => void
+  agentGuardPrefs: AgentGuardPrefs
+  onAgentGuardPrefsChange: (prefs: AgentGuardPrefs) => void
   sessionModel: string
   onSessionModeChange: (mode: SessionMode) => void
   liveSessionMode?: SessionMode | null
@@ -118,6 +122,8 @@ export function SettingsPanel({
   onEditorLanguagePrefsChange,
   modelRouterPrefs,
   onModelRouterPrefsChange,
+  agentGuardPrefs,
+  onAgentGuardPrefsChange,
   sessionModel,
   onSessionModeChange,
   liveSessionMode = null,
@@ -461,6 +467,12 @@ export function SettingsPanel({
         subagents={subagents}
         agentModeAvailable={agentModeAvailable}
         sessionActive={sessionActive}
+      />
+
+      <AgentGuardSection
+        prefs={agentGuardPrefs}
+        brightDateMode={thinkingTimingPrefs.brightDateMode}
+        onChange={onAgentGuardPrefsChange}
       />
 
       <SuggestedFilesSection
