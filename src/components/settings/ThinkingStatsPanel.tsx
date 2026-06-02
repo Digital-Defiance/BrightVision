@@ -393,6 +393,7 @@ export function ThinkingStatsPanel({
                   <TableCell align="right">{resourceColLabel('CPU')}</TableCell>
                   <TableCell align="right">{resourceColLabel('RAM')}</TableCell>
                   <TableCell align="right">{resourceColLabel('GPU')}</TableCell>
+                  <TableCell align="right">Mem pressure</TableCell>
                 </>
               )}
               <TableCell align="right">Prompt</TableCell>
@@ -447,6 +448,12 @@ export function ThinkingStatsPanel({
                       sx={{ fontFamily: 'var(--vision-font-chat, monospace)', fontSize: '0.75rem' }}
                     >
                       {formatResourcePct(row.avgGpuPct, row.peakGpuPct, resourceMode)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontSize: '0.75rem' }}>
+                      {row.memPressurePeak == null
+                        ? '—'
+                        : (['normal', 'warn', 'critical'] as const)[row.memPressurePeak] ??
+                          String(row.memPressurePeak)}
                     </TableCell>
                   </>
                 )}

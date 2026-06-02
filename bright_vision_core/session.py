@@ -10,6 +10,7 @@ import concurrent.futures
 import os
 import threading
 import time
+from contextlib import nullcontext
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Iterator, Literal, TypeVar
@@ -48,6 +49,8 @@ from bright_vision_core.slash_helpers import (
     fast_slash_preproc_timeout_s,
     is_switch_coder_signal,
     resolve_slash_command_name,
+    resolve_turn_slash_command,
+    synthetic_slash_preproc_input,
     run_slash_command_sync,
     slash_preproc_timeout_s,
 )
@@ -93,6 +96,7 @@ def _drain_io_events(
     *,
     mirror_assistant_complete: bool = False,
     assistant_text: list[str] | None = None,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """
     Yield pending IO events. Slash/preproc turns (e.g. ``/agent``) finish via
@@ -100,6 +104,8 @@ def _drain_io_events(
     events; optionally mirror that text to ``token`` for SSE/UI parity.
     """
     for event in io.drain_events():
+        if on_event is not None:
+            on_event(event)
         if mirror_assistant_complete and event.get("type") == "assistant_complete":
             text = str(event.get("text") or "")
             if text.strip():
@@ -122,6 +128,7 @@ def _run_blocking_with_sse_pulses(
     assistant_text: list[str] | None = None,
     timeout_s: float | None = None,
     on_timeout: Callable[[], None] | None = None,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> Iterator[dict[str, Any] | _T]:
     """Run blocking work in a thread; emit progress and yield so SSE stays alive."""
     wait_s = max(2.0, interval_s)
@@ -152,18 +159,21 @@ def _run_blocking_with_sse_pulses(
             io,
             mirror_assistant_complete=mirror_assistant_complete,
             assistant_text=assistant_text,
+            on_event=on_event,
         )
     if error:
         yield from _drain_io_events(
             io,
             mirror_assistant_complete=mirror_assistant_complete,
             assistant_text=assistant_text,
+            on_event=on_event,
         )
         raise error[0]
     yield from _drain_io_events(
         io,
         mirror_assistant_complete=mirror_assistant_complete,
         assistant_text=assistant_text,
+        on_event=on_event,
     )
     yield result[0]
 
@@ -416,6 +426,7 @@ class Session:
         spec_focus: bool = False,
         force_tier: str | None = None,
         escalate_from_last: bool = False,
+        agent_continuation: bool = False,
     ) -> Iterator[dict[str, Any]]:
         user_text = maybe_append_roadmap_hint(message, self.coder)
         focus_requested = spec_focus_requested(
@@ -425,10 +436,22 @@ class Session:
         )
         item = None
         store = None
+        todos_api: WorkspaceTodos | None = None
         if active_todo_id:
-            todos = WorkspaceTodos(self.coder.root)
-            store = todos.load()
-            item = todos.find(store, active_todo_id)
+            todos_api = WorkspaceTodos(self.coder.root)
+            store = todos_api.load()
+            item = todos_api.find(store, active_todo_id)
+            if item is not None:
+                try:
+                    item = todos_api.maybe_import_spec_from_disk(item)
+                except ValueError:
+                    pass
+        agent_cmd = resolve_slash_command_name(message, self.coder.commands) == "agent"
+        effective_force_tier = force_tier
+        if agent_cmd and effective_force_tier not in ("fast", "heavy"):
+            effective_force_tier = "heavy"
+        if hasattr(self.io, "set_chat_rel_files"):
+            self.io.set_chat_rel_files(self.coder.get_inchat_relative_files())
         user_text, _spec_active, turn_todo_id = build_user_message_with_spec_context(
             self.coder.root,
             user_text,
@@ -442,6 +465,147 @@ class Session:
         for event in self.io.drain_events():
             yield event
         assistant_text: list[str] = []
+        turn_had_tool_activity = False
+        turn_had_tool_call = False
+
+        def _track_tool_activity(event: dict[str, Any]) -> None:
+            nonlocal turn_had_tool_activity, turn_had_tool_call
+            from bright_vision_core.agent_turn import is_tool_activity_event
+
+            if event.get("type") == "tool_call":
+                turn_had_tool_call = True
+            if is_tool_activity_event(event):
+                turn_had_tool_activity = True
+
+        def _maybe_continue_agent_after_shell() -> Iterator[dict[str, Any]]:
+            if not agent_cmd or agent_continuation:
+                return
+            from bright_vision_core.agent_turn import (
+                agent_continue_after_shell_message,
+                agent_stopped_after_shell_warning,
+                is_agent_shell_only_stop,
+            )
+
+            if not is_agent_shell_only_stop(
+                had_tool_activity=turn_had_tool_activity,
+                had_tool_call=turn_had_tool_call,
+            ):
+                return
+            yield self.io.tool_output("Continuing /agent to analyze shell output…")
+            for event in self.run_message(
+                agent_continue_after_shell_message(),
+                preproc=True,
+                skip_workspace_init=True,
+                active_todo_id=turn_todo_id,
+                inject_todo_spec=bool(turn_todo_id),
+                spec_focus=focus_requested,
+                force_tier=effective_force_tier,
+                agent_continuation=True,
+            ):
+                yield event
+
+        def _maybe_warn_agent_shell_stop() -> Iterator[dict[str, Any]]:
+            if not agent_cmd or agent_continuation:
+                return
+            from bright_vision_core.agent_turn import (
+                agent_stopped_after_shell_warning,
+                is_agent_shell_only_stop,
+            )
+
+            if is_agent_shell_only_stop(
+                had_tool_activity=turn_had_tool_activity,
+                had_tool_call=turn_had_tool_call,
+            ):
+                yield self.io.tool_warning(agent_stopped_after_shell_warning())
+
+        def _maybe_warn_incomplete_agent() -> Iterator[dict[str, Any]]:
+            if not agent_cmd:
+                return
+            from bright_vision_core.agent_turn import (
+                empty_agent_turn_warning,
+                incomplete_agent_warning,
+            )
+
+            blob = _assistant_text_blob()
+            msg = empty_agent_turn_warning(
+                had_tool_activity=turn_had_tool_activity,
+                assistant_text=blob,
+            )
+            if msg:
+                yield self.io.tool_warning(msg)
+                return
+            msg = incomplete_agent_warning(
+                blob,
+                had_tool_activity=turn_had_tool_activity,
+            )
+            if msg:
+                yield self.io.tool_warning(msg)
+
+        def _assistant_text_blob() -> str:
+            blob = "".join(assistant_text).strip()
+            if blob:
+                return blob
+            ring = getattr(self.io, "debug_event_ring", None)
+            if ring is not None:
+                for event in reversed(ring):
+                    if event.get("type") == "assistant_complete":
+                        text = str(event.get("text") or "").strip()
+                        if text:
+                            return text
+            return blob
+
+        def _maybe_recover_prose_shell() -> Iterator[dict[str, Any]]:
+            nonlocal turn_had_tool_activity
+            if not agent_cmd:
+                return
+            from bright_vision_core.agent_turn import (
+                extract_prose_shell_commands,
+                prose_shell_in_text,
+                run_prose_shell_recovery,
+                shell_output_in_events,
+            )
+
+            ring = list(getattr(self.io, "debug_event_ring", []) or [])
+            if shell_output_in_events(ring):
+                return
+            blob = _assistant_text_blob()
+            if not prose_shell_in_text(blob):
+                return
+            workspace = Path(self.coder.root).resolve()
+            for command in extract_prose_shell_commands(blob):
+                output = run_prose_shell_recovery(workspace, command)
+                if output is None:
+                    continue
+                turn_had_tool_activity = True
+                block = f"$ {command}\n{output}"
+                assistant_text.append(f"\n\n{block}")
+                yield self.io.tool_output(f"Recovered prose shell (read-only):\n{block}")
+                return
+
+        def _finalize_agent_preproc_turn() -> Iterator[dict[str, Any]]:
+            yield from _drain_io_events(
+                self.io,
+                mirror_assistant_complete=True,
+                assistant_text=assistant_text,
+                on_event=_track_tool_activity,
+            )
+            yield from _maybe_recover_prose_shell()
+            from bright_vision_core.agent_turn import is_agent_shell_only_stop
+
+            if is_agent_shell_only_stop(
+                had_tool_activity=turn_had_tool_activity,
+                had_tool_call=turn_had_tool_call,
+            ):
+                yield from _maybe_continue_agent_after_shell()
+                return
+            yield from _maybe_warn_incomplete_agent()
+            yield from _maybe_warn_agent_shell_stop()
+            self.sync_agent_todos_with_workspace()
+            yield self.io.emit(
+                "done",
+                **_attach_turn_capture({"assistant_text": "".join(assistant_text) or _assistant_text_blob()}),
+            )
+
         self.coder.interrupt_event.clear()
 
         from bright_vision_core.turn_metrics import TurnMetricsCollector
@@ -471,7 +635,30 @@ class Session:
             self.io.user_input(user_text)
 
             user_msg = user_text
+            agent_preproc_prior_yes = getattr(self.io, "yes", None)
+            agent_preproc_prior_yes_always = getattr(self.coder.args, "yes_always_commands", False)
+
+            def _restore_agent_preproc_io() -> None:
+                if not agent_cmd:
+                    return
+                self.io._agent_mode_active = False
+                self.io.yes = agent_preproc_prior_yes
+                self.coder.args.yes_always_commands = agent_preproc_prior_yes_always
+
             if preproc:
+                if (
+                    agent_cmd
+                    and self._model_router
+                    and self._model_router.enabled
+                    and effective_force_tier != "fast"
+                ):
+                    pre_route = self._route_and_apply(
+                        message, intent_message=message, force_tier="heavy"
+                    )
+                    if pre_route:
+                        yield self._emit_model_route(pre_route)
+                        for event in self.io.drain_events():
+                            yield event
                 emit_progress(self.io, label="Vision", message="Running slash commands…")
                 yield from _drain_io_events(self.io)
 
@@ -479,33 +666,62 @@ class Session:
                     rebind_coder_loop_primitives(self.coder)
 
                     async def _preproc_coro():
-                        return await self.coder.preproc_user_input(user_text)
+                        preproc_inp = synthetic_slash_preproc_input(
+                            message, user_text, self.coder.commands
+                        )
+                        target = preproc_inp if preproc_inp is not None else user_text
+                        return await self.coder.preproc_user_input(target)
 
                     return run(_preproc_coro())
 
-                preproc_timeout = slash_preproc_timeout_s(user_text, self.coder.commands)
+                preproc_timeout = slash_preproc_timeout_s(
+                    user_text,
+                    self.coder.commands,
+                    message=message,
+                    agent_cmd=agent_cmd,
+                )
+                agent_confirm = getattr(self.io, "agent_auto_confirm", None)
+                preproc_switch_err: BaseException | None = None
+
+                if agent_cmd:
+                    self.io.yes = True
+                    self.coder.args.yes_always_commands = True
+                    self.io._agent_mode_active = True
+                    if hasattr(self.io, "set_chat_rel_files"):
+                        self.io.set_chat_rel_files(self.coder.get_inchat_relative_files())
                 try:
-                    for item in _run_blocking_with_sse_pulses(
-                        self.io,
-                        _preproc,
-                        label="Vision",
-                        message="Running slash commands",
-                        mirror_assistant_complete=True,
-                        assistant_text=assistant_text,
-                        timeout_s=preproc_timeout,
-                        on_timeout=self.interrupt_turn if preproc_timeout else None,
-                    ):
-                        if isinstance(item, dict):
-                            yield item
-                        else:
-                            user_msg = item
+                    confirm_ctx = agent_confirm() if agent_cmd and agent_confirm else nullcontext()
+                    with confirm_ctx:
+                        for item in _run_blocking_with_sse_pulses(
+                            self.io,
+                            _preproc,
+                            label="Vision",
+                            message="Running slash commands",
+                            mirror_assistant_complete=True,
+                            assistant_text=assistant_text,
+                            timeout_s=preproc_timeout,
+                            on_timeout=self.interrupt_turn if preproc_timeout else None,
+                            on_event=_track_tool_activity,
+                        ):
+                            if isinstance(item, dict):
+                                _track_tool_activity(item)
+                                yield item
+                            else:
+                                user_msg = item
                 except TimeoutError as err:
+                    _restore_agent_preproc_io()
                     yield from _drain_io_events(
                         self.io,
                         mirror_assistant_complete=True,
                         assistant_text=assistant_text,
+                        on_event=_track_tool_activity,
                     )
-                    cmd = resolve_slash_command_name(user_text, self.coder.commands)
+                    cmd = resolve_turn_slash_command(
+                        user_text,
+                        self.coder.commands,
+                        message=message,
+                        agent_cmd=agent_cmd,
+                    )
                     if cmd == "agent":
                         cap_hint = (
                             "Unset VISION_AGENT_PREPROC_TIMEOUT_S or set it to 0 for no wall-clock cap "
@@ -540,18 +756,21 @@ class Session:
                         ),
                     )
                     return
+                except BaseException as preproc_err:
+                    if is_switch_coder_signal(preproc_err):
+                        preproc_switch_err = preproc_err
+                    else:
+                        _restore_agent_preproc_io()
+                        raise
 
-            if user_msg is None:
-                yield from _drain_io_events(
-                    self.io,
-                    mirror_assistant_complete=True,
-                    assistant_text=assistant_text,
-                )
-                self.sync_agent_todos_with_workspace()
-                yield self.io.emit(
-                    "done",
-                    **_attach_turn_capture({"assistant_text": "".join(assistant_text)}),
-                )
+                if preproc_switch_err is not None:
+                    yield from _finalize_agent_preproc_turn()
+                    _restore_agent_preproc_io()
+                    return
+
+            if user_msg is None or agent_cmd:
+                yield from _finalize_agent_preproc_turn()
+                _restore_agent_preproc_io()
                 return
 
             for event in self.io.drain_events():
@@ -568,7 +787,7 @@ class Session:
                         yield event
             elif self._model_router and self._model_router.enabled:
                 route_decision = self._route_and_apply(
-                    user_msg, intent_message=message, force_tier=force_tier
+                    user_msg, intent_message=message, force_tier=effective_force_tier
                 )
                 if route_decision:
                     yield self._emit_model_route(route_decision)
@@ -650,22 +869,22 @@ class Session:
                 last_hash = getattr(self.coder, "last_aider_commit_hash", None)
                 if last_hash:
                     links.append(f"commit:{last_hash}")
-                WorkspaceTodos(self.coder.root).append_links(links, todo_id=turn_todo_id)
+                todos_api = WorkspaceTodos(self.coder.root)
+                todos_api.append_links(links, todo_id=turn_todo_id)
+                if edited:
+                    from bright_vision_core.workspace_files import edited_spec_layers_for_todo
+
+                    if edited_spec_layers_for_todo(edited, turn_todo_id):
+                        try:
+                            todos_api.import_spec_files(turn_todo_id)
+                        except ValueError:
+                            pass
 
             self.sync_agent_todos_with_workspace()
             yield self.io.emit("done", **_attach_turn_capture(payload))
         except BaseException as err:
             if is_switch_coder_signal(err):
-                yield from _drain_io_events(
-                    self.io,
-                    mirror_assistant_complete=True,
-                    assistant_text=assistant_text,
-                )
-                self.sync_agent_todos_with_workspace()
-                yield self.io.emit(
-                    "done",
-                    **_attach_turn_capture({"assistant_text": "".join(assistant_text)}),
-                )
+                yield from _finalize_agent_preproc_turn()
                 return
             if isinstance(err, (KeyboardInterrupt, asyncio.CancelledError)):
                 yield from _drain_io_events(
@@ -706,6 +925,40 @@ class Session:
                 return
             raise
 
+    def _expand_workspace_paths(self, paths: list[str], *, max_files: int = 400) -> list[str]:
+        """Expand directory paths to workspace-relative files (for folder add-to-context)."""
+        workspace = Path(self.coder.root).resolve()
+        expanded: list[str] = []
+        for raw in paths:
+            p = Path(raw.strip().lstrip("@"))
+            if not p.is_absolute():
+                p = workspace / p
+            p = p.resolve()
+            if p.is_dir():
+                count = 0
+                for f in sorted(p.rglob("*")):
+                    if not f.is_file():
+                        continue
+                    try:
+                        rel = f.relative_to(workspace).as_posix()
+                    except ValueError:
+                        continue
+                    repo = self.coder.repo
+                    if repo is not None and repo.ignored_file(rel):
+                        continue
+                    expanded.append(rel)
+                    count += 1
+                    if count >= max_files:
+                        self.io.tool_warning(
+                            f"Folder {raw}: added first {max_files} files (cap reached)"
+                        )
+                        break
+                if count == 0:
+                    self.io.tool_error(f"No files in folder: {p}")
+            else:
+                expanded.append(raw)
+        return expanded
+
     def _resolve_workspace_file(self, raw: str) -> str | None:
         """Return workspace-relative posix path for an on-disk file, or None after tool_error."""
         workspace = Path(self.coder.root).resolve()
@@ -714,7 +967,16 @@ class Session:
             p = workspace / p
         p = p.resolve()
         if not p.is_file():
-            self.io.tool_error(f"Not a file: {p}")
+            from bright_vision_core.workspace_files import workspace_relative_posix
+
+            try:
+                display = workspace_relative_posix(p, workspace)
+            except ValueError:
+                display = str(p)
+            self.io.tool_error(
+                f"Not on disk: {display} — create the file first or add an existing "
+                "path to context."
+            )
             return None
         try:
             return p.relative_to(workspace).as_posix()
@@ -792,6 +1054,8 @@ class Session:
     def add_files(self, paths: list[str]) -> list[dict[str, Any]]:
         if not paths:
             return []
+
+        paths = self._expand_workspace_paths(paths)
 
         attach_prefix = attachments_prefix()
         quoted: list[str] = []

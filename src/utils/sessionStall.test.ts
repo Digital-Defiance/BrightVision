@@ -65,4 +65,18 @@ describe('sessionStall', () => {
     expect(isLikelyStalled(stalled)).toBe(true)
     expect(turnActivityHint(stalled, 9)).toContain('stuck')
   })
+
+  it('does not treat post-answer wait as stalled when tool output is recent', () => {
+    const now = 100_000
+    const a = buildTurnActivity(
+      true,
+      now - 10 * 60_000,
+      now - 12 * 60_000,
+      'Waiting for ollama',
+      now,
+      now - 30_000
+    )
+    expect(a.kind).toBe('tool')
+    expect(isLikelyStalled(a)).toBe(false)
+  })
 })

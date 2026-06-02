@@ -146,17 +146,19 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
         break
       case 'tool_output':
       case 'tool_error':
-      case 'tool_warning':
+      case 'tool_warning': {
+        const toolText = String((ev as { text?: string }).text ?? '').trim()
         dispatch({
           type: 'apply',
           update: {
             phase: 'tool',
             label: PHASE_LABELS.tool,
-            detail: String(ev.type).replace('tool_', ''),
+            detail: toolText.slice(0, 120) || String(ev.type).replace('tool_', ''),
             progress: null,
           },
         })
         break
+      }
       case 'confirm': {
         const auto = Boolean((ev as { auto_answered?: boolean }).auto_answered)
         if (!auto) {

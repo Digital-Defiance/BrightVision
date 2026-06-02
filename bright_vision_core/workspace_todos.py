@@ -224,6 +224,47 @@ def format_todo_context(item: TodoItem, *, store: TodoStore | None = None) -> st
     return "\n".join(lines)
 
 
+def format_todo_context_light(item: TodoItem, *, store: TodoStore | None = None) -> str:
+    """Checklist-first task inject — no empty Requirements/Design layers."""
+    item = migrate_todo_layers(item)
+    lines = [f"[Active task: {item.title} · id {item.id[:8]}]", ""]
+    if item.branch.strip():
+        lines.append(f"**Git branch:** {item.branch.strip()}")
+    if item.pr_url.strip():
+        lines.append(f"**Pull request:** {item.pr_url.strip()}")
+    if item.branch.strip() or item.pr_url.strip():
+        lines.append("")
+    if item.depends_on and store:
+        pending = []
+        for dep_id in item.depends_on:
+            dep = next(
+                (t for t in store.todos if t.id == dep_id or t.id.startswith(dep_id)),
+                None,
+            )
+            if dep and dep.status != "done":
+                pending.append(f"{dep.title} ({dep.id[:8]})")
+        if pending:
+            lines += ["**Blocked by:** " + ", ".join(pending), ""]
+    if item.checklist:
+        lines += ["## Checklist"]
+        for entry in item.checklist:
+            mark = "x" if entry.done else " "
+            lines.append(f"- [{mark}] {entry.text}")
+    elif item.tasks_md.strip() and item.tasks_md.strip() not in _SPEC_LAYER_PLACEHOLDERS:
+        lines += ["## Tasks", item.tasks_md.strip()]
+    lines += ["", "---", ""]
+    return "\n".join(lines)
+
+
+_SPEC_LAYER_PLACEHOLDERS = frozenset(
+    {
+        "(No requirements yet.)",
+        "(No design yet.)",
+        "(No implementation tasks yet.)",
+    }
+)
+
+
 class WorkspaceTodos:
     def __init__(self, workspace_dir: str | Path):
         self.root = Path(workspace_dir).resolve()
@@ -267,11 +308,39 @@ class WorkspaceTodos:
         (folder / "design.md").write_text(item.design or "", encoding="utf-8")
         (folder / "tasks.md").write_text(item.tasks_md or "", encoding="utf-8")
 
+    def resolve_spec_folder(self, todo_id: str) -> Path | None:
+        """``.cecli/specs/{id}/`` or short-id folder (first 8 chars)."""
+        tid = todo_id.strip()
+        candidates = [tid]
+        if len(tid) > 8:
+            candidates.append(tid[:8])
+        for name in candidates:
+            folder = self.specs_root / name
+            if folder.is_dir():
+                return folder
+        return None
+
+    def maybe_import_spec_from_disk(self, item: TodoItem) -> TodoItem:
+        """Pull spec layers from disk when ``todos.json`` layers are still empty."""
+        from bright_vision_core.spec_focus import todo_has_spec_content
+
+        item = migrate_todo_layers(item)
+        if todo_has_spec_content(item):
+            return item
+        folder = self.resolve_spec_folder(item.id)
+        if folder is None:
+            return item
+        for filename in ("requirements.md", "design.md", "tasks.md"):
+            path = folder / filename
+            if path.is_file() and path.read_text(encoding="utf-8").strip():
+                return self.import_spec_files(item.id)
+        return item
+
     def import_spec_files(self, todo_id: str) -> TodoItem:
         """Load ``requirements.md`` / ``design.md`` / ``tasks.md`` from disk into the task."""
         item = self.get(todo_id)
-        folder = self.specs_root / todo_id
-        if not folder.is_dir():
+        folder = self.resolve_spec_folder(todo_id)
+        if folder is None:
             raise ValueError(f"No spec folder for task: {todo_id}")
         layers: dict[str, str] = {}
         for filename, key in (

@@ -4,6 +4,7 @@ import {
   buildSuggestedFileEntries,
   extractAnswerSection,
   extractSuggestedFilePaths,
+  filterDesignOutlinePaths,
   isAwaitingFilesCta,
   mergeSuggestedPaths,
   parseAddCommandPath,
@@ -105,6 +106,22 @@ describe('suggestedFiles', () => {
     expect(
       extractSuggestedFilePaths('Add `@src/main.py` and `@src/utils/foo.ts` when ready.')
     ).toEqual(['src/main.py', 'src/utils/foo.ts'])
+  })
+
+  it('excludes design-outline paths (planned modules, not on disk)', () => {
+    const design = `## bcurl Crate Architecture
+- \`src/resolver.rs\`: BSLP resolver
+- \`src/physics.rs\`: Light-floor physics
+- \`src/engine.rs\`: Core async transfer engine
+- \`src/progress.rs\`: Progress display
+Use \`Cargo.toml\` for workspace deps.`
+    const paths = extractSuggestedFilePaths(design)
+    expect(paths).toContain('src/resolver.rs')
+    const filtered = filterDesignOutlinePaths(design, paths)
+    expect(filtered).not.toContain('src/resolver.rs')
+    expect(filtered).not.toContain('src/physics.rs')
+    expect(filtered).not.toContain('src/engine.rs')
+    expect(filtered).not.toContain('src/progress.rs')
   })
 
   it('merges session tray without duplicates and respects files_in_chat', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { CecliWorkspaceInfo } from '../ipc/httpClient'
-import { CoreHttpClient } from '../ipc/httpClient'
+import { createCoreHttpClient } from '../ipc/httpClient'
 
 const EMPTY: CecliWorkspaceInfo = {
   present: false,
@@ -27,7 +27,7 @@ export function useCecliWorkspace(
     setLoading(true)
     setError(null)
     try {
-      const client = new CoreHttpClient(coreApiUrl, coreApiToken || undefined)
+      const client = createCoreHttpClient(coreApiUrl, coreApiToken || undefined)
       const next = await client.getCecliWorkspace(dir)
       setInfo(next)
     } catch (e) {

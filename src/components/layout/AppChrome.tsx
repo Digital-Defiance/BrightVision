@@ -5,6 +5,7 @@ import { BrandLogo } from '../brand/BrandLogo'
 import type { ProcessSnapshot } from '../../progress/types'
 import type { TurnEtaEstimate } from '../../utils/turnEtaEstimate'
 import type { LiveThinkingState } from '../../utils/thinkingTiming'
+import type { ActivityPresentation } from '../../utils/progressDisplay'
 import type { ConnectionTone } from '../../utils/connectionStatus'
 import { VisionActivityBar, type SpecJobActivity } from '../progress/VisionActivityBar'
 
@@ -23,6 +24,8 @@ interface AppChromeProps {
   liveTiming?: LiveThinkingState | null
   turnEta?: TurnEtaEstimate | null
   formatDuration?: (ms: number) => string
+  activityPresentation?: ActivityPresentation | null
+  agentPhaseMs?: number | null
   headerExtra?: ReactNode
   /** Current git project (open-folder UX). */
   projectBar?: ReactNode
@@ -46,6 +49,8 @@ export function AppChrome({
   liveTiming = null,
   turnEta = null,
   formatDuration,
+  activityPresentation = null,
+  agentPhaseMs = null,
   headerExtra,
   projectBar,
   connectionTone = 'stopped',
@@ -210,6 +215,8 @@ export function AppChrome({
             liveTiming={liveTiming}
             turnEta={turnEta}
             formatDuration={formatDuration}
+            activity={activityPresentation}
+            agentPhaseMs={agentPhaseMs}
           />
         </Paper>
 

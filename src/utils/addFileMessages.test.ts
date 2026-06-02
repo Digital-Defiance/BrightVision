@@ -21,6 +21,14 @@ describe('addFileMessages', () => {
     expect(rewriteAddFileToolMessage(raw)).toBe(raw)
   })
 
+  it('rewrites not-on-disk add errors', () => {
+    const raw =
+      'Not on disk: src/resolver.rs — create the file first or add an existing path to context.'
+    const out = rewriteAddFileToolMessage(raw)
+    expect(out).toContain('not on disk')
+    expect(out).toContain('design outline')
+  })
+
   it('formats not-added snackbar', () => {
     const msg = formatFilesNotAddedSnackbar(
       ['src/a.tsx', 'src/b.tsx'],

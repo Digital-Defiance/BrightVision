@@ -30,7 +30,9 @@ class TestHttpApi(unittest.TestCase):
         client = TestClient(app)
         res = client.get("/health")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["status"], "ok")
+        body = res.json()
+        self.assertEqual(body["status"], "ok")
+        self.assertTrue(body.get("agent_turn_features", {}).get("prose_shell_recovery"))
 
     def test_create_session_missing_workspace(self):
         client = TestClient(app)

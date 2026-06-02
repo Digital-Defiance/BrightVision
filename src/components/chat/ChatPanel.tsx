@@ -21,6 +21,7 @@ import type { CoreConfirmEvent } from '../../ipc/events'
 import { useFileCommandKeyboard } from '../../hooks/useFileCommandKeyboard'
 import { ConfirmBanner } from '../ConfirmBanner'
 import { AssistantMessageBody } from './AssistantMessageBody'
+import { CollapsibleJsonBlock, tryParseJsonText } from './CollapsibleJsonBlock'
 import { ChatFolderAttach } from './ChatFolderAttach'
 import { ChatImageAttach } from './ChatImageAttach'
 import { CommandAssist } from './CommandAssist'
@@ -421,13 +422,19 @@ export function ChatPanel({
                       {entry.item.name || 'tool'}
                     </Typography>
                     {(entry.item.input || entry.item.output) && (
-                      <Typography
-                        component="pre"
-                        variant="body2"
-                        sx={{ m: 0, pr: 3, whiteSpace: 'pre-wrap', overflowX: 'auto' }}
-                      >
-                        {entry.item.input || entry.item.output}
-                      </Typography>
+                      <>
+                        {tryParseJsonText(entry.item.input || entry.item.output || '') ? (
+                          <CollapsibleJsonBlock text={entry.item.input || entry.item.output || ''} />
+                        ) : (
+                          <Typography
+                            component="pre"
+                            variant="body2"
+                            sx={{ m: 0, pr: 3, whiteSpace: 'pre-wrap', overflowX: 'auto' }}
+                          >
+                            {entry.item.input || entry.item.output}
+                          </Typography>
+                        )}
+                      </>
                     )}
                   </Paper>
                 )}

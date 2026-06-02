@@ -7,10 +7,13 @@ import { formatDurationMs } from '../../utils/thinkingTiming'
 export function ThinkingTimerInline({
   live,
   eta = null,
+  agentMs = null,
   formatDuration = formatDurationMs,
 }: {
   live: LiveThinkingState
   eta?: TurnEtaEstimate | null
+  /** Cumulative agent-phase wall time this session (slash /agent work). */
+  agentMs?: number | null
   formatDuration?: (ms: number) => string
 }) {
   return (
@@ -41,6 +44,14 @@ export function ThinkingTimerInline({
         <Box component="span" sx={{ color: 'secondary.light' }}>
           {formatDuration(live.thoughtElapsedMs)}
         </Box>
+        {agentMs != null && agentMs > 0 && (
+          <>
+            {' · Agent '}
+            <Box component="span" sx={{ color: 'warning.light' }}>
+              {formatDuration(agentMs)}
+            </Box>
+          </>
+        )}
       </span>
       {eta?.shortLabel && (
         <Tooltip title={eta.tooltip} enterDelay={400}>

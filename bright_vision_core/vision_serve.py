@@ -41,6 +41,17 @@ def run(argv: list[str] | None = None) -> None:
         print(startup_message(args.host))
 
     try:
+        from bright_vision_core.agent_turn import AGENT_TURN_FEATURES
+
+        root = os.environ.get("BRIGHT_VISION_ROOT") or os.environ.get("BV_ROOT") or "unknown"
+        print(
+            f"[bright-vision] engine_root={root} agent_turn_features={AGENT_TURN_FEATURES}",
+            file=sys.stderr,
+        )
+    except Exception:
+        pass
+
+    try:
         import uvicorn
     except ImportError:
         print("uvicorn is required: pip install uvicorn", file=sys.stderr)

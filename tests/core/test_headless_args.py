@@ -29,6 +29,11 @@ _HEADLESS_ATTRS = (
     "auto_save_session_name",
     "session_encrypt",
     "session_key_file",
+    "attribute_author",
+    "attribute_committer",
+    "attribute_co_authored_by",
+    "attribute_commit_message_author",
+    "attribute_commit_message_committer",
 )
 
 

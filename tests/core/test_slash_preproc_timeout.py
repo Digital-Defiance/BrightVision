@@ -47,6 +47,22 @@ def test_agent_optional_cap(commands, monkeypatch) -> None:
     assert slash_preproc_timeout_s("/agent explore the repo", commands) == 600.0
 
 
+def test_agent_no_cap_when_task_injected(commands, monkeypatch) -> None:
+    monkeypatch.delenv("VISION_AGENT_PREPROC_TIMEOUT_S", raising=False)
+    message = "/agent Implement the active task"
+    user_text = "[Active task: Explore · id abc]\n\n---\n" + message
+    assert slash_preproc_timeout_s(user_text, commands) == 300.0
+    assert (
+        slash_preproc_timeout_s(
+            user_text,
+            commands,
+            message=message,
+            agent_cmd=True,
+        )
+        is None
+    )
+
+
 def test_fast_slash_keeps_cap(commands, monkeypatch) -> None:
     monkeypatch.setenv("VISION_SLASH_PREPROC_TIMEOUT_S", "120")
     assert slash_preproc_timeout_s("/add src/foo.ts", commands) == 120.0

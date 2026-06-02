@@ -108,7 +108,9 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done` and spec generate/refine job complete. **Tests:** `ntfy-alerts.spec.ts` (settings ping, turn-`done`, spec job). See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
 | **43** | **Done** | **LLM fixture packs for e2e** — external curated workspace collection via `E2E_FIXTURE_PACK_ROOT` (submodule-friendly), in-repo fallback, plus `scripts/verify-e2e-fixture-pack.sh` (`yarn test:e2e:fixtures`) for structure + optional pin-status preflight. |
 | **44** | **Done** | **Session debug export** — `GET /sessions/{id}/debug` JSON bundle (messages, tool_calls, duplicate hints, agent todo, EventIO ring); Settings **Session history → Export debug bundle**. See [IPC.md](./IPC.md). |
-| **45** | **Open** | **BrightVision Remote** — agent spec + phases in [MOBILE_REMOTE.md](./MOBILE_REMOTE.md) (copy-paste prompts, R0–R1 acceptance criteria). Optional scaffold: `packages/vision-client`, `apps/remote`, LAN Settings — verify before marking R0/R1 done. **Then:** R2 Connect, chat, R3+ tasks/push. |
+| **45** | **Partial** | **BrightVision Remote** — R0 connect + **MVP chat tab** (`apps/remote`: session, SSE send, Stop, status). LAN Settings/QR per [MOBILE_REMOTE.md](./MOBILE_REMOTE.md). **Open:** R1 acceptance dogfood, file add, pause, progress bar, Connect relay (R2). |
+| **51** | **Partial** | **Desktop WebKit HTTP** — mutating Vision API via Tauri/reqwest (`vision_api_fetch`, `createCoreHttpClient`); debug export bytes. **Agent guard (UI):** Settings limits, `/pause` `/resume`, header turn chip, plan ETA. **Headless git:** `default_headless_args` includes cecli commit attribution fields (fixes `attribute_author` commit errors). **Agent dead-end:** `/agent` always finalizes through recovery/warnings; **injected-task `/agent`** rebuilds slash preproc when checklist prefix hides the leading `/` (`synthetic_slash_preproc_input`); empty-turn warning; auto-yes on confirms; basename **Add file** dedupe. **Quit:** `ExitRequested` frees `:8741`. **Open:** shell command allowlist (cecli). See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md). |
+| **52** | **Longer-term** | **Out-of-repo context** — design options in [design/OUT_OF_REPO_CONTEXT.md](./design/OUT_OF_REPO_CONTEXT.md) (#7); no implementation until product picks upload vs attach bridge. |
 
 ## Spec-driven development (#18)
 
@@ -125,7 +127,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 
 | # | Status | Item |
 |---|--------|------|
-| 18a–18e | **Done** | Core/UI todos API, generate/refine, steered steps, reload spec from disk |
+| 18a–18e | **Done** | Core/UI todos API, generate/refine, steered steps, reload spec from disk; **auto-import** spec from disk when layers empty (`maybe_import_spec_from_disk`, short spec folder ids); **light task inject** (checklist-only, no placeholder spec sections); **/agent → heavy** routing before preproc |
 
 ### Kiro / spec parity (from [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md))
 
@@ -185,7 +187,7 @@ Maps the high-level product charter to tracked work. Items **23–24** are large
 … (one queued message per path)
 ```
 
-**Shipped (Done):** `SuggestedFilesTray`, **Add all**, **Add while busy**, open in editor, Settings toggles. **Tests:** `e2e/suggested-files.spec.ts`. **Open:** structured `suggested_files` SSE from core.
+**Shipped (Done):** `SuggestedFilesTray`, **Add all**, **Add while busy**, open in editor, Settings toggles; **design-outline filter** + `POST /workspaces/filter-paths`; clearer **Not on disk** tool copy. Tasks without spec layers use **light inject** (checklist only). **Open:** structured `suggested_files` SSE from core.
 
 ### Out of scope (v1)
 

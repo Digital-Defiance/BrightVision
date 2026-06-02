@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from bright_vision_core.spec_steering import SPEC_FOCUS_INSTRUCTIONS, build_spec_focus_preamble
-from bright_vision_core.workspace_todos import TodoItem, TodoStore, format_todo_context, migrate_todo_layers
+from bright_vision_core.workspace_todos import (
+    TodoItem,
+    TodoStore,
+    format_todo_context,
+    format_todo_context_light,
+    migrate_todo_layers,
+)
 
 _SPEC_LAYER_PLACEHOLDERS = frozenset(
     {
@@ -17,13 +23,20 @@ _SPEC_LAYER_PLACEHOLDERS = frozenset(
 
 
 def todo_has_spec_content(item: TodoItem) -> bool:
-    """True when the task has non-placeholder requirements, design, tasks, or legacy spec."""
+    """True when the task has non-placeholder requirements, design, or legacy spec.
+
+    Checklist / ``tasks_md`` alone do not count — those are normal tasks-without-specs.
+    """
     item = migrate_todo_layers(item)
-    for field in (item.requirements, item.design, item.tasks_md, item.spec):
+    for field in (item.requirements, item.design, item.spec):
         text = field.strip()
         if text and text not in _SPEC_LAYER_PLACEHOLDERS:
             return True
     return False
+
+
+def _task_has_checklist(item: TodoItem) -> bool:
+    return any(entry.text.strip() for entry in item.checklist)
 
 
 def spec_focus_requested(
@@ -45,7 +58,9 @@ def should_inject_task_context(
         return False
     if inject_todo_spec:
         return True
-    return focus_requested and todo_has_spec_content(item)
+    if not focus_requested:
+        return False
+    return todo_has_spec_content(item) or _task_has_checklist(item)
 
 
 def spec_focus_preamble_applies(
@@ -81,7 +96,12 @@ def build_user_message_with_spec_context(
     ):
         assert item is not None
         turn_todo_id = item.id
-        user_text = format_todo_context(item, store=store) + message
+        formatter = (
+            format_todo_context
+            if todo_has_spec_content(item)
+            else format_todo_context_light
+        )
+        user_text = formatter(item, store=store) + message
     preamble = spec_focus_preamble_applies(focus_requested=focus_requested, item=item)
     if preamble:
         user_text = build_spec_focus_preamble(workspace) + user_text

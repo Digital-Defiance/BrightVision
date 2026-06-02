@@ -225,26 +225,34 @@ export class CoreHttpClient {
     sessionId: string,
     paths: string[]
   ): Promise<{ files_in_chat: string[]; events: CoreEventBase[] }> {
-    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ paths }),
-    })
-    if (!res.ok) throw new Error(`add files: ${res.status} ${await res.text()}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ paths }),
+      })
+      if (!res.ok) throw new Error(`add files: ${res.status} ${await res.text()}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, `POST /sessions/${sessionId}/files`)
+    }
   }
 
   async uploadSessionFiles(
     sessionId: string,
     files: { filename: string; content_base64: string }[]
   ): Promise<{ files_in_chat: string[]; events: CoreEventBase[] }> {
-    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files/upload`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ files }),
-    })
-    if (!res.ok) throw new Error(`upload files: ${res.status} ${await res.text()}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files/upload`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ files }),
+      })
+      if (!res.ok) throw new Error(`upload files: ${res.status} ${await res.text()}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, `POST /sessions/${sessionId}/files/upload`)
+    }
   }
 
   async submitConfirm(sessionId: string, confirmId: string, answer: boolean): Promise<void> {
@@ -357,6 +365,26 @@ export class CoreHttpClient {
       { method: 'DELETE', headers: this.headers(false) }
     )
     if (!res.ok) throw new Error(`delete workspace todo: ${res.status}`)
+  }
+
+  async filterWorkspacePaths(
+    workspace: string,
+    paths: string[]
+  ): Promise<{ existing: string[]; missing: string[] }> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/filter-paths?${this.workspaceQs(workspace)}`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ paths }),
+      }
+    )
+    if (!res.ok) throw new Error(`filter workspace paths: ${res.status} ${await res.text()}`)
+    const data = (await res.json()) as { existing?: string[]; missing?: string[] }
+    return {
+      existing: Array.isArray(data.existing) ? data.existing : [],
+      missing: Array.isArray(data.missing) ? data.missing : [],
+    }
   }
 
   async syncWorkspaceSpecFiles(workspace: string, todoId: string): Promise<TodoItem> {

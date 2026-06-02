@@ -8,13 +8,16 @@ mod ntfy_notify;
 mod resource_monitor;
 mod session_key;
 mod lan_remote;
+mod vision_message;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State, WindowEvent};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use serde_json::Value;
+use tauri::{Emitter, Manager, RunEvent, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -25,7 +28,6 @@ struct AppState {
     api_port: Mutex<u16>,
     engine_logs: Arc<Mutex<Vec<String>>>,
     lan_remote: Mutex<Option<lan_remote::LanRemoteHandle>>,
-    install_root: PathBuf,
 }
 
 static INSTALL_ROOT: OnceLock<PathBuf> = OnceLock::new();
@@ -285,33 +287,62 @@ fn format_recent_engine_logs(lines: &[String]) -> String {
     format!("\n\nEngine log (last lines):\n{}", lines.join("\n"))
 }
 
-async fn vision_api_health_ok(port: u16, bearer: Option<&str>) -> bool {
+async fn vision_api_health_json(port: u16, bearer: Option<&str>) -> Option<serde_json::Value> {
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(4))
         .build()
     {
         Ok(c) => c,
-        Err(_) => return false,
+        Err(_) => return None,
     };
     let mut req = client.get(format!("http://127.0.0.1:{port}/health"));
     if let Some(token) = bearer.filter(|t| !t.trim().is_empty()) {
         req = req.header("Authorization", format!("Bearer {}", token.trim()));
     }
     let Ok(res) = req.send().await else {
-        return false;
+        return None;
     };
     if !res.status().is_success() {
-        return false;
+        return None;
     }
-    res.json::<serde_json::Value>()
+    res.json::<serde_json::Value>().await.ok()
+}
+
+async fn vision_api_health_ok(port: u16, bearer: Option<&str>) -> bool {
+    vision_api_health_json(port, bearer)
         .await
-        .ok()
         .and_then(|v| {
             v.get("status")
                 .and_then(|s| s.as_str())
                 .map(|s| s == "ok")
         })
         .unwrap_or(false)
+}
+
+/// True when the running Vision API includes /agent dead-end recovery (not a stale orphan on :8741).
+async fn vision_api_has_agent_turn_features(port: u16, bearer: Option<&str>) -> bool {
+    vision_api_health_json(port, bearer)
+        .await
+        .and_then(|v| {
+            v.get("agent_turn_features")
+                .and_then(|f| f.get("prose_shell_recovery"))
+                .and_then(|b| b.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+async fn kill_stale_vision_api_on_port(
+    port: u16,
+    guard: &mut tokio::sync::MutexGuard<'_, Option<Child>>,
+) {
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill().await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    }
+    if port_listening(port) {
+        kill_listeners_on_port(port);
+        tokio::time::sleep(Duration::from_millis(350)).await;
+    }
 }
 
 async fn wait_for_vision_api_ready(
@@ -524,9 +555,35 @@ async fn start_core_api(
     let bearer = bearer_owned.as_deref();
 
     let mut guard = state.serve_child.lock().await;
-    if let Some(ref mut child) = *guard {
+    let tracked_port = *state.api_port.lock().await;
+    let listener_port = if port_listening(port) {
+        port
+    } else if port_listening(tracked_port) {
+        tracked_port
+    } else {
+        port
+    };
+
+    if port_listening(listener_port) && vision_api_health_ok(listener_port, bearer).await {
+        if vision_api_has_agent_turn_features(listener_port, bearer).await {
+            if let Some(ref mut child) = *guard {
+                if child_still_running(child).await {
+                    return Ok(format!("http://localhost:{}", listener_port));
+                }
+            } else {
+                return Ok(format!("http://localhost:{}", listener_port));
+            }
+        }
+        {
+            let mut log = state.engine_logs.lock().await;
+            log.push(format!(
+                "[vision-api] Replacing stale Vision API on :{listener_port} (missing agent_turn_features — run pip install -e . then Start)"
+            ));
+        }
+        kill_stale_vision_api_on_port(listener_port, &mut guard).await;
+    } else if let Some(ref mut child) = *guard {
         if child_still_running(child).await {
-            let p = *state.api_port.lock().await;
+            let p = tracked_port;
             if port_listening(p) && vision_api_health_ok(p, bearer).await {
                 return Ok(format!("http://localhost:{}", p));
             }
@@ -570,7 +627,7 @@ async fn start_core_api(
         ));
     }
 
-    let (program, mut serve_args) = vision_serve_command(&engine_root, &py)?;
+    let (program, serve_args) = vision_serve_command(&engine_root, &py)?;
 
     {
         let mut guard = state.engine_logs.lock().await;
@@ -625,17 +682,23 @@ async fn start_core_api(
     Ok(format!("http://localhost:{}", port))
 }
 
-#[tauri::command]
-async fn stop_core_api(state: State<'_, AppState>) -> Result<(), String> {
+async fn shutdown_vision_api(state: &AppState) {
+    lan_remote::stop_lan_remote(&state.lan_remote).await;
     let port = *state.api_port.lock().await;
     let mut guard = state.serve_child.lock().await;
     if let Some(mut child) = guard.take() {
-        child.kill().await.map_err(|e| e.to_string())?;
+        let _ = child.kill().await;
         let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
     }
+    drop(guard);
     if port_listening(port) {
         kill_listeners_on_port(port);
     }
+}
+
+#[tauri::command]
+async fn stop_core_api(state: State<'_, AppState>) -> Result<(), String> {
+    shutdown_vision_api(state.inner()).await;
     Ok(())
 }
 
@@ -654,6 +717,152 @@ struct CoreSessionInfoResponse {
     files_in_chat: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct VisionApiResponse {
+    status: u16,
+    body: Value,
+}
+
+async fn vision_api_request_json(
+    method: reqwest::Method,
+    base_url: &str,
+    path: &str,
+    bearer_token: Option<&str>,
+    body: Option<Value>,
+    timeout_secs: u64,
+) -> Result<VisionApiResponse, String> {
+    let base = base_url.trim().trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    let label = format!("{} /{path}", method);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let url = format!("{base}/{path}");
+    let mut req = client.request(method, &url);
+    if body.is_some() {
+        req = req.header("Content-Type", "application/json");
+    }
+    if let Some(payload) = body {
+        req = req.json(&payload);
+    }
+    if let Some(token) = bearer_token {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", trimmed));
+        }
+    }
+    let res = req.send().await.map_err(|e| format!("{label}: {e}"))?;
+    let status = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+    let body = if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(Value::String(text))
+    };
+    Ok(VisionApiResponse { status, body })
+}
+
+/// Generic Vision HTTP for desktop UI (WebKit fetch to localhost often fails with "Load failed").
+#[tauri::command]
+async fn vision_api_fetch(
+    method: String,
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+    body: Option<Value>,
+) -> Result<VisionApiResponse, String> {
+    let method = match method.to_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PATCH" => reqwest::Method::PATCH,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        other => return Err(format!("unsupported HTTP method: {other}")),
+    };
+    vision_api_request_json(
+        method,
+        &base_url,
+        &path,
+        bearer_token.as_deref(),
+        body,
+        180,
+    )
+    .await
+}
+
+#[derive(Serialize)]
+struct VisionApiBytesResponse {
+    status: u16,
+    body_base64: String,
+    content_type: Option<String>,
+}
+
+/// Raw GET/POST body for desktop (e.g. session debug JSON) — avoids WebKit fetch blob failures.
+#[tauri::command]
+async fn vision_api_fetch_bytes(
+    method: String,
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+) -> Result<VisionApiBytesResponse, String> {
+    let method = match method.to_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        other => return Err(format!("unsupported HTTP method for bytes fetch: {other}")),
+    };
+    let base = base_url.trim().trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    let label = format!("{method} /{path}");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.request(method, format!("{base}/{path}"));
+    if let Some(token) = bearer_token {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", trimmed));
+        }
+    }
+    let res = req.send().await.map_err(|e| format!("{label}: {e}"))?;
+    let status = res.status().as_u16();
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let bytes = res.bytes().await.map_err(|e| format!("{label}: {e}"))?;
+    Ok(VisionApiBytesResponse {
+        status,
+        body_base64: B64.encode(bytes),
+        content_type,
+    })
+}
+
+/// Generic POST for desktop UI (WebKit fetch to localhost often fails with "Load failed").
+#[tauri::command]
+async fn vision_api_post(
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let res = vision_api_request_json(
+        reqwest::Method::POST,
+        &base_url,
+        &path,
+        bearer_token.as_deref(),
+        Some(body),
+        180,
+    )
+    .await?;
+    if !(200..300).contains(&res.status) {
+        return Err(format!("POST /{} {}: {}", path.trim_start_matches('/'), res.status, res.body));
+    }
+    Ok(res.body)
+}
+
 /// Create session via reqwest (WebKit fetch POST to localhost often fails with "Load failed").
 #[tauri::command]
 async fn create_vision_session(
@@ -661,31 +870,19 @@ async fn create_vision_session(
     bearer_token: Option<String>,
     body: serde_json::Value,
 ) -> Result<CoreSessionInfoResponse, String> {
-    let base = base_url.trim().trim_end_matches('/');
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let mut req = client
-        .post(format!("{base}/sessions"))
-        .header("Content-Type", "application/json")
-        .json(&body);
-    if let Some(token) = bearer_token {
-        let trimmed = token.trim();
-        if !trimmed.is_empty() {
-            req = req.header("Authorization", format!("Bearer {}", trimmed));
-        }
+    let res = vision_api_request_json(
+        reqwest::Method::POST,
+        &base_url,
+        "sessions",
+        bearer_token.as_deref(),
+        Some(body),
+        180,
+    )
+    .await?;
+    if !(200..300).contains(&res.status) {
+        return Err(format!("POST /sessions {}: {}", res.status, res.body));
     }
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("POST /sessions: {e}"))?;
-    let status = res.status();
-    let text = res.text().await.unwrap_or_default();
-    if !status.is_success() {
-        return Err(format!("POST /sessions {}: {}", status.as_u16(), text));
-    }
-    serde_json::from_str(&text).map_err(|e| format!("POST /sessions: invalid JSON ({e}): {text}"))
+    serde_json::from_value(res.body).map_err(|e| format!("POST /sessions: invalid session payload ({e})"))
 }
 
 #[derive(Serialize)]
@@ -1583,37 +1780,26 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let install_root = detect_install_root();
-            let _ = INSTALL_ROOT.set(install_root.clone());
+            let _ = INSTALL_ROOT.set(install_root);
             app.manage(AppState {
                 serve_child: Mutex::new(None),
                 api_port: Mutex::new(8741),
                 engine_logs: Arc::new(Mutex::new(Vec::new())),
                 lan_remote: Mutex::new(None),
-                install_root,
             });
-            
-            // Ensure core API process is terminated when the app quits to prevent port conflicts
-            let app_handle = app.handle().clone();
-            if let Some(window) = app.get_webview_window("main") {
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { .. } = event {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<AppState>();
-                            lan_remote::stop_lan_remote(&state.lan_remote).await;
-                            let mut guard = state.serve_child.lock().await;
-                            if let Some(mut child) = guard.take() {
-                                let _ = child.kill().await;
-                            }
-                        });
-                    }
-                });
-            }
+            app.manage(vision_message::VisionMessageStreamState {
+                cancel: Mutex::new(None),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_core_api,
             create_vision_session,
+            vision_api_post,
+            vision_api_fetch,
+            vision_api_fetch_bytes,
+            vision_message::send_vision_message,
+            vision_message::cancel_vision_message,
             session_key::ensure_session_encryption_key,
             session_key::clear_session_encryption_key,
             stop_core_api,
@@ -1663,6 +1849,12 @@ fn main() {
             stop_lan_remote_proxy,
             lan_remote_proxy_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+                tauri::async_runtime::block_on(shutdown_vision_api(state.inner()));
+            }
+        });
 }

@@ -61,6 +61,7 @@ class TestSessionDebugExport(unittest.TestCase):
         self.assertEqual(len(payload["tool_invocations"]), 3)
         self.assertGreaterEqual(len(payload["duplicate_tool_call_hints"]), 1)
         self.assertGreaterEqual(len(payload["recent_io_events"]), 1)
+        self.assertIn("prose_shell_recovery", payload.get("agent_turn_features", {}))
 
         text = json.dumps(payload)
         self.assertIn("GitLog", text)

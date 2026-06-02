@@ -9,7 +9,8 @@ import os
 import threading
 import uuid
 from collections import deque
-from typing import Any, Callable, TextIO
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator, TextIO
 
 _DEBUG_EVENT_RING_MAX = 800
 
@@ -42,6 +43,9 @@ class EventIO(InputOutput):
         self._confirm_events: dict[str, threading.Event] = {}
         self._confirm_answers: dict[str, bool] = {}
         self._confirm_timeout_s = 3600.0
+        self._agent_auto_confirm_depth = 0
+        self._agent_mode_active = False
+        self._chat_rel_files: set[str] = set()
         self._null_sink: TextIO | None = None
         if not echo_to_console and kwargs.get("output") is None:
             self._null_sink = open(os.devnull, "w", encoding="utf-8")
@@ -55,6 +59,19 @@ class EventIO(InputOutput):
         # InputOutput attaches Console to stdout; when the desktop app spawns core with
         # stdout closed, Rich writes raise BrokenPipeError.
         self.console = Console(file=sink, force_terminal=False, no_color=True)
+
+    @contextmanager
+    def agent_auto_confirm(self) -> Iterator[None]:
+        """Auto-answer confirms during ``/agent`` preproc (file mentions, shell, etc.)."""
+        self._agent_auto_confirm_depth += 1
+        try:
+            yield
+        finally:
+            self._agent_auto_confirm_depth = max(0, self._agent_auto_confirm_depth - 1)
+
+    def set_chat_rel_files(self, files: list[str] | set[str]) -> None:
+        """Workspace-relative paths already in chat (for add-file confirm dedupe)."""
+        self._chat_rel_files = {str(f).replace("\\", "/") for f in files}
 
     def emit(self, event_type: str, **payload: Any) -> dict[str, Any]:
         event = {"type": event_type, **payload}
@@ -153,8 +170,24 @@ class EventIO(InputOutput):
         if group_response and group_response in self.group_responses:
             return self.group_responses[group_response]
 
+        agent_auto = (
+            self._agent_auto_confirm_depth > 0 or bool(getattr(self, "_agent_mode_active", False))
+        )
         use_yes = explicit_yes if explicit_yes is not None else bool(self.yes)
-        auto_yes = self.yes is True and not explicit_yes_required
+        auto_yes = agent_auto or (self.yes is True and not explicit_yes_required)
+        subject_norm = str(subject).replace("\\", "/") if subject else ""
+        subject_base = subject_norm.rsplit("/", 1)[-1] if subject_norm else ""
+        in_chat = subject_norm in self._chat_rel_files
+        if not in_chat and subject_base:
+            in_chat = any(f.rsplit("/", 1)[-1] == subject_base for f in self._chat_rel_files)
+        if (
+            not auto_yes
+            and subject
+            and "add file" in str(question).lower()
+            and in_chat
+        ):
+            auto_yes = True
+            use_yes = True
 
         if auto_yes:
             self.emit(
