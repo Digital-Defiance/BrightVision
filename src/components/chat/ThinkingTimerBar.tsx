@@ -7,9 +7,11 @@ import { formatDurationMs } from '../../utils/thinkingTiming'
 export function ThinkingTimerInline({
   live,
   eta = null,
+  formatDuration = formatDurationMs,
 }: {
   live: LiveThinkingState
   eta?: TurnEtaEstimate | null
+  formatDuration?: (ms: number) => string
 }) {
   return (
     <Box
@@ -33,11 +35,11 @@ export function ThinkingTimerInline({
       <span>
         Response{' '}
         <Box component="span" sx={{ color: 'primary.light' }}>
-          {formatDurationMs(live.responseElapsedMs)}
+          {formatDuration(live.responseElapsedMs)}
         </Box>
         {' · Think '}
         <Box component="span" sx={{ color: 'secondary.light' }}>
-          {formatDurationMs(live.thoughtElapsedMs)}
+          {formatDuration(live.thoughtElapsedMs)}
         </Box>
       </span>
       {eta?.shortLabel && (

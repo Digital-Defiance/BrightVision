@@ -22,7 +22,7 @@ from bright_vision_core.test_suite.router_preflight import (
     resolve_router_tags,
     router_lane_ready,
 )
-from bright_vision_core.test_suite.brightdate_timing import brightdate_enabled
+from bright_vision_core.brightdate import brightdate_enabled
 from bright_vision_core.test_suite.manifest import SuiteRunOptions, plan_steps
 from bright_vision_core.test_suite.ports import orchestrator_port
 from bright_vision_core.test_suite.timing import expectations_for_steps, repo_root

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from dataclasses import dataclass
@@ -59,13 +60,19 @@ def _recover_char_split_agent_rows(rows: list[AgentTodoRow]) -> list[AgentTodoRo
     if not joined.startswith(("[", "{")):
         return rows
     try:
-        from cecli.tools.update_todo_list import normalize_task_items
-
-        items = normalize_task_items(joined)
-    except Exception:
+        parsed = json.loads(joined)
+    except json.JSONDecodeError:
+        return rows
+    if isinstance(parsed, dict):
+        items = [parsed]
+    elif isinstance(parsed, list):
+        items = parsed
+    else:
         return rows
     recovered: list[AgentTodoRow] = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
         text = str(item.get("task") or "").strip()
         if not text:
             continue

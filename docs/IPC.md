@@ -43,6 +43,16 @@ Response includes updated `files_in_chat` and `events` (tool_output / errors).
 
 > **Note:** Project-local state lives under **`.cecli/`**: Cecli uses `agents/`, `sessions/`, `logs/`, …; BrightVision adds `todos.json`, `specs/`, `attachments/`.
 
+### Multi-repo workspace (cecli)
+
+Optional `.cecli.workspaces.yml` at the project root (local `path:` projects). Vision exposes a read-only summary for the UI:
+
+```http
+GET /workspaces/cecli-workspace?workspace=/abs/path/to/project
+```
+
+Response includes `present`, `project_count`, `projects[]`, and `raw` YAML when a file exists. Session create may pass `workspaces` to seed the file when absent (see `CreateSessionRequest` in `http_api.py`).
+
 ### Workspace tasks (spec-driven)
 
 Todos live in `.cecli/todos.json` under the session workspace.

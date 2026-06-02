@@ -1,3 +1,4 @@
+import { formatDurationMsBrightDate } from '@brightvision/vision-client'
 import type { AssistantSection, AssistantSectionKind } from './chatStream'
 import { getActiveAssistantSection } from './chatStream'
 
@@ -35,8 +36,12 @@ export interface TurnThinkingTiming {
   thoughtMs: number
 }
 
-export function formatDurationMs(ms: number): string {
+export function formatDurationMs(
+  ms: number,
+  opts?: { brightDate?: boolean }
+): string {
   if (!Number.isFinite(ms) || ms < 0) return '—'
+  if (opts?.brightDate) return formatDurationMsBrightDate(ms)
   if (ms < 1000) return `${Math.round(ms)}ms`
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`

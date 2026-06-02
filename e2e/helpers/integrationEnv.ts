@@ -8,6 +8,7 @@ import {
   writeCharSplitCorruptedAgentTodoFile,
 } from './agentTodoFixture'
 import { buildVisionCoreEnv, REPO_ROOT } from './llmEnv'
+import { E2E_CONFIG } from './testConfig'
 
 const E2E_DIR = path.dirname(fileURLToPath(import.meta.url))
 
@@ -55,20 +56,14 @@ export function readIntegrationTodoStore(): { todos?: { title?: string }[] } | n
 
 export function buildIntegrationAppConfig() {
   return {
+    ...E2E_CONFIG,
     model: 'ollama_chat/llama3.2:3b',
     ollamaApiBase: 'http://127.0.0.1:11434',
-    localLlmRoot: '',
     manageLocalLlm: false,
-    extraParams: '{}',
     workingDir: ensureIntegrationWorkspace(),
-    autoApproveLimit: 0,
     promptBeforeCommit: true,
     autoStageOnDone: false,
-    coreEnginePath: '.',
-    pythonPath: '',
     coreApiUrl: '/api/core',
-    coreApiToken: '',
-    contextFiles: [] as string[],
   }
 }
 

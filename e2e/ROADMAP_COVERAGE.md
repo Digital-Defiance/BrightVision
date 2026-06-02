@@ -34,6 +34,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | **Real LLM hello** | Opt-in | `hello-llm.spec.ts`, `agent-llm.spec.ts`, `test_hello_llm.py`, `test_agent_llm.py` |
 | **Real LLM + file context** | Opt-in | `context-llm.spec.ts`, `test_context_llm.py` — `e2e/fixtures/context-workspace` |
 | **Real core integration** | Done | `yarn test:e2e:integration`; `test_http_agent_todo_import.py`, `test_agent_todos.py` |
+| **#50** Open project (IDE) | Done | `open-project.spec.ts`, `navigation.spec.ts` (project bar); helpers `openProject.ts` |
 | **#30** Web parity | Partial | context + settings + path-completion web branch — **Open:** `/add` Tab on web-only |
 | **#31** Release hygiene | Done (automated) | `release-hygiene.spec.ts`, [RELEASE.md](../docs/RELEASE.md) operator steps |
 | **#33** Session persistence | Partial | `settings-config.spec.ts`, `session-transcript-hydrate.spec.ts`, `shipped-scenarios` (`session-transcript`), `test_session_*` — **Open:** encrypt `chat.history` |
@@ -50,7 +51,8 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | `session.ts` | `startMockSession({ tauri: true })`, tab navigation |
 | `integrationEnv.ts` / `integrationSession.ts` | Real core on `:8741` (no mock API; no mock Tauri) |
 | `chatSend.ts` | Optimistic send assertions |
-| `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config priming |
+| `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config + open-project priming |
+| `openProject.ts` | `vision-skip-project-gate`, `vision-current-project` for E2E |
 | `scenarios.ts` / `fixtureWorkspaces.ts` | Named scenarios + git workspaces with deterministic outputs |
 | `primeScenarioConfig.ts` | Per-scenario localStorage (e.g. auto-load) |
 

@@ -153,7 +153,7 @@ export function stepTimingLabels(opts: {
     if (!hasHistory || median <= 0) return {}
     const eta = `ETA ~${fmtStepDuration(median, display)}`
     if (opts.running) {
-      const until = secondsUntilStepStart(
+      const untilStart = secondsUntilStepStart(
         opts.planIndex,
         opts.plan,
         opts.steps,
@@ -161,7 +161,8 @@ export function stepTimingLabels(opts: {
         opts.runningPlanIndex ?? -1,
         opts.runningStepElapsed ?? 0
       )
-      return { eta, etc: `ETC ${formatEtcClock(until, display)}` }
+      const finishFromNow = untilStart + median
+      return { eta, etc: `ETC ${formatEtcClock(finishFromNow, display)}` }
     }
     return { eta }
   }

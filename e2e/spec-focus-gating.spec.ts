@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { emptyTodoStore, sampleTodoStore } from './helpers/fixtures'
+import { primeOpenProject } from './helpers/openProject'
 import { openChat, startMockSession } from './helpers/session'
+import { E2E_CONFIG } from './helpers/testConfig'
 
 /** Keep in sync with `SPEC_FOCUS_STORAGE_KEY` in src/storageKeys.ts (do not import — pulls brand PNGs). */
 const SPEC_FOCUS_STORAGE_KEY = 'bright-vision-spec-focus'
@@ -26,6 +28,7 @@ async function captureMessagesPost(
 }
 
 async function primeSpecFocusPref(page: import('@playwright/test').Page) {
+  await primeOpenProject(page, E2E_CONFIG.workingDir)
   await page.addInitScript((key) => localStorage.setItem(key, '1'), SPEC_FOCUS_STORAGE_KEY)
 }
 
@@ -43,7 +46,7 @@ test.describe('Spec-focus gating', () => {
   }) => {
     let messageBody: { spec_focus?: boolean; content?: string } = {}
     await primeSpecFocusPref(page)
-    await startMockSession(page, { initialTodos: emptyTodoStore() })
+    await startMockSession(page, { initialTodos: emptyTodoStore(), skipConfigPrime: true })
     await captureMessagesPost(page, (body) => {
       messageBody = body
     })
@@ -59,7 +62,7 @@ test.describe('Spec-focus gating', () => {
     const store = sampleTodoStore()
     store.activeId = 'task-a'
     await primeSpecFocusPref(page)
-    await startMockSession(page, { initialTodos: store })
+    await startMockSession(page, { initialTodos: store, skipConfigPrime: true })
     await captureMessagesPost(page, (body) => {
       messageBody = body
     })

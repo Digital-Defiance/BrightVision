@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 import unittest
 
-from bright_vision_core.test_suite.brightdate_timing import (
+from bright_vision_core.brightdate import (
+    J2000_UNIX_MS,
+    bd_add_seconds,
+    bd_from_unix_ms,
     format_bd_scalar,
     format_elapsed_brightdate,
     format_etc_brightdate,
@@ -27,6 +30,20 @@ end      9648.252074236
 
 
 class TestBrightdateTiming(unittest.TestCase):
+    def test_j2000_epoch_matches_btime_and_spec(self):
+        """BD 0 at spec UTC label; aligns with btime start/end lines (not ~0.5 BD high)."""
+        self.assertEqual(J2000_UNIX_MS, 946_727_935_816)
+        self.assertAlmostEqual(bd_from_unix_ms(J2000_UNIX_MS), 0.0, places=9)
+        start, end = parse_btime_bd_bounds(BTIME_SAMPLE)
+        assert start is not None and end is not None
+        self.assertGreater(end, start)
+        self.assertLess(end - start, 0.001)
+
+    def test_etc_additive_matches_wall_clock(self):
+        base = 9648.25
+        etc_bd = bd_add_seconds(base, 86.4)  # 1 md
+        self.assertAlmostEqual(etc_bd, base + 0.001, places=6)
+
     def test_parse_btime_bd_bounds(self):
         start, end = parse_btime_bd_bounds(BTIME_SAMPLE)
         self.assertAlmostEqual(start or 0, 9648.252074201, places=6)

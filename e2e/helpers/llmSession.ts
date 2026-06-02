@@ -6,6 +6,7 @@ import {
   resolveVisionModel,
   visionModelFromTag,
 } from './llmEnv'
+import { applyOpenProjectStorage, openProjectStorageArgs } from './openProject'
 import { openChat } from './session'
 import { E2E_CONFIG_STORAGE_KEY } from './testConfig'
 
@@ -29,14 +30,20 @@ export async function primeLlmE2eApp(
   }
   const routerPrefs = buildRouterPrefsForStorage()
   await page.addInitScript(
-    ([key, config, routerKey, router]) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(key, JSON.stringify(config))
+    ([config, welcomeKey, skipKey, currentKey, projectPath, configKey, routerKey, router]) => {
+      applyOpenProjectStorage(welcomeKey, skipKey, currentKey, projectPath)
+      localStorage.setItem(configKey, JSON.stringify(config))
       if (router) {
         localStorage.setItem(routerKey, JSON.stringify(router))
       }
     },
-    [E2E_CONFIG_STORAGE_KEY, cfg, MODEL_ROUTER_PREFS_STORAGE_KEY, routerPrefs] as const
+    [
+      cfg,
+      ...openProjectStorageArgs(cfg.workingDir),
+      E2E_CONFIG_STORAGE_KEY,
+      MODEL_ROUTER_PREFS_STORAGE_KEY,
+      routerPrefs,
+    ] as const
   )
   return cfg
 }

@@ -12,6 +12,7 @@ import type { CoreEventBase } from '../ipc/events'
 import { isTauriRuntime } from '../ipc/isTauri'
 import { SseIdleTimeoutError } from '../ipc/sseIdle'
 import { createVisionApiSession, type VisionApiSession } from '../ipc/visionApi'
+import { isUserCancellationError } from '../utils/abort'
 import { parseAddCommandPath } from '../utils/suggestedFiles'
 import { useProcess } from '../progress/processStore'
 
@@ -187,6 +188,10 @@ export function useVisionSession(
       try {
         await sessionRef.current.send(content, todoOptions)
       } catch (err) {
+        if (isUserCancellationError(err)) {
+          process.idle()
+          return
+        }
         const message =
           err instanceof SseIdleTimeoutError
             ? err.message

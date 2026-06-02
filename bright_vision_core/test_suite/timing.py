@@ -123,9 +123,9 @@ def format_duration(seconds: float, *, use_brightdate: bool | None = None) -> st
     if use_brightdate is None:
         use_brightdate = os.environ.get("BV_SUITE_USE_BRIGHTDATE") == "1"
     if use_brightdate:
-        from bright_vision_core.test_suite.brightdate_timing import format_elapsed_brightdate
+        from brightdate.format import format_duration
 
-        return format_elapsed_brightdate(seconds)
+        return format_duration(seconds)
     if seconds < 0:
         seconds = 0.0
     if seconds < 60:

@@ -336,6 +336,30 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   )
 
   await page.route(
+    (url) => url.pathname.endsWith('/workspaces/cecli-workspace'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url)) {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          present: false,
+          filename: null,
+          name: null,
+          project_count: 0,
+          projects: [],
+          layout: null,
+          raw: null,
+        }),
+      })
+    }
+  )
+
+  await page.route(
     (url) => /\/workspaces\/todos$/.test(url.pathname),
     async (route) => {
       const url = new URL(route.request().url())

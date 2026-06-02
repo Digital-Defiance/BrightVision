@@ -7,6 +7,7 @@ import { exportTodoStore, importTodoStore } from '../todos/markdown'
 import { applyLayerTemplate, applyTodoTemplate } from '../todos/templates'
 import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from '../todos/earsTypes'
 import type { ChecklistItem, TodoItem, TodoStore, TodoStatus } from '../todos/types'
+import { workspacePathsEqual } from '../utils/workspacePath'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -20,6 +21,8 @@ export interface WorkspaceTodosApi {
   client: CoreHttpClient
   workspace: string
   sessionId?: string | null
+  /** Session workspace from createSession; used to sync agent todo.txt when it matches `workspace`. */
+  sessionWorkspace?: string | null
 }
 
 type TodoPatch = Partial<
@@ -67,6 +70,11 @@ export function useWorkspaceTodos(
   const reloadGenerationRef = useRef(0)
   const tauriLocal = isTauriRuntime()
 
+  useEffect(() => {
+    setStore(null)
+    setHttpReady(false)
+  }, [workingDir])
+
   const exportSpecToDisk = useCallback(
     async (id: string) => {
       if (httpReady && api) {
@@ -113,8 +121,20 @@ export function useWorkspaceTodos(
       if (api?.client) {
         try {
           await api.client.health()
-          // Agent todo.txt sync runs on session create (cecli), not on every list —
-          // re-import here resurrected tasks after delete.
+          if (stale()) return
+          const sessionId = api.sessionId
+          const sessionWs = api.sessionWorkspace
+          if (
+            sessionId &&
+            sessionWs &&
+            workspacePathsEqual(sessionWs, api.workspace)
+          ) {
+            try {
+              await api.client.importSessionAgentTodoPlan(sessionId)
+            } catch {
+              /* best-effort — list still returns on-disk store */
+            }
+          }
           if (stale()) return
           const data = await api.client.listWorkspaceTodos(api.workspace)
           if (stale()) return

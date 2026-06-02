@@ -4,6 +4,7 @@ Headless cecli sessions for API / web frontends.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import concurrent.futures
 import os
@@ -232,10 +233,16 @@ class Session:
         chat_history_file: bool | str | None = True,
         spec_focus: bool = False,
         session_mode: SessionMode = "vibe",
+        workspaces: dict[str, Any] | None = None,
+        workspace_name: str | None = None,
     ) -> Session:
         workspace = Path(workspace_dir).resolve()
         if not workspace.is_dir():
             raise FileNotFoundError(f"Workspace not found: {workspace}")
+
+        from bright_vision_core.workspace_config import ensure_workspaces_file
+
+        ensure_workspaces_file(workspace, workspaces)
 
         from bright_vision_core.vision_runtime import configure_vision_runtime, purge_legacy_tag_caches
 
@@ -437,6 +444,17 @@ class Session:
         assistant_text: list[str] = []
         self.coder.interrupt_event.clear()
 
+        from bright_vision_core.turn_metrics import TurnMetricsCollector
+
+        turn_metrics = TurnMetricsCollector()
+        turn_metrics.start()
+
+        def _attach_turn_capture(payload: dict[str, Any]) -> dict[str, Any]:
+            cap = turn_metrics.stop()
+            if cap is not None:
+                payload = {**payload, "turn_capture": cap.to_dict()}
+            return payload
+
         try:
             if not skip_workspace_init:
                 emit_progress(self.io, label="Vision", message="Preparing workspace…")
@@ -514,8 +532,12 @@ class Session:
                     self.sync_agent_todos_with_workspace()
                     yield self.io.emit(
                         "done",
-                        assistant_text="".join(assistant_text),
-                        error=True,
+                        **_attach_turn_capture(
+                            {
+                                "assistant_text": "".join(assistant_text),
+                                "error": True,
+                            }
+                        ),
                     )
                     return
 
@@ -526,7 +548,10 @@ class Session:
                     assistant_text=assistant_text,
                 )
                 self.sync_agent_todos_with_workspace()
-                yield self.io.emit("done", assistant_text="".join(assistant_text))
+                yield self.io.emit(
+                    "done",
+                    **_attach_turn_capture({"assistant_text": "".join(assistant_text)}),
+                )
                 return
 
             for event in self.io.drain_events():
@@ -628,7 +653,7 @@ class Session:
                 WorkspaceTodos(self.coder.root).append_links(links, todo_id=turn_todo_id)
 
             self.sync_agent_todos_with_workspace()
-            yield self.io.emit("done", **payload)
+            yield self.io.emit("done", **_attach_turn_capture(payload))
         except BaseException as err:
             if is_switch_coder_signal(err):
                 yield from _drain_io_events(
@@ -637,17 +662,47 @@ class Session:
                     assistant_text=assistant_text,
                 )
                 self.sync_agent_todos_with_workspace()
-                yield self.io.emit("done", assistant_text="".join(assistant_text))
+                yield self.io.emit(
+                    "done",
+                    **_attach_turn_capture({"assistant_text": "".join(assistant_text)}),
+                )
+                return
+            if isinstance(err, (KeyboardInterrupt, asyncio.CancelledError)):
+                yield from _drain_io_events(
+                    self.io,
+                    mirror_assistant_complete=True,
+                    assistant_text=assistant_text,
+                )
+                self.sync_agent_todos_with_workspace()
+                yield self.io.emit(
+                    "done",
+                    **_attach_turn_capture(
+                        {
+                            "assistant_text": "".join(assistant_text),
+                            "cancelled": True,
+                        }
+                    ),
+                )
                 return
             if isinstance(err, BrokenPipeError):
                 yield self.io.emit("error", text=str(err))
                 self.sync_agent_todos_with_workspace()
-                yield self.io.emit("done", assistant_text="".join(assistant_text), error=True)
+                yield self.io.emit(
+                    "done",
+                    **_attach_turn_capture(
+                        {"assistant_text": "".join(assistant_text), "error": True}
+                    ),
+                )
                 return
             if isinstance(err, Exception):
                 yield self.io.emit("error", text=str(err))
                 self.sync_agent_todos_with_workspace()
-                yield self.io.emit("done", assistant_text="".join(assistant_text), error=True)
+                yield self.io.emit(
+                    "done",
+                    **_attach_turn_capture(
+                        {"assistant_text": "".join(assistant_text), "error": True}
+                    ),
+                )
                 return
             raise
 

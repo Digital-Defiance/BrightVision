@@ -136,6 +136,10 @@ interface TodoPanelProps {
   onCancelSpecGenerate?: () => void
   /** Bumped after generate/refine saves layers — refreshes spec index panel. */
   specIndexRefreshToken?: number
+  /** Open project path — tasks load from this repo's `.cecli/todos.json`. */
+  projectPath?: string
+  /** Active chat session uses a different repo than the open project. */
+  sessionWorkspaceMismatch?: boolean
 }
 
 export function TodoPanel({
@@ -175,6 +179,8 @@ export function TodoPanel({
   specIndexRefreshToken,
   currentBranch,
   tauriLocal,
+  projectPath,
+  sessionWorkspaceMismatch,
 }: TodoPanelProps) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const importMergeRef = useRef(false)
@@ -561,8 +567,24 @@ export function TodoPanel({
           )}
         </Stack>
       </Stack>
+      {sessionWorkspaceMismatch ? (
+        <Alert severity="warning" sx={{ mx: 1, mb: 1 }} data-testid="tasks-session-workspace-mismatch">
+          Chat is still using a different repository than the open project. Use Stop &amp; Start in Chat,
+          or click the project name in the header to switch folders.
+        </Alert>
+      ) : null}
       <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-        Stored in <Box component="code">.cecli/todos.json</Box>; three-layer specs also sync to{' '}
+        Stored in <Box component="code">.cecli/todos.json</Box>
+        {projectPath ? (
+          <>
+            {' '}
+            under{' '}
+            <Box component="code" sx={{ fontSize: 'inherit' }}>
+              {projectPath}
+            </Box>
+          </>
+        ) : null}
+        ; three-layer specs also sync to{' '}
         <Box component="code">.cecli/specs/&lt;id&gt;/</Box>.
         {tauriLocal && !httpReady
           ? ` Desktop: tasks saved locally via Tauri (${DISPLAY_VISION_API} optional).`
