@@ -36,10 +36,45 @@ PyPI / release workflow for the Vision wheel: track in [UPSTREAM_CECLI.md](./UPS
 From the **superproject root** (e.g. `/Volumes/Code/BrightVision`):
 
 ```bash
+source ./activate.sh   # once per shell — venv + editable cecli + bright_vision_core
+yarn vision            # recommended daily entry (see below)
+```
+
+Equivalent without the wrapper:
+
+```bash
 yarn tauri dev
 ```
 
-On first launch, **project** defaults to the app repo (`detect_workspace`). The engine is resolved from the app install, not from inside your project. See [USER_WORKFLOW.md](./USER_WORKFLOW.md).
+### `yarn vision` (`scripts/vision.sh`)
+
+Preferred dev launcher after `source activate.sh`:
+
+1. Sets `BRIGHT_VISION_ROOT` / `BV_ROOT` to the repo root (same as `yarn tauri:dev`).
+2. Sources **`activate.sh`** (venv on `PATH`).
+3. Clears a stale listener on **`BV_CORE_PORT`** (default **`8751`** — Test Lab orchestrator port; Vision HTTP API is still **`:8741`** via Terminal → Start).
+4. Runs **`yarn tauri dev`** (Vite **`:1420`**, Tauri window).
+
+### `BV_RESET_PIP` — force editable reinstall
+
+When you pull cecli or `bright_vision_core` changes and want a clean editable reinstall **before** the window opens:
+
+```bash
+BV_RESET_PIP=1 yarn vision
+```
+
+This runs:
+
+- `pip install -e cecli`
+- `pip install -e .[dev]` for the parent **`bright_vision_core`** package
+
+Both use the same **`SETUPTOOLS_SCM_PRETEND_VERSION`** logic as `activate.sh` (maps `package.json` tags like `0.2.1-bright1` → PEP 440 `0.2.1.post1` so `pip install -e .` does not fail on `*-brightN` git tags).
+
+**Normal daily use:** omit `BV_RESET_PIP` — `source activate.sh` already installs editable cecli + parent when the venv is new or stale. Use **`BV_RESET_PIP=1`** after submodule bumps, agent-turn fixes, or when `/health` shows an old engine.
+
+Override pretend version manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]`
+
+On first launch, **project** defaults to the app repo (`detect_workspace`). The engine is resolved from the app install, not from inside your user project. See [USER_WORKFLOW.md](./USER_WORKFLOW.md).
 
 - **Project** — git repo the agent edits (any folder)
 - **Context files** — optional paths relative to project

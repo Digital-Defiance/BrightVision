@@ -115,6 +115,32 @@ pick_cecli_root() {
   return 1
 }
 
+# Git tags use *-brightN; setuptools_scm needs PEP 440 (e.g. 0.2.1.post1).
+bright_vision_scm_pretend_version() {
+  _scm="${BRIGHT_VISION_SCM_VERSION:-}"
+  if [ -z "$_scm" ] && [ -f "${ROOT}/package.json" ]; then
+    _scm=$(grep '"version"' "${ROOT}/package.json" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    case "$_scm" in
+      *-bright*) _scm=$(printf '%s' "$_scm" | sed 's/-bright/.post/') ;;
+    esac
+  fi
+  printf '%s' "$_scm"
+}
+
+install_bright_vision_editable() {
+  _extras="${1:-[dev]}"
+  _scm="$(bright_vision_scm_pretend_version)"
+  if [ -n "$_scm" ]; then
+    export SETUPTOOLS_SCM_PRETEND_VERSION="$_scm"
+  fi
+  if ! "${PYTHON}" -m pip install -q -e "${ROOT}${_extras}"; then
+    unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+    die "editable install failed: bright_vision_core (parent)"
+    return 1
+  fi
+  unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+}
+
 venv_needs_recreate() {
   [ ! -x "${VENV}/bin/python3" ] && return 0
   if ! "${VENV}/bin/python3" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
@@ -189,23 +215,7 @@ else
     die "missing ${ROOT}/pyproject.toml (bright_vision_core package)"
     return 1
   fi
-  # Parent repo git tags use *-brightN; setuptools_scm needs PEP 440 (e.g. 0.1.1.post3).
-  _scm="${BRIGHT_VISION_SCM_VERSION:-}"
-  if [ -z "$_scm" ] && [ -f "${ROOT}/package.json" ]; then
-    _scm=$(grep '"version"' "${ROOT}/package.json" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-    case "$_scm" in
-      *-bright*) _scm=$(printf '%s' "$_scm" | sed 's/-bright/.post/') ;;
-    esac
-  fi
-  if [ -n "$_scm" ]; then
-    export SETUPTOOLS_SCM_PRETEND_VERSION="$_scm"
-  fi
-  # [dev] in same install — git tags *-brightN are not PEP 440; pretend version must stay set.
-  if ! "$PYTHON" -m pip install -q -e "${ROOT}[dev]"; then
-    die "editable install failed: bright_vision_core (parent)"
-    return 1
-  fi
-  unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+  install_bright_vision_editable "[dev]"
 fi
 
 if ! "$PYTHON" -m pip install -q "uvicorn[standard]"; then

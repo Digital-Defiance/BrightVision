@@ -1,6 +1,6 @@
 {
   "name": "bright-vision",
-  "version": "0.2.0-1",
+  "version": "0.2.1-bright1",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -48,6 +48,7 @@
     "test:everything": "PYTHONSAFEPATH=1 .venv/bin/python3 -m bright_vision_core.test_suite.cli",
     "test:everything:logged": "bash scripts/test-everything.sh --logged",
     "test:everything:shell": "bash scripts/test-everything.sh",
+    "vision": "bash scripts/vision.sh",
     "lab": "bash scripts/lab.sh",
     "test-lab:dev": "yarn workspace @brightvision/test-lab tauri:dev",
     "test-lab:icon": "yarn workspace @brightvision/test-lab tauri icon",
