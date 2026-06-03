@@ -3,11 +3,12 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 cd "$ROOT"
 
 export BRIGHT_VISION_ROOT="$ROOT"
 export BV_ROOT="$ROOT"
+export BRIGHT_VISION_ACTIVATE_QUIET=1
 
 # shellcheck source=activate.sh
 source "${ROOT}/activate.sh"

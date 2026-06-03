@@ -20,6 +20,8 @@ import BoltIcon from '@mui/icons-material/Bolt'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StepLogPanel, { STEP_LOG_MAX_LINES } from './StepLogPanel'
+import { StepChipIcons } from './stepChipIcons'
+import SuiteProgressTable from './SuiteProgressTable'
 import {
   cancelActiveRun,
   cancelRun,
@@ -137,6 +139,8 @@ export default function App() {
     stepElapsed: 0,
   })
   const [runClockStartedAt, setRunClockStartedAt] = useState<number | null>(null)
+  const [stepClockStartedAt, setStepClockStartedAt] = useState<number | null>(null)
+  const [stepTick, setStepTick] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [runOk, setRunOk] = useState<boolean | null>(null)
   const [captureMode, setCaptureMode] = useState<string | null>(null)
@@ -289,21 +293,35 @@ export default function App() {
     return () => window.clearInterval(id)
   }, [running, runClockStartedAt])
 
+  const runningPlanIndex = useMemo(
+    () => steps.findIndex((s) => s.status === 'running'),
+    [steps]
+  )
+
+  useEffect(() => {
+    if (!running || stepClockStartedAt == null) return
+    const id = window.setInterval(() => setStepTick((n) => n + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [running, stepClockStartedAt])
+
+  const displayStepElapsed = useMemo(() => {
+    if (stepClockStartedAt != null) {
+      const local = (Date.now() - stepClockStartedAt) / 1000
+      return Math.max(progress.stepElapsed, local)
+    }
+    return progress.stepElapsed
+  }, [stepClockStartedAt, progress.stepElapsed, stepTick])
+
   const pct = useMemo(
     () =>
       suiteProgressPercent({
         plan,
         steps,
         medians: stepMedians,
-        stepElapsed: progress.stepElapsed,
+        stepElapsed: displayStepElapsed,
         etaTotal,
       }),
-    [plan, steps, stepMedians, progress.stepElapsed, etaTotal]
-  )
-
-  const runningPlanIndex = useMemo(
-    () => steps.findIndex((s) => s.status === 'running'),
-    [steps]
+    [plan, steps, stepMedians, displayStepElapsed, etaTotal]
   )
 
   const activeStepTiming = useMemo(() => {
@@ -313,12 +331,12 @@ export default function App() {
       plan,
       steps,
       medians: stepMedians,
-      runningStepElapsed: progress.stepElapsed,
+      runningStepElapsed: displayStepElapsed,
       useBrightDate: runUseBrightDate,
       anchors: etcAnchors,
       etcPlan: runEtcPlan,
     })
-  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed, runUseBrightDate, etcAnchors, runEtcPlan])
+  }, [running, runningPlanIndex, plan, steps, stepMedians, displayStepElapsed, runUseBrightDate, etcAnchors, runEtcPlan])
 
   const handleRun = async () => {
     setError(null)
@@ -330,6 +348,7 @@ export default function App() {
     setLatestTestMarker(null)
     setEtcAnchors(null)
     setRunEtcPlan(null)
+    setStepClockStartedAt(null)
     runUseBrightDateRef.current = useBrightDate
     setSteps((prev) => prev.map((s) => ({ ...s, status: 'pending', lines: [] })))
     try {
@@ -376,15 +395,29 @@ export default function App() {
       }
     }
     if (ev.type === 'progress') {
-      setProgress((p) => ({
-        index: ev.stepIndex || p.index,
-        total: ev.totalSteps || p.total,
-        elapsed: Math.max(p.elapsed, ev.elapsedSeconds || 0),
-        stepElapsed: ev.stepElapsedSeconds ?? p.stepElapsed,
-      }))
+      setProgress((p) => {
+        const newIndex = ev.stepIndex || p.index
+        const stepIndexAdvanced =
+          ev.stepIndex != null && ev.stepIndex > 0 && ev.stepIndex !== p.index
+        if (stepIndexAdvanced) {
+          setStepClockStartedAt(Date.now())
+        }
+        return {
+          index: newIndex,
+          total: ev.totalSteps || p.total,
+          elapsed: Math.max(p.elapsed, ev.elapsedSeconds || 0),
+          stepElapsed: ev.stepElapsedSeconds ?? (stepIndexAdvanced ? 0 : p.stepElapsed),
+        }
+      })
     }
     if (ev.type === 'step_started' && ev.stepId) {
-      setProgress((p) => ({ ...p, stepElapsed: 0 }))
+      const idx = plan.findIndex((s) => s.id === ev.stepId)
+      setStepClockStartedAt(Date.now())
+      setProgress((p) => ({
+        ...p,
+        stepElapsed: 0,
+        index: idx >= 0 ? idx + 1 : p.index,
+      }))
       setSteps((prev) => {
         const next = prev.map((s) =>
           s.id === ev.stepId
@@ -440,6 +473,10 @@ export default function App() {
       )
     }
     if (ev.type === 'step_finished' && ev.stepId) {
+      setStepClockStartedAt(null)
+      if (ev.seconds != null) {
+        setProgress((p) => ({ ...p, stepElapsed: ev.seconds! }))
+      }
       setSteps((prev) =>
         prev.map((s) =>
           s.id === ev.stepId
@@ -817,22 +854,17 @@ export default function App() {
       </Stack>
       {running && progress.total > 0 && (
         <Box sx={{ mb: 2 }}>
-          <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
-            <Typography variant="caption">
-              Step {progress.index}/{progress.total}
-            </Typography>
-            <Typography variant="caption" component="div" sx={{ textAlign: 'right', maxWidth: '70%', lineHeight: 1.4 }}>
-              {fmtDuration(progress.elapsed, runUseBrightDate)}
-              {progress.stepElapsed > 0
-                ? ` (step ${fmtDuration(progress.stepElapsed, runUseBrightDate)})`
-                : ''}
-              {etaTotal > 0
-                ? ` / suite ETA ~${fmtDuration(etaTotal, runUseBrightDate)}`
-                : ''}
-              {etcAnchors && activeStepTiming?.stepEtc != null && ` · step ETC ${activeStepTiming.stepEtc}`}
-              {runEtcPlan && activeStepTiming?.runEtc != null && ` · run ETC ${activeStepTiming.runEtc}`}
-            </Typography>
-          </Stack>
+          <SuiteProgressTable
+            stepIndex={progress.index}
+            stepTotal={progress.total}
+            stepElapsed={displayStepElapsed}
+            stepStartedAtMs={stepClockStartedAt}
+            etaTotal={etaTotal}
+            runUseBrightDate={runUseBrightDate}
+            suiteLeft={activeStepTiming?.runLeft}
+            suiteFinishEtc={activeStepTiming?.runEtc}
+            stepEtc={activeStepTiming?.stepEtc}
+          />
           <LinearProgress variant={etaTotal > 0 ? 'determinate' : 'indeterminate'} value={pct} />
           {latestTestMarker && (
             <Chip
@@ -853,7 +885,12 @@ export default function App() {
                     : 'default'
               }
               variant="outlined"
-              sx={{ mt: 0.75, maxWidth: '100%', '& .MuiChip-label': { fontFamily: 'monospace' } }}
+              sx={{
+                mt: 0.75,
+                maxWidth: '100%',
+                '& .MuiChip-icon': { ml: 0.5, mr: 1 },
+                '& .MuiChip-label': { fontFamily: 'monospace' },
+              }}
             />
           )}
         </Box>
@@ -868,7 +905,7 @@ export default function App() {
           medians: stepMedians,
           running,
           runningPlanIndex,
-          runningStepElapsed: progress.stepElapsed,
+          runningStepElapsed: displayStepElapsed,
           useBrightDate: runUseBrightDate,
           anchors: step.status === 'running' ? etcAnchors : null,
           etcPlan: runEtcPlan,
@@ -886,11 +923,12 @@ export default function App() {
         >
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Stack spacing={0.75} sx={{ width: '100%', pr: 1, minWidth: 0 }}>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+              <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, width: '100%' }}>
                 {statusIcon(step)}
                 <Typography variant="body2" sx={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
                   {step.label}
                 </Typography>
+                <StepChipIcons planStep={plan.find((p) => p.id === step.id)} />
               </Stack>
               {(timing.eta ||
                 timing.etc ||

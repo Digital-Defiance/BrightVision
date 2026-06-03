@@ -76,12 +76,21 @@ def build_step_env(
     *,
     suite_run: bool = False,
     base: dict[str, str] | None = None,
+    cwd: Path | None = None,
 ) -> dict[str, str]:
     """Subprocess environment for one suite step (Test Lab + CLI)."""
     env = dict(base or os.environ)
     env["PYTHONUNBUFFERED"] = "1"
     if suite_run:
         env["BV_TEST_SUITE_ACTIVE"] = "1"
+    root = cwd or repo_root()
+    venv_py = root / ".venv" / "bin" / "python3"
+    if venv_py.is_file() and os.access(venv_py, os.X_OK):
+        env["E2E_PYTHON"] = str(venv_py.resolve())
+        venv_bin = str((root / ".venv" / "bin").resolve())
+        path_prefix = env.get("PATH", "")
+        if not path_prefix.startswith(f"{venv_bin}:"):
+            env["PATH"] = f"{venv_bin}:{path_prefix}" if path_prefix else venv_bin
     if step.id == "test-local:release" and suite_run:
         env["BV_TEST_SUITE_SMOKE_E2E"] = "1"
         env.pop("E2E_LLM", None)
@@ -128,7 +137,7 @@ def run_step(
     short_circuit: bool = False,
 ) -> tuple[bool, float, float | None, float | None, str]:
     """Run one step. Returns ok, seconds, gpu_avg, gpu_peak, combined capture text."""
-    env = build_step_env(step, suite_run=suite_run)
+    env = build_step_env(step, suite_run=suite_run, cwd=cwd)
 
     if step.requires_ollama or step.id == "test-local:release":
         bits = [f"E2E_LLM={env.get('E2E_LLM', '(unset)')}"]

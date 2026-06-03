@@ -147,11 +147,19 @@ export function computeRunEtcPlan(opts: {
     opts.medians,
     opts.runningStepElapsed
   )
+  let runFinishWallMs = suiteLeft > 0 ? nowMs + suiteLeft * 1000 : null
+  let runFinishBd = suiteLeft > 0 && nowBd != null ? bdAddSeconds(nowBd, suiteLeft) : null
+  for (const wall of Object.values(stepFinishWallMs)) {
+    if (runFinishWallMs == null || wall > runFinishWallMs) runFinishWallMs = wall
+  }
+  for (const bd of Object.values(stepFinishBd)) {
+    if (runFinishBd == null || bd > runFinishBd) runFinishBd = bd
+  }
   return {
     stepFinishWallMs,
     stepFinishBd,
-    runFinishWallMs: suiteLeft > 0 ? nowMs + suiteLeft * 1000 : null,
-    runFinishBd: suiteLeft > 0 && nowBd != null ? bdAddSeconds(nowBd, suiteLeft) : null,
+    runFinishWallMs,
+    runFinishBd,
   }
 }
 
@@ -230,6 +238,17 @@ function stepMedianLeft(
   return Math.max(0, median - stepElapsed)
 }
 
+/** Last plan row that is not skipped (suite finish is when this step completes). */
+function lastNonSkippedPlanIndex(
+  plan: Array<{ id: string }>,
+  steps: Array<{ id: string; status: string }>
+): number {
+  for (let i = plan.length - 1; i >= 0; i--) {
+    if (steps[i]?.status !== 'skipped') return i
+  }
+  return -1
+}
+
 /** Seconds until suite finish from the start of the current running step. */
 export function secondsUntilSuiteFinish(
   runningPlanIndex: number,
@@ -239,16 +258,19 @@ export function secondsUntilSuiteFinish(
   runningStepElapsed: number
 ): number {
   if (runningPlanIndex < 0) return 0
-  let total = stepMedianLeft(runningPlanIndex, plan, medians, runningStepElapsed)
-  total += secondsUntilStepStart(
-    runningPlanIndex + 1,
+  const lastIdx = lastNonSkippedPlanIndex(plan, steps)
+  if (lastIdx < runningPlanIndex) return 0
+  const untilStart = secondsUntilStepStart(
+    lastIdx,
     plan,
     steps,
     medians,
     runningPlanIndex,
     runningStepElapsed
   )
-  return total
+  const id = plan[lastIdx]?.id
+  const median = id ? medians[id]?.medianSeconds ?? 0 : 0
+  return untilStart + Math.max(0, median)
 }
 
 /** Header timing while a step is running (uses fixed ETC anchors when provided). */

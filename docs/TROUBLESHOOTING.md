@@ -210,12 +210,17 @@ See [CECLI_PIN.md](./CECLI_PIN.md).
 
 ## `activate.sh`: `command not found: pip` / python not under `.venv`
 
-Usually a **stale `.venv`** from an old checkout path (e.g. old checkout paths) or macOS `/usr/bin/python3` (3.9) used to create the venv.
+Usually a **stale `.venv`** from an old checkout path (e.g. `/Users/.../BrightVision` vs `/Volumes/.../BrightVision`) or macOS `/usr/bin/python3` (3.9) used to create the venv.
+
+`activate.sh` now resolves the repo from **where `activate.sh` lives** (canonical `pwd -P`) and compares venv paths the same way, so dual-path checkouts do not spuriously recreate `.venv`.
+
+If recreate still fails mid-way (no `bin/python3`):
 
 ```bash
 deactivate 2>/dev/null
-cd /path/to/BrightVision
-source activate.sh   # recreates .venv when activate paths or Python < 3.10
+cd /path/to/BrightVision    # pick one path and stick to it
+rm -rf .venv
+source activate.sh
 ```
 
 Optional: `export BRIGHT_VISION_PYTHON=/opt/homebrew/bin/python3.14` before sourcing if `pick_python` does not find 3.10+.

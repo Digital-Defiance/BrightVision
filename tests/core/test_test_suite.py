@@ -45,17 +45,24 @@ def test_build_step_env_llm_lane_sets_e2e_llm():
     assert "E2E_OLLAMA_MODEL" in env
 
 
-def test_build_step_env_release_smoke_unsets_e2e_llm():
+def test_build_step_env_release_smoke_unsets_e2e_llm(tmp_path: Path):
     step = SuiteStep(
         "test-local:release",
         "release",
         ("sh", "scripts/test-local.sh", "release"),
         touches_core_port=True,
     )
-    env = build_step_env(step, suite_run=True, base={"E2E_LLM": "1"})
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_py = venv_bin / "python3"
+    venv_py.write_text("#!/bin/sh\n", encoding="utf8")
+    venv_py.chmod(0o755)
+    env = build_step_env(step, suite_run=True, base={"E2E_LLM": "1"}, cwd=tmp_path)
     assert env.get("E2E_LLM") is None
     assert env["BV_TEST_SUITE_SMOKE_E2E"] == "1"
     assert env["BV_TEST_SUITE_ACTIVE"] == "1"
+    assert env["E2E_PYTHON"] == str(venv_py.resolve())
+    assert env["PATH"].split(":")[0] == str(venv_bin.resolve())
 
 
 def test_gpu_capture_bin_prefers_bgpucap(monkeypatch):

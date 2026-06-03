@@ -38,23 +38,47 @@ function killListenersOnPort(port: number): void {
  * Venv `bin/python3` is often a symlink to Homebrew. Do not realpath it — spawning the
  * base interpreter skips pyvenv.cfg and site-packages (uvicorn, bright_vision_core).
  */
+function repoRoots(repoRoot: string): string[] {
+  const roots = new Set<string>()
+  if (repoRoot) roots.add(repoRoot)
+  try {
+    roots.add(fs.realpathSync(repoRoot))
+  } catch {
+    /* keep logical path */
+  }
+  return [...roots]
+}
+
 function resolvePython(repoRoot: string): string {
-  const root = fs.realpathSync(repoRoot)
-  const candidates = [
-    process.env.E2E_PYTHON,
-    path.join(root, '.venv', 'bin', 'python3'),
-    path.join(root, '.venv', 'bin', 'python'),
-    process.env.VIRTUAL_ENV
-      ? path.join(process.env.VIRTUAL_ENV, 'bin', 'python3')
-      : '',
-    process.env.VIRTUAL_ENV
-      ? path.join(process.env.VIRTUAL_ENV, 'bin', 'python')
-      : '',
-  ].filter(Boolean) as string[]
+  const roots = repoRoots(repoRoot)
+  const candidates: string[] = []
+
+  const add = (p: string | undefined) => {
+    if (!p) return
+    if (path.isAbsolute(p)) {
+      candidates.push(p)
+      return
+    }
+    for (const root of roots) {
+      candidates.push(path.join(root, p))
+    }
+  }
+
+  add(process.env.E2E_PYTHON)
+  for (const root of roots) {
+    candidates.push(path.join(root, '.venv', 'bin', 'python3'))
+    candidates.push(path.join(root, '.venv', 'bin', 'python'))
+  }
+  const venv = process.env.VIRTUAL_ENV
+  if (venv) {
+    candidates.push(path.join(venv, 'bin', 'python3'))
+    candidates.push(path.join(venv, 'bin', 'python'))
+  }
+
   for (const p of candidates) {
     if (fs.existsSync(p)) return p
   }
-  return 'python3'
+  return path.join(roots[0] ?? repoRoot, '.venv', 'bin', 'python3')
 }
 
 function assertPythonReady(python: string, repoRoot: string): void {
@@ -116,7 +140,8 @@ export async function startRealCoreServer(): Promise<void> {
   if (!fs.existsSync(python)) {
     throw new Error(
       `E2E python not found (${python}). From repo root run: source activate.sh\n` +
-        `  (same path for shell and tests — avoid mixing /Users/... and /Volumes/... clones)`
+        `  (same path for shell and tests — avoid mixing /Users/... and /Volumes/... clones)\n` +
+        `  export E2E_PYTHON="${path.join(repoRoots(repoRoot)[0] ?? repoRoot, '.venv', 'bin', 'python3')}"`
     )
   }
   assertPythonReady(python, repoRoot)

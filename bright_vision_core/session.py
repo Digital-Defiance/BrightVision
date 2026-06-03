@@ -592,9 +592,12 @@ class Session:
             yield from _maybe_recover_prose_shell()
             from bright_vision_core.agent_turn import is_agent_shell_only_stop
 
-            if is_agent_shell_only_stop(
-                had_tool_activity=turn_had_tool_activity,
-                had_tool_call=turn_had_tool_call,
+            if (
+                not agent_continuation
+                and is_agent_shell_only_stop(
+                    had_tool_activity=turn_had_tool_activity,
+                    had_tool_call=turn_had_tool_call,
+                )
             ):
                 yield from _maybe_continue_agent_after_shell()
                 return
