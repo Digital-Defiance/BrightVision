@@ -16,6 +16,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
+import BoltIcon from '@mui/icons-material/Bolt'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StepLogPanel, { STEP_LOG_MAX_LINES } from './StepLogPanel'
@@ -72,6 +73,8 @@ type StepState = {
   id: string
   label: string
   status: 'pending' | 'running' | 'ok' | 'fail' | 'skipped'
+  /** Step failed because short-circuit killed the subprocess on a test FAIL line. */
+  shortCircuit?: boolean
   lines: string[]
   seconds?: number
   gpuAvg?: number
@@ -443,6 +446,7 @@ export default function App() {
             ? {
                 ...s,
                 status: ev.ok ? 'ok' : 'fail',
+                shortCircuit: ev.shortCircuit ?? s.shortCircuit,
                 seconds: ev.seconds,
                 gpuAvg: ev.gpuAvg ?? s.liveGpuAvg,
                 gpuPeak: ev.gpuPeak ?? s.liveGpuPeak,
@@ -512,11 +516,22 @@ export default function App() {
     }
   }
 
-  const statusIcon = (status: StepState['status']) => {
-    if (status === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
-    if (status === 'fail') return <ErrorIcon color="error" fontSize="small" />
-    if (status === 'skipped') return <SkipNextIcon color="disabled" fontSize="small" />
-    if (status === 'running') return <HourglassEmptyIcon color="primary" fontSize="small" />
+  const statusIcon = (step: StepState) => {
+    if (step.status === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
+    if (step.status === 'fail') {
+      if (step.shortCircuit) {
+        return (
+          <BoltIcon
+            color="warning"
+            fontSize="small"
+            titleAccess="Short-circuited on test failure"
+          />
+        )
+      }
+      return <ErrorIcon color="error" fontSize="small" />
+    }
+    if (step.status === 'skipped') return <SkipNextIcon color="disabled" fontSize="small" />
+    if (step.status === 'running') return <HourglassEmptyIcon color="primary" fontSize="small" />
     return <HourglassEmptyIcon color="disabled" fontSize="small" />
   }
 
@@ -872,7 +887,7 @@ export default function App() {
           <AccordionSummary expandIcon={<ExpandMoreIcon />}>
             <Stack spacing={0.75} sx={{ width: '100%', pr: 1, minWidth: 0 }}>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-                {statusIcon(step.status)}
+                {statusIcon(step)}
                 <Typography variant="body2" sx={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
                   {step.label}
                 </Typography>

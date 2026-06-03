@@ -606,6 +606,7 @@ def run_step(
         "seconds": seconds,
         "gpuAvg": gpu_avg,
         "gpuPeak": gpu_peak,
+        "shortCircuit": bool(short_circuit_hit and not ok),
     }
     finished.update(capture.to_event_fields())
     _emit(on_event, finished)

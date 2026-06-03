@@ -5,6 +5,10 @@ import { openTasks, startMockSession } from './helpers/session'
 const REQ_DRAFT = '### REQ-001\n**WHEN** the user opens Tasks\n**THE** system **SHALL** list todos.\n'
 const DESIGN_DRAFT = '## Overview\nCovers REQ-001.\n'
 
+function specLayerTab(page: import('@playwright/test').Page, name: string | RegExp) {
+  return page.getByTestId('spec-layer-tabs').getByRole('tab', { name })
+}
+
 async function selectWizardTask(page: import('@playwright/test').Page) {
   await openTasks(page)
   await expect(page.getByTestId('todo-new')).toBeEnabled({ timeout: 15_000 })
@@ -24,7 +28,7 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
   })
 
   test('blocks Design tab until requirements exist', async ({ page }) => {
-    await page.getByRole('tab', { name: 'Design' }).click()
+    await specLayerTab(page, 'Design').click()
     await expect(page.getByTestId('spec-tab-gate-alert')).toContainText(/requirements/i)
     await expect(page.getByLabel('Requirements (EARS-style)')).toBeVisible()
     await expect(page.getByLabel('Design')).toHaveCount(0)
@@ -33,7 +37,7 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
   test('blocks Tasks tab until design exists', async ({ page }) => {
     await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
     await page.getByLabel('Requirements (EARS-style)').blur()
-    await page.getByRole('tab', { name: 'Tasks' }).click()
+    await specLayerTab(page, 'Tasks').click()
     await expect(page.getByTestId('spec-tab-gate-alert')).toContainText(/design/i)
     await expect(page.getByLabel('Implementation tasks')).toHaveCount(0)
   })
@@ -61,12 +65,12 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
 
     await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
     await page.getByLabel('Requirements (EARS-style)').blur()
-    await page.getByRole('tab', { name: 'Design' }).click()
+    await specLayerTab(page, 'Design').click()
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate design')
 
     await page.getByLabel('Design').fill(DESIGN_DRAFT)
     await page.getByLabel('Design').blur()
-    await page.getByRole('tab', { name: 'Tasks' }).click()
+    await specLayerTab(page, 'Tasks').click()
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate tasks')
   })
 
@@ -113,7 +117,7 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
     let polls = 0
     await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
     await page.getByLabel('Requirements (EARS-style)').blur()
-    await page.getByRole('tab', { name: 'Design' }).click()
+    await specLayerTab(page, 'Design').click()
 
     await page.route(
       (url) => /\/workspaces\/todos\/[^/]+\/generate-spec$/.test(url.pathname),
