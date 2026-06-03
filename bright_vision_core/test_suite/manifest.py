@@ -114,6 +114,7 @@ def llm_core_step_env(*, suite_run: bool = False) -> dict[str, str]:
         ),
         "E2E_OLLAMA_MODEL": e2e_model,
         "E2E_LLM": "1",
+        "OLLAMA_WARMUP_EXCLUSIVE": os.environ.get("OLLAMA_WARMUP_EXCLUSIVE", "1"),
         "BV_TEST_SUITE_LIVE_OUTPUT": "1",
         "BV_TEST_SUITE_ACTIVE": "1" if in_suite else os.environ.get("BV_TEST_SUITE_ACTIVE", ""),
     }

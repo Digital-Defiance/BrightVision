@@ -1,13 +1,38 @@
 import { fmtDuration } from './testSuiteClient'
 import {
+  bdAddSeconds,
+  bdFromUnixMs,
   fmtDurationBrightDate,
+  formatBdScalar,
   formatEtcBrightDate,
 } from './brightdateTiming'
 
-export type StepMedian = { medianSeconds: number; sampleCount: number }
+export type StepMedian = {
+  medianSeconds: number
+  sampleCount: number
+  medianGpuPeak?: number
+  medianGpuAvg?: number
+  gpuSampleCount?: number
+}
 
 export type TimingDisplayOptions = {
   useBrightDate?: boolean
+}
+
+export type EtcAnchors = {
+  stepEtcWallMs: number | null
+  runEtcWallMs: number | null
+  stepEtcBd: number | null
+  runEtcBd: number | null
+}
+
+/** Fixed finish times for every not-yet-finished step (set once when a step starts). */
+export type RunEtcPlan = {
+  /** planIndex → fixed finish instant */
+  stepFinishWallMs: Record<number, number>
+  stepFinishBd: Record<number, number>
+  runFinishWallMs: number | null
+  runFinishBd: number | null
 }
 
 function fmtStepDuration(sec: number, opts?: TimingDisplayOptions): string {
@@ -23,6 +48,144 @@ export function formatEtcClock(
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(Date.now() + secondsFromNow * 1000))
+}
+
+export function formatAnchoredEtc(
+  anchors: EtcAnchors,
+  kind: 'step' | 'run',
+  useBrightDate: boolean
+): string | null {
+  if (useBrightDate) {
+    const bd = kind === 'step' ? anchors.stepEtcBd : anchors.runEtcBd
+    if (bd != null) return formatBdScalar(bd)
+    return null
+  }
+  const wall = kind === 'step' ? anchors.stepEtcWallMs : anchors.runEtcWallMs
+  if (wall == null) return null
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(wall))
+}
+
+/** Fixed ETC anchors at step start — avoids upticking while the clock runs. */
+export function computeEtcAnchors(opts: {
+  runningPlanIndex: number
+  plan: Array<{ id: string }>
+  steps: Array<{ id: string; status: string; seconds?: number }>
+  medians: Record<string, StepMedian>
+  runningStepElapsed: number
+  useBrightDate?: boolean
+}): EtcAnchors {
+  const idx = opts.runningPlanIndex
+  if (idx < 0) {
+    return { stepEtcWallMs: null, runEtcWallMs: null, stepEtcBd: null, runEtcBd: null }
+  }
+  const id = opts.plan[idx]?.id
+  const median = id ? opts.medians[id]?.medianSeconds ?? 0 : 0
+  const stepLeft = median > 0 ? Math.max(0, median - opts.runningStepElapsed) : 0
+  const suiteLeft = secondsUntilSuiteFinish(
+    idx,
+    opts.plan,
+    opts.steps,
+    opts.medians,
+    opts.runningStepElapsed
+  )
+  const nowMs = Date.now()
+  const nowBd = opts.useBrightDate ? bdFromUnixMs(nowMs) : null
+  return {
+    stepEtcWallMs: stepLeft > 0 ? nowMs + stepLeft * 1000 : null,
+    runEtcWallMs: suiteLeft > 0 ? nowMs + suiteLeft * 1000 : null,
+    stepEtcBd: stepLeft > 0 && nowBd != null ? bdAddSeconds(nowBd, stepLeft) : null,
+    runEtcBd: suiteLeft > 0 && nowBd != null ? bdAddSeconds(nowBd, suiteLeft) : null,
+  }
+}
+
+/** Snapshot finish times for current + all later steps (stable for the whole step run). */
+export function computeRunEtcPlan(opts: {
+  runningPlanIndex: number
+  plan: Array<{ id: string }>
+  steps: Array<{ id: string; status: string; seconds?: number }>
+  medians: Record<string, StepMedian>
+  runningStepElapsed: number
+  useBrightDate?: boolean
+}): RunEtcPlan {
+  const idx = opts.runningPlanIndex
+  const nowMs = Date.now()
+  const nowBd = opts.useBrightDate ? bdFromUnixMs(nowMs) : null
+  const stepFinishWallMs: Record<number, number> = {}
+  const stepFinishBd: Record<number, number> = {}
+
+  if (idx < 0) {
+    return { stepFinishWallMs, stepFinishBd, runFinishWallMs: null, runFinishBd: null }
+  }
+
+  for (let i = idx; i < opts.plan.length; i++) {
+    const st = opts.steps[i]
+    if (st?.status === 'skipped') continue
+    const id = opts.plan[i]?.id
+    const median = id ? opts.medians[id]?.medianSeconds ?? 0 : 0
+    const untilStart = secondsUntilStepStart(
+      i,
+      opts.plan,
+      opts.steps,
+      opts.medians,
+      idx,
+      opts.runningStepElapsed
+    )
+    const finishSec = untilStart + (median > 0 ? median : 0)
+    if (finishSec > 0) {
+      stepFinishWallMs[i] = nowMs + finishSec * 1000
+      if (nowBd != null) stepFinishBd[i] = bdAddSeconds(nowBd, finishSec)
+    }
+  }
+
+  const suiteLeft = secondsUntilSuiteFinish(
+    idx,
+    opts.plan,
+    opts.steps,
+    opts.medians,
+    opts.runningStepElapsed
+  )
+  return {
+    stepFinishWallMs,
+    stepFinishBd,
+    runFinishWallMs: suiteLeft > 0 ? nowMs + suiteLeft * 1000 : null,
+    runFinishBd: suiteLeft > 0 && nowBd != null ? bdAddSeconds(nowBd, suiteLeft) : null,
+  }
+}
+
+export function formatPlannedStepEtc(
+  plan: RunEtcPlan | null | undefined,
+  planIndex: number,
+  useBrightDate: boolean
+): string | null {
+  if (!plan) return null
+  if (useBrightDate) {
+    const bd = plan.stepFinishBd[planIndex]
+    return bd != null ? formatBdScalar(bd) : null
+  }
+  const wall = plan.stepFinishWallMs[planIndex]
+  if (wall == null) return null
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(wall))
+}
+
+export function formatPlannedRunEtc(
+  plan: RunEtcPlan | null | undefined,
+  useBrightDate: boolean
+): string | null {
+  if (!plan) return null
+  if (useBrightDate) {
+    return plan.runFinishBd != null ? formatBdScalar(plan.runFinishBd) : null
+  }
+  if (plan.runFinishWallMs == null) return null
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(plan.runFinishWallMs))
 }
 
 /** Seconds from now until step at planIndex would typically start. */
@@ -88,7 +251,7 @@ export function secondsUntilSuiteFinish(
   return total
 }
 
-/** Header timing while a step is running. */
+/** Header timing while a step is running (uses fixed ETC anchors when provided). */
 export function suiteRunningTimingSummary(opts: {
   runningPlanIndex: number
   plan: Array<{ id: string }>
@@ -96,6 +259,8 @@ export function suiteRunningTimingSummary(opts: {
   medians: Record<string, StepMedian>
   runningStepElapsed: number
   useBrightDate?: boolean
+  anchors?: EtcAnchors | null
+  etcPlan?: RunEtcPlan | null
 }): {
   stepLeft?: string
   stepEtc?: string
@@ -121,15 +286,49 @@ export function suiteRunningTimingSummary(opts: {
   } = {}
   if (left > 0) {
     out.stepLeft = fmtStepDuration(left, display)
-    out.stepEtc = formatEtcClock(left, display)
+    if (opts.anchors) {
+      out.stepEtc =
+        formatAnchoredEtc(opts.anchors, 'step', !!opts.useBrightDate) ?? undefined
+    }
   } else if (opts.runningStepElapsed > 0) {
     out.stepLeft = 'over median'
   }
   if (suiteLeft > 0) {
     out.runLeft = fmtStepDuration(suiteLeft, display)
-    out.runEtc = formatEtcClock(suiteLeft, display)
+    const runEtc =
+      formatPlannedRunEtc(opts.etcPlan, !!opts.useBrightDate) ??
+      (opts.anchors
+        ? formatAnchoredEtc(opts.anchors, 'run', !!opts.useBrightDate) ?? undefined
+        : undefined)
+    if (runEtc) out.runEtc = runEtc
   }
   return out
+}
+
+export function suiteProgressPercent(opts: {
+  plan: Array<{ id: string }>
+  steps: Array<{ id: string; status: string; seconds?: number }>
+  medians: Record<string, StepMedian>
+  stepElapsed: number
+  etaTotal: number
+}): number {
+  if (opts.etaTotal <= 0) return 0
+  let done = 0
+  for (let i = 0; i < opts.plan.length; i++) {
+    const st = opts.steps[i]
+    const med = opts.medians[opts.plan[i]?.id]?.medianSeconds ?? 0
+    if (st?.status === 'ok' || st?.status === 'fail') {
+      done += st.seconds ?? med
+    } else if (st?.status === 'running') {
+      done += opts.stepElapsed
+      break
+    } else if (st?.status === 'skipped') {
+      continue
+    } else {
+      break
+    }
+  }
+  return Math.min(99, Math.round((done / opts.etaTotal) * 100))
 }
 
 export function stepTimingLabels(opts: {
@@ -142,6 +341,8 @@ export function stepTimingLabels(opts: {
   runningPlanIndex?: number
   runningStepElapsed?: number
   useBrightDate?: boolean
+  anchors?: EtcAnchors | null
+  etcPlan?: RunEtcPlan | null
 }): { eta?: string; etc?: string; runEtc?: string } {
   const display: TimingDisplayOptions = { useBrightDate: opts.useBrightDate }
   const id = opts.plan[opts.planIndex]?.id
@@ -153,16 +354,8 @@ export function stepTimingLabels(opts: {
     if (!hasHistory || median <= 0) return {}
     const eta = `ETA ~${fmtStepDuration(median, display)}`
     if (opts.running) {
-      const untilStart = secondsUntilStepStart(
-        opts.planIndex,
-        opts.plan,
-        opts.steps,
-        opts.medians,
-        opts.runningPlanIndex ?? -1,
-        opts.runningStepElapsed ?? 0
-      )
-      const finishFromNow = untilStart + median
-      return { eta, etc: `ETC ${formatEtcClock(finishFromNow, display)}` }
+      const planned = formatPlannedStepEtc(opts.etcPlan, opts.planIndex, !!opts.useBrightDate)
+      return planned ? { eta, etc: `ETC ${planned}` } : { eta }
     }
     return { eta }
   }
@@ -186,14 +379,30 @@ export function stepTimingLabels(opts: {
         : elapsed > 0 && hasHistory
           ? 'over median'
           : undefined
+    const plannedStep = formatPlannedStepEtc(
+      opts.etcPlan,
+      opts.planIndex,
+      !!opts.useBrightDate
+    )
     const etc =
-      left > 0
-        ? `ETC ${formatEtcClock(left, display)}`
-        : elapsed > 0 && hasHistory
-          ? 'ETC —'
-          : undefined
+      plannedStep != null
+        ? `ETC ${plannedStep}`
+        : left > 0 && opts.anchors
+          ? `ETC ${
+              formatAnchoredEtc(opts.anchors, 'step', !!opts.useBrightDate) ?? '—'
+            }`
+          : elapsed > 0 && hasHistory
+            ? 'ETC —'
+            : undefined
+    const plannedRun = formatPlannedRunEtc(opts.etcPlan, !!opts.useBrightDate)
     const runEtc =
-      suiteLeft > 0 ? `Run ETC ${formatEtcClock(suiteLeft, display)}` : undefined
+      plannedRun != null
+        ? `Run ETC ${plannedRun}`
+        : suiteLeft > 0 && opts.anchors
+          ? `Run ETC ${
+              formatAnchoredEtc(opts.anchors, 'run', !!opts.useBrightDate) ?? '—'
+            }`
+          : undefined
     return { eta, etc, runEtc }
   }
 

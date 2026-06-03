@@ -1,8 +1,5 @@
-import type { ThinkingStatsStore } from './thinkingStats'
-
 /** Append a `/turns` assistant message (React table rendered in ChatPanel). */
 export function appendTurnsTableToChat(
-  store: ThinkingStatsStore,
   appendAssistantMessage: (msg: {
     content: string
     turnsTable: { filterModel: string | null; capturedAt: string }

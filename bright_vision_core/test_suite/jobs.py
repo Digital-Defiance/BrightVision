@@ -166,6 +166,8 @@ class TestSuiteJobStore:
         run_options: SuiteRunOptions | None = None,
         save_transcript: bool = False,
         transcript_path: str | None = None,
+        fail_fast: bool = False,
+        short_circuit: bool = False,
     ) -> TestSuiteRun:
         with self._lock:
             self._reconcile_active_locked()
@@ -203,6 +205,8 @@ class TestSuiteJobStore:
                     skip_gpu=skip_gpu,
                     skip_time=skip_time,
                     use_brightdate=use_brightdate,
+                    fail_fast=fail_fast,
+                    short_circuit=short_circuit,
                     run_options=run_options,
                     on_event=on_event,
                     cancel_check=run.cancelled,

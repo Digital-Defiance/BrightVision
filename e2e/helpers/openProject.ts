@@ -19,11 +19,9 @@ export function openProjectStorageArgs(workingDir: string) {
 }
 
 export function applyOpenProjectStorage(
-  welcomeKey: string,
-  skipKey: string,
-  currentKey: string,
-  workingDir: string
+  args: readonly [welcomeKey: string, skipKey: string, currentKey: string, workingDir: string]
 ) {
+  const [welcomeKey, skipKey, currentKey, workingDir] = args
   localStorage.setItem(welcomeKey, '1')
   localStorage.setItem(skipKey, '1')
   localStorage.setItem(currentKey, workingDir || '.')
@@ -31,5 +29,5 @@ export function applyOpenProjectStorage(
 
 /** Skip launch gate and pin the workspace path (call before navigation). */
 export async function primeOpenProject(page: Page, workingDir: string) {
-  await page.addInitScript(applyOpenProjectStorage, ...openProjectStorageArgs(workingDir))
+  await page.addInitScript(applyOpenProjectStorage, openProjectStorageArgs(workingDir))
 }

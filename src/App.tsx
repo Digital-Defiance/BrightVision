@@ -2037,10 +2037,24 @@ function AppShell({
   }
 
   const applyProject = useCallback((path: string) => {
-    const next = { ...savedConfigRef.current, workingDir: path }
+    let base = savedConfigRef.current
+    const stored = readStorageItem(CONFIG_STORAGE_KEY)
+    if (stored) {
+      try {
+        base = migrateConfig({
+          ...DEFAULT_CONFIG,
+          ...(JSON.parse(stored) as Partial<VisionConfig>),
+        })
+      } catch {
+        /* keep ref snapshot */
+      }
+    }
+    const next = { ...base, workingDir: path }
     setConfig(next)
     setSavedConfig(next)
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
+    localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
+    setShowWelcome(false)
   }, [])
 
   const handleStop = async () => {
@@ -2775,27 +2789,23 @@ function AppShell({
       }
       if (clientCmd.id === 'turns') {
         thinkingTiming.refreshStats()
-        appendTurnsTableToChat(
-          loadThinkingStats(),
-          (msg) => {
-            const id = nextChatMessageId()
-            setChatMessages((prev) =>
-              capList(
-                [
-                  ...prev,
-                  {
-                    id,
-                    role: 'assistant' as const,
-                    content: msg.content,
-                    turnsTable: msg.turnsTable,
-                  },
-                ],
-                MAX_CHAT_MESSAGES
-              )
+        appendTurnsTableToChat((msg) => {
+          const id = nextChatMessageId()
+          setChatMessages((prev) =>
+            capList(
+              [
+                ...prev,
+                {
+                  id,
+                  role: 'assistant' as const,
+                  content: msg.content,
+                  turnsTable: msg.turnsTable,
+                },
+              ],
+              MAX_CHAT_MESSAGES
             )
-          },
-          { filterModel: null }
-        )
+          )
+        }, { filterModel: null })
         return
       }
       try {
@@ -3154,7 +3164,6 @@ function AppShell({
               onCancelSend={handleCancelSend}
               thinkingTimingPrefs={thinkingTimingPrefs}
               thinkingStatsStore={thinkingTiming.statsStore}
-              currentModel={savedConfig.model}
               turnActivityHint={stallWatch.hint}
               turnStalled={stallWatch.stalled}
               onConfirmAnswer={handleConfirmAnswer}
