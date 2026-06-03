@@ -29,21 +29,15 @@ export async function primeLlmE2eApp(
     ...overrides,
   }
   const routerPrefs = buildRouterPrefsForStorage()
+  await page.addInitScript(applyOpenProjectStorage, openProjectStorageArgs(cfg.workingDir))
   await page.addInitScript(
-    ([config, welcomeKey, skipKey, currentKey, projectPath, configKey, routerKey, router]) => {
-      applyOpenProjectStorage(welcomeKey, skipKey, currentKey, projectPath)
+    ([config, configKey, routerKey, router]) => {
       localStorage.setItem(configKey, JSON.stringify(config))
       if (router) {
         localStorage.setItem(routerKey, JSON.stringify(router))
       }
     },
-    [
-      cfg,
-      ...openProjectStorageArgs(cfg.workingDir),
-      E2E_CONFIG_STORAGE_KEY,
-      MODEL_ROUTER_PREFS_STORAGE_KEY,
-      routerPrefs,
-    ] as const
+    [cfg, E2E_CONFIG_STORAGE_KEY, MODEL_ROUTER_PREFS_STORAGE_KEY, routerPrefs] as const
   )
   return cfg
 }

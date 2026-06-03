@@ -231,6 +231,23 @@ class EventIO(InputOutput):
 
         return answer
 
+    async def offer_url(
+        self,
+        url,
+        prompt="Open URL for more info?",
+        allow_never=True,
+        acknowledge=False,
+    ):
+        """Never open docs in the browser during automated suite / LLM pytest runs."""
+        if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1":
+            return False
+        return await super().offer_url(
+            url,
+            prompt=prompt,
+            allow_never=allow_never,
+            acknowledge=acknowledge,
+        )
+
     def get_input(self, root, rel_fnames, addable_rel_fnames, commands, abs_read_only_fnames, edit_format=""):
         raise RuntimeError(
             "EventIO does not support interactive input; send messages via Session.run_message()."

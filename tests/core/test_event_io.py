@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from bright_vision_core.event_io import EventIO
 
 
@@ -17,3 +19,18 @@ def test_confirm_ask_uses_group_response_cache() -> None:
     io = EventIO(yes=False)
     io.group_responses["Run MCP Tools"] = False
     assert asyncio.run(io.confirm_ask("Run tools?", group_response="Run MCP Tools")) is False
+
+
+@pytest.mark.asyncio
+async def test_offer_url_blocked_during_llm_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("E2E_LLM", "1")
+    opened: list[str] = []
+
+    def _open(url: str, *_args, **_kwargs) -> None:
+        opened.append(url)
+
+    monkeypatch.setattr("cecli.io.webbrowser.open", _open)
+    io = EventIO(yes=True)
+    ok = await io.offer_url("https://cecli.dev/docs/troubleshooting/token-limits.html")
+    assert ok is False
+    assert opened == []

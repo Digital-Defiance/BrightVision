@@ -51,6 +51,8 @@ export type TestSuiteEvent = {
   cpuPeak?: number
   cpuPct?: number
   gpuPct?: number
+  gpuWarn?: boolean
+  gpuExpectedPeak?: number
   stepIndex?: number
   totalSteps?: number
   elapsedSeconds?: number
@@ -65,6 +67,8 @@ export type TestSuiteEvent = {
   useBrightDate?: boolean
   startBd?: number
   endBd?: number
+  failFast?: boolean
+  skippedStepIds?: string[]
 }
 
 let resolvedBase: string | null = null
@@ -172,7 +176,14 @@ export async function fetchExpectations(skipLlm: boolean, lanes: SuiteLaneOption
   )
   if (!res.ok) throw new Error(`expectations failed: ${res.status}`)
   return res.json() as Promise<{
-    steps: Array<{ stepId: string; medianSeconds: number; sampleCount: number }>
+    steps: Array<{
+      stepId: string
+      medianSeconds: number
+      sampleCount: number
+      medianGpuPeak?: number
+      medianGpuAvg?: number
+      gpuSampleCount?: number
+    }>
     totalExpectedSeconds: number
     haveAllMedians: boolean
     missingMedians: string[]
@@ -256,6 +267,8 @@ export async function startRun(opts: {
   skipGpu: boolean
   saveTranscript?: boolean
   useBrightDate?: boolean
+  failFast?: boolean
+  shortCircuit?: boolean
 } & SuiteLaneOptions): Promise<{ run_id: string; transcript_path?: string | null }> {
   const res = await fetch(`${suiteBaseUrl()}/test-suite/runs`, {
     method: 'POST',
@@ -272,6 +285,8 @@ export async function startRun(opts: {
       shipped_scenarios: Boolean(opts.shippedScenarios),
       strict_phased_pytest: Boolean(opts.strictPhasedPytest),
       save_transcript: Boolean(opts.saveTranscript),
+      fail_fast: Boolean(opts.failFast),
+      short_circuit: Boolean(opts.shortCircuit),
     }),
   })
   if (res.status === 409) throw new Error('A run is already in progress')
@@ -294,6 +309,17 @@ export async function cancelRun(runId: string): Promise<void> {
   })
   if (res.status === 404) return
   if (!res.ok) throw new Error(`cancel run failed: ${res.status}`)
+}
+
+export async function revealPathInFinder(path: string): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('reveal_path_in_finder', { path })
+    return
+  } catch {
+    /* not in Tauri */
+  }
+  throw new Error('Reveal in Finder is only available in the Test Lab desktop app')
 }
 
 export function streamRunEvents(

@@ -6,9 +6,57 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 _CORE_DIR = Path(__file__).resolve().parent
 if str(_CORE_DIR) not in sys.path:
     sys.path.insert(0, str(_CORE_DIR))
+
+_BROWSER_PATCHED = False
+
+
+def _should_block_browser_tabs() -> bool:
+    return os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1"
+
+
+def _patch_webbrowser_open_globally() -> None:
+    global _BROWSER_PATCHED
+    if _BROWSER_PATCHED or not _should_block_browser_tabs():
+        return
+
+    def _noop(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    import webbrowser
+
+    webbrowser.open = _noop  # type: ignore[method-assign]
+    try:
+        import cecli.io as cecli_io
+
+        cecli_io.webbrowser.open = _noop  # type: ignore[attr-defined]
+    except ImportError:
+        pass
+    _BROWSER_PATCHED = True
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    _patch_webbrowser_open_globally()
+
+
+@pytest.fixture(autouse=True)
+def _no_cecli_browser_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent cecli from opening token-limit docs in the browser during suite runs."""
+    if not _should_block_browser_tabs():
+        return
+
+    def _noop(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("webbrowser.open", _noop)
+    try:
+        monkeypatch.setattr("cecli.io.webbrowser.open", _noop)
+    except AttributeError:
+        pass
 
 
 def _live_progress_stderr() -> bool:

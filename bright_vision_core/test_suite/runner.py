@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -43,13 +44,29 @@ from bright_vision_core.test_suite.gpucap_metrics import (
     wrap_step_argv,
 )
 from bright_vision_core.test_suite.timing import (
+    format_duration,
+    gpu_baseline_for_step,
     record_step,
     record_total,
     repo_root,
 )
 
-_HEARTBEAT_INTERVAL_S = 20.0
-_LLM_CORE_HEARTBEAT_INTERVAL_S = 10.0
+_HEARTBEAT_INTERVAL_S = 45.0
+_LLM_CORE_HEARTBEAT_INTERVAL_S = 30.0
+_LLM_GPU_STALL_ABORT_S = float(os.environ.get("BV_LLM_GPU_STALL_ABORT_S", "240"))
+_LLM_GPU_LOW_WARN_S = float(os.environ.get("BV_LLM_GPU_LOW_WARN_S", "120"))
+_TEST_FAIL_LINE_RES = [
+    re.compile(r"^FAILED\s+\S", re.I),
+    re.compile(r"^\s*✘\s+\d+\s+\S+\.(?:spec|test)\.", re.I),
+    re.compile(r"^\s*×\s+\d+\s+\S+\.(?:spec|test)\.", re.I),
+]
+
+
+def _line_indicates_test_fail(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("FAIL:"):
+        return False
+    return any(p.search(stripped) for p in _TEST_FAIL_LINE_RES)
 
 EventCallback = Callable[[dict[str, Any]], None]
 
@@ -108,6 +125,7 @@ def run_step(
     step_index: int = 0,
     total_steps: int = 0,
     sample_resources_on_heartbeat: bool = True,
+    short_circuit: bool = False,
 ) -> tuple[bool, float, float | None, float | None, str]:
     """Run one step. Returns ok, seconds, gpu_avg, gpu_peak, combined capture text."""
     env = build_step_env(step, suite_run=suite_run)
@@ -150,6 +168,7 @@ def run_step(
         )
 
     _emit(on_event, {"type": "step_started", "stepId": step.id, "label": step.label})
+    warmup_failed = False
     if step.id == "llm:core":
         _free_core_port_script = cwd / "scripts" / "free-core-port.sh"
         if _free_core_port_script.is_file():
@@ -211,6 +230,7 @@ def run_step(
                         },
                     )
             if warm.returncode != 0:
+                warmup_failed = True
                 _emit(
                     on_event,
                     {
@@ -218,23 +238,25 @@ def run_step(
                         "stepId": step.id,
                         "stream": "stderr",
                         "line": (
-                            "Ollama warmup failed — LLM tests may retry for many minutes. "
-                            "Check `ollama ps` and `ollama pull` for your E2E_OLLAMA_MODEL."
+                            "Ollama warmup failed — skipping pytest LLM suite. "
+                            "Unload other models (`ollama ps` / `ollama stop <name>`), "
+                            "or run `sh scripts/ollama-warmup-for-tests.sh` manually."
                         ),
                     },
                 )
-        _emit(
-            on_event,
-            {
-                "type": "step_line",
-                "stepId": step.id,
-                "stream": "stdout",
-                "line": (
-                    f"pytest LLM suite (turn timeout {env.get('LLM_TEST_TURN_TIMEOUT_S')}s, "
-                    f"agent {env.get('VISION_AGENT_PREPROC_TIMEOUT_S')}s); stderr shows START/PASS."
-                ),
-            },
-        )
+        if not warmup_failed:
+            _emit(
+                on_event,
+                {
+                    "type": "step_line",
+                    "stepId": step.id,
+                    "stream": "stdout",
+                    "line": (
+                        f"pytest LLM suite (turn timeout {env.get('LLM_TEST_TURN_TIMEOUT_S')}s, "
+                        f"agent {env.get('VISION_AGENT_PREPROC_TIMEOUT_S')}s); stderr shows START/PASS."
+                    ),
+                },
+            )
 
     capture_mode = resolve_capture_mode(skip_gpu=not use_gpu)
     gpu_bin = gpu_capture_bin() if capture_mode == "bgpucap" else None
@@ -264,13 +286,19 @@ def run_step(
     )
     live_gpu_samples: list[float] = []
     live_cpu_samples: list[float] = []
+    gpu_stall_abort = False
+    gpu_low_warned = False
+    short_circuit_hit = False
+    proc: subprocess.Popen[str] | None = None
+    gpu_baseline = gpu_baseline_for_step(step.id) if step.requires_ollama else {}
+    expected_gpu_peak = float(gpu_baseline.get("medianGpuPeak") or 0)
 
     def touch_output() -> None:
         nonlocal last_line_at
         last_line_at = time.time()
 
     def maybe_heartbeat() -> None:
-        nonlocal last_heartbeat_at
+        nonlocal last_heartbeat_at, gpu_stall_abort, gpu_low_warned
         now = time.time()
         if now - last_line_at < heartbeat_interval:
             return
@@ -290,6 +318,11 @@ def run_step(
                     live_cpu_samples.append(sample.cpu_pct)
             except Exception:
                 util = ""
+        elapsed_label = (
+            format_duration(float(step_elapsed), use_brightdate=use_brightdate)
+            if use_brightdate
+            else f"{step_elapsed}s"
+        )
         _emit(
             on_event,
             {
@@ -297,11 +330,62 @@ def run_step(
                 "stepId": step.id,
                 "stream": "stderr",
                 "line": (
-                    f"… still running ({step_elapsed}s this step{util}; "
+                    f"… still running ({elapsed_label} this step{util}; "
                     "waiting for subprocess output)"
                 ),
             },
         )
+        if (
+            step.requires_ollama
+            and use_gpu
+            and expected_gpu_peak >= 20
+            and step_elapsed >= int(_LLM_GPU_LOW_WARN_S)
+            and live_gpu_samples
+            and max(live_gpu_samples) < expected_gpu_peak * 0.25
+            and not gpu_low_warned
+        ):
+            gpu_low_warned = True
+            _emit(
+                on_event,
+                {
+                    "type": "step_line",
+                    "stepId": step.id,
+                    "stream": "stderr",
+                    "line": (
+                        f"GPU low vs history: peak ~{max(live_gpu_samples):.0f}% "
+                        f"(median peak ~{expected_gpu_peak:.0f}% for {step.id})"
+                    ),
+                },
+            )
+            _emit(
+                on_event,
+                {
+                    "type": "step_util",
+                    "stepId": step.id,
+                    "gpuWarn": True,
+                    "gpuExpectedPeak": round(expected_gpu_peak, 1),
+                },
+            )
+        if (
+            step.requires_ollama
+            and use_gpu
+            and step_elapsed >= int(_LLM_GPU_STALL_ABORT_S)
+            and live_gpu_samples
+            and max(live_gpu_samples) <= 0.5
+        ):
+            gpu_stall_abort = True
+            _emit(
+                on_event,
+                {
+                    "type": "step_line",
+                    "stepId": step.id,
+                    "stream": "stderr",
+                    "line": (
+                        f"GPU stall abort: {step.id} ran {elapsed_label} with GPU ~0% "
+                        f"(expected Ollama/LLM load). Unload other models or check `ollama ps`."
+                    ),
+                },
+            )
         if sample.gpu_pct is not None or sample.cpu_pct is not None:
             peak_gpu = max(live_gpu_samples) if live_gpu_samples else None
             avg_gpu = (
@@ -334,6 +418,7 @@ def run_step(
             )
 
     def _emit_step_line(stream: str, raw_line: str) -> None:
+        nonlocal short_circuit_hit
         line = strip_ansi(raw_line.rstrip("\n")) if suite_run else raw_line.rstrip("\n")
         if not line.strip():
             return
@@ -342,6 +427,10 @@ def run_step(
             on_event,
             {"type": "step_line", "stepId": step.id, "stream": stream, "line": line},
         )
+        if short_circuit and _line_indicates_test_fail(line):
+            short_circuit_hit = True
+            if proc is not None:
+                proc.kill()
 
     def drain_stdout() -> None:
         assert proc.stdout is not None
@@ -364,52 +453,76 @@ def run_step(
             _emit_step_line("stderr", line)
 
     stdout_text = ""
-    try:
-        if use_btime and use_gpu and gpu_bin:
-            cmd = wrap_step_argv(
-                gpu_bin, step.argv, use_json=use_json, use_brightdate=use_brightdate
-            )
-        elif use_btime:
-            from bright_vision_core.brightdate import btime_command_argv
-
-            cmd = btime_command_argv(step.argv, use_brightdate=use_brightdate)
-        else:
-            cmd = list(step.argv)
-
-        proc = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
-        threads = [
-            threading.Thread(target=drain_stdout, daemon=True),
-            threading.Thread(target=drain_stderr, daemon=True),
-        ]
-        for t in threads:
-            t.start()
-        while any(t.is_alive() for t in threads):
-            if cancel_check and cancel_check():
-                proc.kill()
-                ok = False
-                break
-            maybe_heartbeat()
-            time.sleep(0.1)
-        for t in threads:
-            t.join(timeout=5)
-        rc = proc.wait(timeout=30)
-        if rc != 0:
-            ok = False
-        combined = "".join(stderr_chunks)
-        stdout_text = "".join(stdout_chunks)
-    except Exception as err:
+    if warmup_failed:
         ok = False
-        _emit(on_event, {"type": "step_line", "stepId": step.id, "stream": "stderr", "line": str(err)})
-        combined = str(err)
-        stdout_text = ""
+        combined = (
+            "Ollama warmup failed; pytest LLM suite was not started. "
+            "See stderr above (unload other models or fix E2E_OLLAMA_MODEL)."
+        )
+    else:
+        try:
+            step_argv = list(step.argv)
+            if short_circuit and step.id == "llm:core" and "--maxfail=1" not in step_argv:
+                step_argv.append("--maxfail=1")
+            if use_btime and use_gpu and gpu_bin:
+                cmd = wrap_step_argv(
+                    gpu_bin, step_argv, use_json=use_json, use_brightdate=use_brightdate
+                )
+            elif use_btime:
+                from bright_vision_core.brightdate import btime_command_argv
+
+                cmd = btime_command_argv(step_argv, use_brightdate=use_brightdate)
+            else:
+                cmd = step_argv
+
+            proc = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            threads = [
+                threading.Thread(target=drain_stdout, daemon=True),
+                threading.Thread(target=drain_stderr, daemon=True),
+            ]
+            for t in threads:
+                t.start()
+            while any(t.is_alive() for t in threads):
+                if cancel_check and cancel_check():
+                    proc.kill()
+                    ok = False
+                    break
+                if gpu_stall_abort or short_circuit_hit:
+                    proc.kill()
+                    ok = False
+                    if short_circuit_hit:
+                        _emit(
+                            on_event,
+                            {
+                                "type": "step_line",
+                                "stepId": step.id,
+                                "stream": "stderr",
+                                "line": "short-circuit: aborting step after test failure",
+                            },
+                        )
+                    break
+                maybe_heartbeat()
+                time.sleep(0.1)
+            for t in threads:
+                t.join(timeout=5)
+            rc = proc.wait(timeout=30)
+            if rc != 0:
+                ok = False
+            combined = "".join(stderr_chunks)
+            stdout_text = "".join(stdout_chunks)
+        except Exception as err:
+            ok = False
+            _emit(on_event, {"type": "step_line", "stepId": step.id, "stream": "stderr", "line": str(err)})
+            combined = str(err)
+            stdout_text = ""
 
     capture = (
         capture_from_outputs(
@@ -505,6 +618,8 @@ def run_suite(
     skip_gpu: bool = False,
     skip_time: bool = False,
     use_brightdate: bool = False,
+    fail_fast: bool = False,
+    short_circuit: bool = False,
     spec_gen_phased: bool = False,
     run_options: SuiteRunOptions | None = None,
     on_event: EventCallback | None = None,
@@ -661,12 +776,30 @@ def run_suite(
             step_index=idx,
             total_steps=len(steps),
             sample_resources_on_heartbeat=True,
+            short_circuit=short_circuit,
         )
         if secs > 0:
             total_seconds += secs
         ran_ids.append(step.id)
         if not ok:
             all_ok = False
+            if fail_fast or short_circuit:
+                remaining = [s.id for s in steps[idx:] if s.id not in ran_ids]
+                if remaining:
+                    _emit(
+                        on_event,
+                        {
+                            "type": "step_line",
+                            "stepId": step.id,
+                            "stream": "stderr",
+                            "line": (
+                                f"{'short-circuit' if short_circuit else 'fail-fast'}: stopping suite ({len(remaining)} step(s) skipped)"
+                            ),
+                        },
+                    )
+                break
+
+    skipped_ids = [s.id for s in steps if s.id not in ran_ids]
 
     if total_seconds > 0:
         record_total(total_seconds, all_ok, ran_ids)
@@ -678,6 +811,8 @@ def run_suite(
             "ok": all_ok,
             "totalSeconds": total_seconds,
             "elapsedSeconds": time.time() - start,
+            "failFast": bool(fail_fast and skipped_ids),
+            "skippedStepIds": skipped_ids,
         },
     )
     return all_ok

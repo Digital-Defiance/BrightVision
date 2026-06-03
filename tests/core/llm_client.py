@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import concurrent.futures
-import json
 import os
 import sys
 import threading
 import time
 from typing import TYPE_CHECKING
 
-from llm_sse import parse_sse_payload
+from llm_sse import parse_sse_chunk, parse_sse_payload
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -37,21 +36,6 @@ def turn_timeout_s(content: str) -> float:
         if agent_cap > 0:
             return max(base, agent_cap + 30.0)
     return base
-
-
-def _parse_sse_chunk(buf: str) -> tuple[list[dict], str]:
-    """Return (events, remainder) from accumulated SSE text."""
-    events: list[dict] = []
-    while "\n\n" in buf:
-        part, buf = buf.split("\n\n", 1)
-        for line in part.split("\n"):
-            if not line.startswith("data: "):
-                continue
-            try:
-                events.append(json.loads(line[6:]))
-            except json.JSONDecodeError:
-                continue
-    return events, buf
 
 
 def stream_session_message(
@@ -93,7 +77,7 @@ def stream_session_message(
                             f"… first SSE byte after {wait}s (Ollama may have been cold)"
                         )
                 buf += chunk.decode("utf-8", errors="replace")
-                batch, buf = _parse_sse_chunk(buf)
+                batch, buf = parse_sse_chunk(buf)
                 for ev in batch:
                     all_events.append(ev)
                     t = ev.get("type")
@@ -108,8 +92,7 @@ def stream_session_message(
                     elif t in ("error", "done"):
                         _emit_live_progress(f"… {t}")
         if buf.strip():
-            for ev in parse_sse_payload(buf):
-                all_events.append(ev)
+            all_events.extend(parse_sse_payload(buf))
 
     started = time.time()
     stop_watch = threading.Event()

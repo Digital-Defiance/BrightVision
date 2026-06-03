@@ -25,4 +25,9 @@ fi
 
 export BV_TEST_ORCHESTRATOR_PORT="$PORT"
 echo "lab: starting Test Lab window (Vite :1421, orchestrator :${PORT})…" >&2
+if [ -n "${BV_RESET_PIP:-}" ]; then
+  echo "Performing pip install..."
+  pip install -e cecli
+  install_bright_vision_editable "[dev]"
+fi
 exec yarn test-lab:dev "$@"

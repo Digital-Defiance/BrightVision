@@ -33,6 +33,19 @@ import cecli as _cecli_bootstrap  # noqa: F401
 
 configure_vision_runtime()
 
+import os as _os
+
+if _os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or _os.environ.get("E2E_LLM") == "1":
+    import webbrowser as _webbrowser
+
+    _webbrowser.open = lambda *_a, **_k: None  # type: ignore[method-assign, assignment]
+    try:
+        import cecli.io as _cecli_io
+
+        _cecli_io.webbrowser.open = lambda *_a, **_k: None  # type: ignore[attr-defined]
+    except ImportError:
+        pass
+
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder
 from bright_vision_core.agent_todos import (
     sync_session_agent_todos,

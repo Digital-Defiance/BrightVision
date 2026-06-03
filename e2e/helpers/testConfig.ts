@@ -13,7 +13,7 @@ export const E2E_CONFIG = {
   localLlmRoot: '',
   manageLocalLlm: false,
   extraParams: '{}',
-  workingDir: '.',
+  workingDir: process.cwd(),
   autoApproveLimit: 0,
   promptBeforeCommit: false,
   autoStageOnDone: true,
@@ -35,12 +35,12 @@ export const E2E_CONFIG_STORAGE_KEY = 'bright-vision-config'
 
 /** Prime open-project gate skip + config (call before navigation). */
 export async function primeVisionAppConfig(page: Page, cfg: E2eVisionConfig) {
+  await page.addInitScript(applyOpenProjectStorage, openProjectStorageArgs(cfg.workingDir))
   await page.addInitScript(
-    ([config, welcomeKey, skipKey, currentKey, projectPath]) => {
-      applyOpenProjectStorage(welcomeKey, skipKey, currentKey, projectPath)
-      localStorage.setItem('bright-vision-config', JSON.stringify(config))
+    ([config, configKey]) => {
+      localStorage.setItem(configKey, JSON.stringify(config))
     },
-    [cfg, ...openProjectStorageArgs(cfg.workingDir)] as const
+    [cfg, E2E_CONFIG_STORAGE_KEY] as const
   )
 }
 

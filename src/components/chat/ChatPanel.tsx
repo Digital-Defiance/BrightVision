@@ -33,7 +33,10 @@ import { OllamaStatusMessage } from './OllamaStatusMessage'
 import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
 import { formatDurationMs, type TurnThinkingTiming } from '../../utils/thinkingTiming'
-import type { ThinkingTimingPrefs } from '../../theme/thinkingTimingPrefs'
+import {
+  DEFAULT_THINKING_TIMING_PREFS,
+  type ThinkingTimingPrefs,
+} from '../../theme/thinkingTimingPrefs'
 import type { SuggestedFilesPrefs } from '../../theme/suggestedFilesPrefs'
 import { ModelRouterBar, type RouterEscalateOffer } from './ModelRouterBar'
 import { ChatAgentBar } from './ChatAgentBar'
@@ -116,7 +119,6 @@ interface ChatPanelProps {
   thinkingTimingPrefs?: ThinkingTimingPrefs
   /** Live timing store for `/turns` table messages. */
   thinkingStatsStore?: ThinkingStatsStore
-  currentModel?: string
   turnActivityHint?: string
   turnStalled?: boolean
   lastUserMessageForRetry?: string | null
@@ -197,7 +199,6 @@ export function ChatPanel({
   onSuggestedClearAll,
   thinkingTimingPrefs,
   thinkingStatsStore,
-  currentModel = '',
   turnActivityHint = '',
   turnStalled = false,
   lastUserMessageForRetry = null,
@@ -359,7 +360,7 @@ export function ChatPanel({
                     <TurnsTableMessage
                       store={thinkingStatsStore}
                       filterModel={entry.item.turnsTable.filterModel}
-                      timingPrefs={thinkingTimingPrefs ?? { showLiveTimer: true, showSectionDurations: true, showMessageTurnTotal: true, brightDateMode: false, timingStatsCsvPath: '', timingStatsAutoAppendCsv: false, resourceDisplay: 'avgPeak' }}
+                      timingPrefs={thinkingTimingPrefs ?? DEFAULT_THINKING_TIMING_PREFS}
                       capturedAt={entry.item.turnsTable.capturedAt}
                     />
                   ) : entry.item.role === 'assistant' ? (

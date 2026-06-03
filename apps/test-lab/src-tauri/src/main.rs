@@ -265,6 +265,45 @@ async fn restart_orchestrator(state: State<'_, OrchState>) -> Result<(), String>
     start_orchestrator(&state).await
 }
 
+#[tauri::command]
+fn reveal_path_in_finder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("Path not found: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("open -R failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.replace('/', "\\")))
+            .spawn()
+            .map_err(|e| format!("explorer failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = p.parent().unwrap_or(&p);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("xdg-open failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", unix)))]
+    {
+        let _ = p;
+        Err("Reveal in file manager is not supported on this OS".into())
+    }
+}
+
 fn main() {
     let engine_root = resolve_engine_root();
     let orch_port = resolve_orch_port();
@@ -287,6 +326,7 @@ fn main() {
             get_engine_root,
             get_orchestrator_error,
             restart_orchestrator,
+            reveal_path_in_finder,
             ntfy_notify::ntfy_send_push,
         ])
         .setup(|app| {

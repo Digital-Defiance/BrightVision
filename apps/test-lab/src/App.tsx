@@ -16,8 +16,9 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
+import SkipNextIcon from '@mui/icons-material/SkipNext'
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
-import StepLogPanel from './StepLogPanel'
+import StepLogPanel, { STEP_LOG_MAX_LINES } from './StepLogPanel'
 import {
   cancelActiveRun,
   cancelRun,
@@ -29,6 +30,7 @@ import {
   fmtDuration,
   resolveSuiteBaseUrl,
   restartOrchestratorFromShell,
+  revealPathInFinder,
   startRun,
   streamRunEvents,
   waitForOrchestrator,
@@ -44,17 +46,32 @@ import {
   type TestLabNtfyPrefs,
 } from './ntfyLabPrefs'
 import {
+  loadTestLabRunPrefs,
+  saveTestLabRunPrefs,
+  type TestLabRunPrefs,
+} from './testLabPrefs'
+import {
   stepTimingLabels,
   suiteRunningTimingSummary,
+  suiteProgressPercent,
+  computeEtcAnchors,
+  computeRunEtcPlan,
   fmtDurationBrightDate,
   formatBdBounds,
+  type EtcAnchors,
+  type RunEtcPlan,
   type StepMedian,
 } from './stepTiming'
+import {
+  parseTestMarkerLine,
+  shouldUpdateLatestTestMarker,
+  type TestMarker,
+} from './testProgressParser'
 
 type StepState = {
   id: string
   label: string
-  status: 'pending' | 'running' | 'ok' | 'fail'
+  status: 'pending' | 'running' | 'ok' | 'fail' | 'skipped'
   lines: string[]
   seconds?: number
   gpuAvg?: number
@@ -66,25 +83,40 @@ type StepState = {
   /** Live samples from heartbeats while step is running */
   liveGpuAvg?: number
   liveGpuPeak?: number
+  gpuWarn?: boolean
+  gpuExpectedPeak?: number
   startBd?: number
   endBd?: number
 }
 
 export default function App() {
-  const [skipLlm, setSkipLlm] = useState(false)
-  const [specGenPhased, setSpecGenPhased] = useState(false)
-  const [llmRouter, setLlmRouter] = useState(false)
-  const [cloudLlm, setCloudLlm] = useState(false)
-  const [verifyEars, setVerifyEars] = useState(false)
-  const [shippedScenarios, setShippedScenarios] = useState(false)
-  const [strictPhasedPytest, setStrictPhasedPytest] = useState(false)
+  const [runPrefs, setRunPrefs] = useState<TestLabRunPrefs>(() => loadTestLabRunPrefs())
+  const {
+    skipLlm,
+    specGenPhased,
+    llmRouter,
+    cloudLlm,
+    verifyEars,
+    shippedScenarios,
+    strictPhasedPytest,
+    skipGpu,
+    useBrightDate,
+    saveTranscript,
+    failFast,
+    shortCircuit,
+  } = runPrefs
+
+  const patchRunPrefs = (patch: Partial<TestLabRunPrefs>) => {
+    setRunPrefs((prev) => {
+      const next = { ...prev, ...patch }
+      saveTestLabRunPrefs(next)
+      return next
+    })
+  }
   const [cloudLlmConfigured, setCloudLlmConfigured] = useState(false)
   const [routerLaneReady, setRouterLaneReady] = useState(false)
   const [routerLaneDetail, setRouterLaneDetail] = useState('')
-  const [skipGpu, setSkipGpu] = useState(false)
-  const [useBrightDate, setUseBrightDate] = useState(false)
   const [btimeOnPath, setBtimeOnPath] = useState(true)
-  const [saveTranscript, setSaveTranscript] = useState(false)
   const [transcriptPath, setTranscriptPath] = useState<string | null>(null)
   const [digestMsg, setDigestMsg] = useState<string | null>(null)
   const [plan, setPlan] = useState<SuiteStepPlan[]>([])
@@ -114,6 +146,10 @@ export default function App() {
   const [ntfyPrefs, setNtfyPrefs] = useState<TestLabNtfyPrefs>(() => loadTestLabNtfyPrefs())
   const ntfyPrefsRef = useRef(ntfyPrefs)
   const [ntfyMsg, setNtfyMsg] = useState<string | null>(null)
+  const [latestTestMarker, setLatestTestMarker] = useState<TestMarker | null>(null)
+  const [etcAnchors, setEtcAnchors] = useState<EtcAnchors | null>(null)
+  const [runEtcPlan, setRunEtcPlan] = useState<RunEtcPlan | null>(null)
+  const runUseBrightDateRef = useRef(false)
 
   useEffect(() => {
     ntfyPrefsRef.current = ntfyPrefs
@@ -123,6 +159,10 @@ export default function App() {
     setNtfyPrefs(next)
     saveTestLabNtfyPrefs(next)
   }
+
+  useEffect(() => {
+    runUseBrightDateRef.current = runUseBrightDate
+  }, [runUseBrightDate])
 
   const laneOpts: SuiteLaneOptions = useMemo(
     () => ({
@@ -159,6 +199,9 @@ export default function App() {
         medMap[row.stepId] = {
           medianSeconds: row.medianSeconds,
           sampleCount: row.sampleCount,
+          medianGpuPeak: row.medianGpuPeak,
+          medianGpuAvg: row.medianGpuAvg,
+          gpuSampleCount: row.gpuSampleCount,
         }
       }
       setStepMedians(medMap)
@@ -167,7 +210,7 @@ export default function App() {
       setRouterLaneReady(!!pre.routerLaneReady)
       setRouterLaneDetail(pre.routerLaneDetail ?? '')
       setBtimeOnPath(pre.btimeOnPath !== false)
-      if (pre.specGenPhasedEnv) setSpecGenPhased(true)
+      if (pre.specGenPhasedEnv) patchRunPrefs({ specGenPhased: true })
       setSteps(
         p.steps.map((s) => ({
           id: s.id,
@@ -205,6 +248,16 @@ export default function App() {
     }
   }
 
+  const handleRevealTranscript = async () => {
+    if (!transcriptPath) return
+    setError(null)
+    try {
+      await revealPathInFinder(transcriptPath)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
   const handleRestartOrchestrator = async () => {
     setError(null)
     setOrchLoading(true)
@@ -233,12 +286,17 @@ export default function App() {
     return () => window.clearInterval(id)
   }, [running, runClockStartedAt])
 
-  const pct = useMemo(() => {
-    if (!etaTotal || !progress.elapsed) return 0
-    const done = progress.index - 1
-    const prog = done >= 0 ? (done / progress.total) * etaTotal + progress.elapsed * 0.1 : progress.elapsed
-    return Math.min(99, Math.round((prog / etaTotal) * 100))
-  }, [etaTotal, progress])
+  const pct = useMemo(
+    () =>
+      suiteProgressPercent({
+        plan,
+        steps,
+        medians: stepMedians,
+        stepElapsed: progress.stepElapsed,
+        etaTotal,
+      }),
+    [plan, steps, stepMedians, progress.stepElapsed, etaTotal]
+  )
 
   const runningPlanIndex = useMemo(
     () => steps.findIndex((s) => s.status === 'running'),
@@ -254,8 +312,10 @@ export default function App() {
       medians: stepMedians,
       runningStepElapsed: progress.stepElapsed,
       useBrightDate: runUseBrightDate,
+      anchors: etcAnchors,
+      etcPlan: runEtcPlan,
     })
-  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed, runUseBrightDate])
+  }, [running, runningPlanIndex, plan, steps, stepMedians, progress.stepElapsed, runUseBrightDate, etcAnchors, runEtcPlan])
 
   const handleRun = async () => {
     setError(null)
@@ -264,6 +324,10 @@ export default function App() {
     setRunning(true)
     setRunClockStartedAt(Date.now())
     setProgress({ index: 0, total: plan.length, elapsed: 0, stepElapsed: 0 })
+    setLatestTestMarker(null)
+    setEtcAnchors(null)
+    setRunEtcPlan(null)
+    runUseBrightDateRef.current = useBrightDate
     setSteps((prev) => prev.map((s) => ({ ...s, status: 'pending', lines: [] })))
     try {
       const { run_id, transcript_path } = await startRun({
@@ -271,6 +335,8 @@ export default function App() {
         skipGpu,
         saveTranscript,
         useBrightDate,
+        failFast,
+        shortCircuit,
         ...laneOpts,
       })
       setRunUseBrightDate(useBrightDate)
@@ -301,7 +367,10 @@ export default function App() {
     if (ev.type === 'run_started') {
       if (ev.captureMode) setCaptureMode(ev.captureMode)
       if (ev.captureNote) setCaptureNote(ev.captureNote)
-      if (ev.useBrightDate != null) setRunUseBrightDate(ev.useBrightDate)
+      if (ev.useBrightDate != null) {
+        runUseBrightDateRef.current = ev.useBrightDate
+        setRunUseBrightDate(ev.useBrightDate)
+      }
     }
     if (ev.type === 'progress') {
       setProgress((p) => ({
@@ -313,18 +382,41 @@ export default function App() {
     }
     if (ev.type === 'step_started' && ev.stepId) {
       setProgress((p) => ({ ...p, stepElapsed: 0 }))
-      setSteps((prev) =>
-        prev.map((s) =>
-          s.id === ev.stepId ? { ...s, status: 'running', lines: [] } : s
+      setSteps((prev) => {
+        const next = prev.map((s) =>
+          s.id === ev.stepId
+            ? { ...s, status: 'running' as const, gpuWarn: false, gpuExpectedPeak: undefined }
+            : s
         )
-      )
+        const idx = plan.findIndex((s) => s.id === ev.stepId)
+        if (idx >= 0) {
+          const planArgs = {
+            runningPlanIndex: idx,
+            plan,
+            steps: next,
+            medians: stepMedians,
+            runningStepElapsed: 0,
+            useBrightDate: runUseBrightDateRef.current,
+          }
+          setEtcAnchors(computeEtcAnchors(planArgs))
+          setRunEtcPlan(computeRunEtcPlan(planArgs))
+        }
+        return next
+      })
     }
     if (ev.type === 'step_line' && ev.stepId && ev.line) {
       const prefix = ev.stream === 'stderr' ? '[stderr] ' : ''
+      const marker = parseTestMarkerLine(ev.line)
+      if (marker && shouldUpdateLatestTestMarker(marker)) {
+        setLatestTestMarker(marker)
+      }
       setSteps((prev) =>
         prev.map((s) =>
           s.id === ev.stepId
-            ? { ...s, lines: [...s.lines.slice(-400), prefix + ev.line!] }
+            ? {
+                ...s,
+                lines: [...s.lines.slice(-STEP_LOG_MAX_LINES), prefix + ev.line!],
+              }
             : s
         )
       )
@@ -337,6 +429,8 @@ export default function App() {
                 ...s,
                 liveGpuAvg: ev.gpuAvg ?? s.liveGpuAvg,
                 liveGpuPeak: ev.gpuPeak ?? s.liveGpuPeak,
+                gpuWarn: ev.gpuWarn ?? s.gpuWarn,
+                gpuExpectedPeak: ev.gpuExpectedPeak ?? s.gpuExpectedPeak,
               }
             : s
         )
@@ -375,6 +469,7 @@ export default function App() {
       setActiveRunId(null)
       const elapsedSeconds = ev.elapsedSeconds ?? 0
       const totalSeconds = ev.totalSeconds ?? 0
+      const skipped = new Set(ev.skippedStepIds ?? [])
       setSteps((prev) => {
         const failedStepIds = prev.filter((s) => s.status === 'fail').map((s) => s.id)
         void maybeNotifySuiteRunFinished(ntfyPrefsRef.current, {
@@ -383,7 +478,10 @@ export default function App() {
           totalSeconds,
           failedStepIds,
         })
-        return prev
+        if (skipped.size === 0) return prev
+        return prev.map((s) =>
+          skipped.has(s.id) && s.status === 'pending' ? { ...s, status: 'skipped' } : s
+        )
       })
     }
     if (ev.type === 'error' && ev.text) {
@@ -417,6 +515,7 @@ export default function App() {
   const statusIcon = (status: StepState['status']) => {
     if (status === 'ok') return <CheckCircleIcon color="success" fontSize="small" />
     if (status === 'fail') return <ErrorIcon color="error" fontSize="small" />
+    if (status === 'skipped') return <SkipNextIcon color="disabled" fontSize="small" />
     if (status === 'running') return <HourglassEmptyIcon color="primary" fontSize="small" />
     return <HourglassEmptyIcon color="disabled" fontSize="small" />
   }
@@ -478,7 +577,24 @@ export default function App() {
       )}
       {transcriptPath && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          Full transcript: {transcriptPath}
+          Full transcript:{' '}
+          <Box
+            component="button"
+            type="button"
+            onClick={() => void handleRevealTranscript()}
+            sx={{
+              font: 'inherit',
+              color: 'primary.main',
+              textDecoration: 'underline',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              p: 0,
+              wordBreak: 'break-all',
+            }}
+          >
+            {transcriptPath}
+          </Box>
           <Button size="small" sx={{ ml: 1 }} onClick={() => void handleCopyDigest()}>
             Copy agent digest
           </Button>
@@ -504,18 +620,50 @@ export default function App() {
       </Typography>
       <Stack direction="row" spacing={1} sx={{ mb: 1 }} flexWrap="wrap">
         <FormControlLabel
-          control={<Checkbox checked={skipLlm} onChange={(_, v) => setSkipLlm(v)} disabled={running} />}
+          control={
+            <Checkbox
+              checked={skipLlm}
+              onChange={(_, v) => patchRunPrefs({ skipLlm: v })}
+              disabled={running}
+            />
+          }
           label="Skip LLM tiers"
         />
         <FormControlLabel
-          control={<Checkbox checked={skipGpu} onChange={(_, v) => setSkipGpu(v)} disabled={running} />}
+          control={
+            <Checkbox
+              checked={skipGpu}
+              onChange={(_, v) => patchRunPrefs({ skipGpu: v })}
+              disabled={running}
+            />
+          }
           label="Skip GPU capture"
         />
         <FormControlLabel
           control={
             <Checkbox
+              checked={failFast}
+              onChange={(_, v) => patchRunPrefs({ failFast: v })}
+              disabled={running}
+            />
+          }
+          label="Fail fast (stop after first step failure)"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={shortCircuit}
+              onChange={(_, v) => patchRunPrefs({ shortCircuit: v })}
+              disabled={running}
+            />
+          }
+          label="Short-circuit (abort on first test FAIL in output)"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
               checked={saveTranscript}
-              onChange={(_, v) => setSaveTranscript(v)}
+              onChange={(_, v) => patchRunPrefs({ saveTranscript: v })}
               disabled={running}
             />
           }
@@ -525,7 +673,7 @@ export default function App() {
           control={
             <Checkbox
               checked={useBrightDate}
-              onChange={(_, v) => setUseBrightDate(v)}
+              onChange={(_, v) => patchRunPrefs({ useBrightDate: v })}
               disabled={running || !btimeOnPath}
             />
           }
@@ -549,7 +697,7 @@ export default function App() {
           control={
             <Checkbox
               checked={specGenPhased}
-              onChange={(_, v) => setSpecGenPhased(v)}
+              onChange={(_, v) => patchRunPrefs({ specGenPhased: v })}
               disabled={running || skipLlm}
             />
           }
@@ -559,7 +707,7 @@ export default function App() {
           control={
             <Checkbox
               checked={llmRouter}
-              onChange={(_, v) => setLlmRouter(v)}
+              onChange={(_, v) => patchRunPrefs({ llmRouter: v })}
               disabled={running || skipLlm || !routerLaneReady}
             />
           }
@@ -569,7 +717,7 @@ export default function App() {
           control={
             <Checkbox
               checked={cloudLlm}
-              onChange={(_, v) => setCloudLlm(v)}
+              onChange={(_, v) => patchRunPrefs({ cloudLlm: v })}
               disabled={running || !cloudLlmConfigured}
             />
           }
@@ -579,7 +727,7 @@ export default function App() {
           control={
             <Checkbox
               checked={verifyEars}
-              onChange={(_, v) => setVerifyEars(v)}
+              onChange={(_, v) => patchRunPrefs({ verifyEars: v })}
               disabled={running}
             />
           }
@@ -589,7 +737,7 @@ export default function App() {
           control={
             <Checkbox
               checked={shippedScenarios}
-              onChange={(_, v) => setShippedScenarios(v)}
+              onChange={(_, v) => patchRunPrefs({ shippedScenarios: v })}
               disabled={running}
             />
           }
@@ -599,7 +747,7 @@ export default function App() {
           control={
             <Checkbox
               checked={strictPhasedPytest}
-              onChange={(_, v) => setStrictPhasedPytest(v)}
+              onChange={(_, v) => patchRunPrefs({ strictPhasedPytest: v })}
               disabled={running || skipLlm}
             />
           }
@@ -666,13 +814,33 @@ export default function App() {
               {etaTotal > 0
                 ? ` / suite ETA ~${fmtDuration(etaTotal, runUseBrightDate)}`
                 : ''}
-              {activeStepTiming?.stepLeft != null && ` · step ~${activeStepTiming.stepLeft}`}
-              {activeStepTiming?.stepEtc != null && ` · step ETC ${activeStepTiming.stepEtc}`}
-              {activeStepTiming?.runLeft != null && ` · run ~${activeStepTiming.runLeft}`}
-              {activeStepTiming?.runEtc != null && ` · run ETC ${activeStepTiming.runEtc}`}
+              {etcAnchors && activeStepTiming?.stepEtc != null && ` · step ETC ${activeStepTiming.stepEtc}`}
+              {runEtcPlan && activeStepTiming?.runEtc != null && ` · run ETC ${activeStepTiming.runEtc}`}
             </Typography>
           </Stack>
           <LinearProgress variant={etaTotal > 0 ? 'determinate' : 'indeterminate'} value={pct} />
+          {latestTestMarker && (
+            <Chip
+              size="small"
+              icon={
+                latestTestMarker.outcome === 'fail' ? (
+                  <ErrorIcon />
+                ) : latestTestMarker.outcome === 'pass' ? (
+                  <CheckCircleIcon />
+                ) : undefined
+              }
+              label={latestTestMarker.label}
+              color={
+                latestTestMarker.outcome === 'fail'
+                  ? 'error'
+                  : latestTestMarker.outcome === 'pass'
+                    ? 'success'
+                    : 'default'
+              }
+              variant="outlined"
+              sx={{ mt: 0.75, maxWidth: '100%', '& .MuiChip-label': { fontFamily: 'monospace' } }}
+            />
+          )}
         </Box>
       )}
       {steps.map((step, planIndex) => {
@@ -687,6 +855,8 @@ export default function App() {
           runningPlanIndex,
           runningStepElapsed: progress.stepElapsed,
           useBrightDate: runUseBrightDate,
+          anchors: step.status === 'running' ? etcAnchors : null,
+          etcPlan: runEtcPlan,
         })
         return (
         <Accordion
@@ -754,11 +924,24 @@ export default function App() {
                   size="small"
                   label={`GPU ${Math.round(
                     step.gpuAvg ?? step.liveGpuAvg ?? step.liveGpuPeak ?? 0
-                  )}% / ${Math.round(step.gpuPeak ?? step.liveGpuPeak ?? 0)}%`}
+                  )}% / ${Math.round(step.gpuPeak ?? step.liveGpuPeak ?? 0)}%${
+                    step.gpuExpectedPeak != null
+                      ? ` (hist ~${Math.round(step.gpuExpectedPeak)}%)`
+                      : ''
+                  }`}
                   color={
-                    (step.gpuPeak ?? step.liveGpuPeak ?? 0) >= 50 ? 'warning' : 'default'
+                    step.gpuWarn
+                      ? 'error'
+                      : (step.gpuPeak ?? step.liveGpuPeak ?? 0) >= 50
+                        ? 'warning'
+                        : 'default'
                   }
                   variant="outlined"
+                  title={
+                    step.gpuWarn
+                      ? 'GPU usage is far below historical median for this step'
+                      : undefined
+                  }
                 />
               )}
               {step.memPeak != null && (
@@ -790,7 +973,7 @@ export default function App() {
             </Stack>
           </AccordionSummary>
           <AccordionDetails sx={{ p: 0 }}>
-            <StepLogPanel lines={step.lines} />
+            <StepLogPanel lines={step.lines} stepLabel={step.label} stepStatus={step.status} />
           </AccordionDetails>
         </Accordion>
         )

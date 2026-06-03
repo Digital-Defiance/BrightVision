@@ -232,6 +232,7 @@ Optional env:
 | `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
 | `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |
 | `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/ollama-warmup-for-tests.sh` before suite `llm:core` |
+| `OLLAMA_WARMUP_EXCLUSIVE` | `1` (default in Test Lab / suite `llm:core`): `ollama stop` other loaded models before warmup so a pinned heavy model (e.g. `qwen3.6:27b` with `keep_alive=-1`) does not block `llama3.2:3b`. Set `0` to keep all models loaded. |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
 | `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |
