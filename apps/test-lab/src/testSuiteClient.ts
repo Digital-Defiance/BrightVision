@@ -69,6 +69,7 @@ export type TestSuiteEvent = {
   endBd?: number
   failFast?: boolean
   skippedStepIds?: string[]
+  shortCircuit?: boolean
 }
 
 let resolvedBase: string | null = null
