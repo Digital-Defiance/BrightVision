@@ -219,7 +219,29 @@ export async function startRealCoreServer(): Promise<void> {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     }
-  )
+  );
+
+  // Wait for the server to start
+  await new Promise((resolve, reject) => {
+    child.stdout.on('data', (data) => {
+      if (data.includes('uvicorn started')) {
+        resolve();
+      }
+    });
+    child.stderr.on('data', (data) => {
+      console.error(`[e2e-core] ${data}`);
+      reject(new Error(`Server startup failed: ${data}`));
+    });
+    child.on('error', (err) => {
+      console.error(`[e2e-core] spawn failed: ${err.message}`);
+      reject(err);
+    });
+  });
+
+  // Wait for the server to be healthy
+  const healthTimeoutMs = coreHealthTimeoutMs();
+  console.error(`[e2e-core] waiting for /health (timeout ${healthTimeoutMs}ms)`);
+  await waitForHealth(healthTimeoutMs, child, stderrLines);
 
   child.on('error', (err) => {
     console.error(`[e2e-core] spawn failed: ${err.message}`)
