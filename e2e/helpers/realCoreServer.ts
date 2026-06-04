@@ -5,6 +5,27 @@ import { buildVisionCoreEnv, coreHealthUrl, ollamaEnvForCore, REPO_ROOT } from '
 
 const PID_FILE = path.join(REPO_ROOT, '.e2e-llm-core.pid')
 const CORE_PORT = 8741
+/** Cold ``http_api`` import can take 30s+; under Test Lab CPU load allow headroom. */
+const DEFAULT_HEALTH_TIMEOUT_MS = 180_000
+
+function coreHealthTimeoutMs(): number {
+  const raw = process.env.E2E_CORE_HEALTH_TIMEOUT_MS?.trim()
+  if (raw) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return DEFAULT_HEALTH_TIMEOUT_MS
+}
+
+function childAlive(pid: number | undefined): boolean {
+  if (!pid || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
 
 /**
  * Free listeners on ``port`` only (not clients). Broad ``lsof -ti tcp:PORT`` also
@@ -97,10 +118,21 @@ function assertPythonReady(python: string, repoRoot: string): void {
   }
 }
 
-async function waitForHealth(timeoutMs: number): Promise<void> {
+async function waitForHealth(
+  timeoutMs: number,
+  child?: ChildProcess,
+  stderrLines: string[] = []
+): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let lastErr = 'unknown'
   while (Date.now() < deadline) {
+    if (child?.pid && !childAlive(child.pid)) {
+      const tail = stderrLines.slice(-8).join('\n')
+      throw new Error(
+        `Vision API process exited before healthy (${lastErr})` +
+          (tail ? `\n[e2e-core stderr tail]\n${tail}` : '')
+      )
+    }
     try {
       const res = await fetch(coreHealthUrl(), { signal: AbortSignal.timeout(2_000) })
       if (res.ok) {
@@ -115,7 +147,11 @@ async function waitForHealth(timeoutMs: number): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500))
   }
-  throw new Error(`Vision API did not become healthy within ${timeoutMs}ms (${lastErr})`)
+  const tail = stderrLines.slice(-8).join('\n')
+  throw new Error(
+    `Vision API did not become healthy within ${timeoutMs}ms (${lastErr})` +
+      (tail ? `\n[e2e-core stderr tail]\n${tail}` : '')
+  )
 }
 
 export async function startRealCoreServer(): Promise<void> {
@@ -158,6 +194,11 @@ export async function startRealCoreServer(): Promise<void> {
 
   const serveCli = path.join(repoRoot, '.venv', 'bin', 'bright-vision-core-serve')
   const useServeCli = fs.existsSync(serveCli)
+  const spawnCmd = useServeCli
+    ? `${serveCli} --host 127.0.0.1 --port ${CORE_PORT}`
+    : `${python} -m uvicorn bright_vision_core.http_api:app --host 127.0.0.1 --port ${CORE_PORT} --log-level warning`
+  console.error(`[e2e-core] spawning Vision API (${spawnCmd})`)
+  const stderrLines: string[] = []
   const child: ChildProcess = spawn(
     useServeCli ? serveCli : python,
     useServeCli
@@ -193,8 +234,12 @@ export async function startRealCoreServer(): Promise<void> {
   fs.writeFileSync(PID_FILE, String(child.pid))
 
   child.stderr?.on('data', (chunk: Buffer) => {
-    const line = chunk.toString().trim()
-    if (line) console.error(`[e2e-core] ${line}`)
+    for (const line of chunk.toString().split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      stderrLines.push(trimmed)
+      console.error(`[e2e-core] ${trimmed}`)
+    }
   })
 
   child.on('exit', (code, signal) => {
@@ -208,7 +253,9 @@ export async function startRealCoreServer(): Promise<void> {
     }
   })
 
-  await waitForHealth(90_000)
+  const healthTimeoutMs = coreHealthTimeoutMs()
+  console.error(`[e2e-core] waiting for /health (timeout ${healthTimeoutMs}ms)`)
+  await waitForHealth(healthTimeoutMs, child, stderrLines)
 }
 
 export async function stopRealCoreServer(): Promise<void> {
