@@ -47,7 +47,7 @@ for (const name of listScenarioNames()) {
           break
         case 'proposed-edit':
           await expect(page.getByText('Proposed only')).toBeVisible({ timeout: 15_000 })
-          await page.getByRole('button', { name: new RegExp(E2E_EDIT_BLOCK_REL) }).click()
+          await page.getByText(E2E_EDIT_BLOCK_REL).click()
           await page.getByTestId('proposed-edit-apply').click()
           await expect.poll(() => writes.length).toBeGreaterThan(0)
           expect(String(writes.at(-1)?.content ?? '')).toContain(E2E_EDIT_BLOCK_NEW.trim())
