@@ -4,6 +4,7 @@
  */
 import { Channel, invoke } from '@tauri-apps/api/core'
 import type { CoreEventBase } from './events'
+import { isCoreEvent } from './events'
 import type { SendMessageOptions } from './httpClient'
 import {
   SSE_IDLE_MS_AFTER_EVENT,
@@ -89,6 +90,7 @@ export async function* desktopVisionSendMessage(
 
       while (queue.length > 0) {
         const event = queue.shift()!
+        if (!isCoreEvent(event)) continue
         if (sseEventResetsIdleTimer(event)) streamActivity = true
         yield event
       }

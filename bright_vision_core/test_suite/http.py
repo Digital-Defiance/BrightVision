@@ -53,6 +53,7 @@ class StartRunRequest(BaseModel):
     transcript_path: str | None = None
     fail_fast: bool = False
     short_circuit: bool = False
+    start_from_step_id: str | None = None
 
 
 def _run_options_from_query(
@@ -251,6 +252,7 @@ def start_run(body: StartRunRequest) -> StartRunResponse:
             transcript_path=body.transcript_path,
             fail_fast=body.fail_fast,
             short_circuit=body.short_circuit,
+            start_from_step_id=body.start_from_step_id,
         )
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err

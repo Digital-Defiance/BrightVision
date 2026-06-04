@@ -46,7 +46,10 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
     await expect(page.getByText(/likely stuck/i)).toHaveCount(0)
 
     // Answer can appear before SSE `done` (router / Ollama tail); allow post-answer wait.
-    await settleTurnAfterReply(page, 180_000)
+    await settleTurnAfterReply(page, 180_000, {
+      allowPostAnswerSettle: true,
+      postAnswerGraceMs: 45_000,
+    })
     await page.getByTestId('chat-input').fill('follow-up probe')
     await expect(page.getByTestId('chat-send')).toBeEnabled()
   })

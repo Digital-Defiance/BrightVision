@@ -9,6 +9,7 @@ import {
   Checkbox,
   Chip,
   FormControlLabel,
+  IconButton,
   LinearProgress,
   Stack,
   Typography,
@@ -18,6 +19,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
 import BoltIcon from '@mui/icons-material/Bolt'
 import SkipNextIcon from '@mui/icons-material/SkipNext'
+import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty'
 import StepLogPanel, { STEP_LOG_MAX_LINES } from './StepLogPanel'
 import { StepChipIcons } from './stepChipIcons'
@@ -54,6 +56,13 @@ import {
   type TestLabRunPrefs,
 } from './testLabPrefs'
 import {
+  loadSuiteResume,
+  resumeStepFromStatuses,
+  saveSuiteResume,
+  suitePlanKey,
+  type SuiteResumeState,
+} from './suiteResume'
+import {
   stepTimingLabels,
   suiteRunningTimingSummary,
   suiteProgressPercent,
@@ -67,6 +76,8 @@ import {
 } from './stepTiming'
 import {
   parseTestMarkerLine,
+  PlaywrightLineTracker,
+  shouldShowLiveTestMarker,
   shouldUpdateLatestTestMarker,
   type TestMarker,
 } from './testProgressParser'
@@ -88,6 +99,8 @@ type StepState = {
   /** Live samples from heartbeats while step is running */
   liveGpuAvg?: number
   liveGpuPeak?: number
+  liveMemAvg?: number
+  liveMemPeak?: number
   gpuWarn?: boolean
   gpuExpectedPeak?: number
   startBd?: number
@@ -154,6 +167,7 @@ export default function App() {
   const ntfyPrefsRef = useRef(ntfyPrefs)
   const [ntfyMsg, setNtfyMsg] = useState<string | null>(null)
   const [latestTestMarker, setLatestTestMarker] = useState<TestMarker | null>(null)
+  const playwrightTrackerRef = useRef(new PlaywrightLineTracker())
   const [etcAnchors, setEtcAnchors] = useState<EtcAnchors | null>(null)
   const [runEtcPlan, setRunEtcPlan] = useState<RunEtcPlan | null>(null)
   const runUseBrightDateRef = useRef(false)
@@ -338,19 +352,84 @@ export default function App() {
     })
   }, [running, runningPlanIndex, plan, steps, stepMedians, displayStepElapsed, runUseBrightDate, etcAnchors, runEtcPlan])
 
-  const handleRun = async () => {
+  const currentPlanKey = useMemo(
+    () => (plan.length ? suitePlanKey(plan, skipLlm, laneOpts) : ''),
+    [plan, skipLlm, laneOpts]
+  )
+
+  const resumeOffer = useMemo((): SuiteResumeState | null => {
+    if (running || plan.length === 0) return null
+    const fromSteps = resumeStepFromStatuses(plan, steps)
+    if (fromSteps) {
+      return {
+        planKey: currentPlanKey,
+        startFromStepId: fromSteps.id,
+        startFromLabel: fromSteps.label,
+        updatedAt: Date.now(),
+      }
+    }
+    const saved = loadSuiteResume()
+    if (!saved || saved.planKey !== currentPlanKey) return null
+    if (!plan.some((p) => p.id === saved.startFromStepId)) return null
+    return saved
+  }, [running, plan, steps, currentPlanKey])
+
+  const persistResumePoint = useCallback(
+    (nextSteps: StepState[], ok: boolean, cancelled?: boolean) => {
+      if (!currentPlanKey || ok) {
+        saveSuiteResume(null)
+        return
+      }
+      const target = resumeStepFromStatuses(plan, nextSteps)
+      if (!target) {
+        saveSuiteResume(null)
+        return
+      }
+      saveSuiteResume({
+        planKey: currentPlanKey,
+        startFromStepId: target.id,
+        startFromLabel: target.label,
+        updatedAt: Date.now(),
+      })
+      if (cancelled) {
+        /* keep resume point at cancelled/failed step */
+      }
+    },
+    [currentPlanKey, plan]
+  )
+
+  const handleRun = async (startFromStepId?: string | null) => {
     setError(null)
     setRunOk(null)
     setTranscriptPath(null)
     setRunning(true)
     setRunClockStartedAt(Date.now())
-    setProgress({ index: 0, total: plan.length, elapsed: 0, stepElapsed: 0 })
+    const startIdx = startFromStepId ? plan.findIndex((p) => p.id === startFromStepId) : -1
+    setProgress({
+      index: startIdx >= 0 ? startIdx + 1 : 0,
+      total: plan.length,
+      elapsed: 0,
+      stepElapsed: 0,
+    })
     setLatestTestMarker(null)
+    playwrightTrackerRef.current.reset()
     setEtcAnchors(null)
     setRunEtcPlan(null)
     setStepClockStartedAt(null)
     runUseBrightDateRef.current = useBrightDate
-    setSteps((prev) => prev.map((s) => ({ ...s, status: 'pending', lines: [] })))
+    setSteps((prev) =>
+      prev.map((s) => {
+        const idx = plan.findIndex((p) => p.id === s.id)
+        if (startIdx >= 0 && idx >= 0 && idx < startIdx) {
+          return {
+            ...s,
+            status: 'skipped' as const,
+            lines: ['(skipped — resume from later step)'],
+          }
+        }
+        return { ...s, status: 'pending' as const, lines: [] }
+      })
+    )
     try {
       const { run_id, transcript_path } = await startRun({
         skipLlm,
@@ -359,6 +438,7 @@ export default function App() {
         useBrightDate,
         failFast,
         shortCircuit,
+        startFromStepId: startFromStepId ?? undefined,
         ...laneOpts,
       })
       setRunUseBrightDate(useBrightDate)
@@ -411,6 +491,8 @@ export default function App() {
       })
     }
     if (ev.type === 'step_started' && ev.stepId) {
+      playwrightTrackerRef.current.reset()
+      setLatestTestMarker(null)
       const idx = plan.findIndex((s) => s.id === ev.stepId)
       setStepClockStartedAt(Date.now())
       setProgress((p) => ({
@@ -440,11 +522,33 @@ export default function App() {
         return next
       })
     }
+    if (ev.type === 'step_skipped' && ev.stepId) {
+      setSteps((prev) =>
+        prev.map((s) =>
+          s.id === ev.stepId
+            ? {
+                ...s,
+                status: 'skipped' as const,
+                lines: [...s.lines, `(skipped — ${ev.reason ?? 'resume'})`],
+              }
+            : s
+        )
+      )
+    }
     if (ev.type === 'step_line' && ev.stepId && ev.line) {
       const prefix = ev.stream === 'stderr' ? '[stderr] ' : ''
-      const marker = parseTestMarkerLine(ev.line)
-      if (marker && shouldUpdateLatestTestMarker(marker)) {
-        setLatestTestMarker(marker)
+      const trackerMarkers = playwrightTrackerRef.current.feed(ev.line)
+      const markers =
+        trackerMarkers.length > 0
+          ? trackerMarkers
+          : (() => {
+              const marker = parseTestMarkerLine(ev.line)
+              return marker ? [marker] : []
+            })()
+      for (const marker of markers) {
+        if (shouldShowLiveTestMarker(marker)) {
+          setLatestTestMarker(marker)
+        }
       }
       setSteps((prev) =>
         prev.map((s) =>
@@ -465,6 +569,8 @@ export default function App() {
                 ...s,
                 liveGpuAvg: ev.gpuAvg ?? s.liveGpuAvg,
                 liveGpuPeak: ev.gpuPeak ?? s.liveGpuPeak,
+                liveMemAvg: ev.memAvg ?? s.liveMemAvg,
+                liveMemPeak: ev.memPeak ?? s.liveMemPeak,
                 gpuWarn: ev.gpuWarn ?? s.gpuWarn,
                 gpuExpectedPeak: ev.gpuExpectedPeak ?? s.gpuExpectedPeak,
               }
@@ -474,6 +580,10 @@ export default function App() {
     }
     if (ev.type === 'step_finished' && ev.stepId) {
       setStepClockStartedAt(null)
+      if (ev.ok && !ev.cancelled) {
+        const flushed = playwrightTrackerRef.current.flushPass()
+        if (flushed) setLatestTestMarker(flushed)
+      }
       if (ev.seconds != null) {
         setProgress((p) => ({ ...p, stepElapsed: ev.seconds! }))
       }
@@ -482,7 +592,7 @@ export default function App() {
           s.id === ev.stepId
             ? {
                 ...s,
-                status: ev.ok ? 'ok' : 'fail',
+                status: ev.ok && !ev.cancelled ? 'ok' : 'fail',
                 shortCircuit: ev.shortCircuit ?? s.shortCircuit,
                 seconds: ev.seconds,
                 gpuAvg: ev.gpuAvg ?? s.liveGpuAvg,
@@ -495,6 +605,8 @@ export default function App() {
                 endBd: ev.endBd ?? s.endBd,
                 liveGpuAvg: undefined,
                 liveGpuPeak: undefined,
+                liveMemAvg: undefined,
+                liveMemPeak: undefined,
               }
             : s
         )
@@ -504,7 +616,8 @@ export default function App() {
       setTranscriptPath(ev.path)
     }
     if (ev.type === 'run_finished') {
-      setRunOk(!!ev.ok)
+      const finishedOk = !!ev.ok && !ev.cancelled
+      setRunOk(finishedOk)
       setRunning(false)
       setRunClockStartedAt(null)
       setActiveRunId(null)
@@ -514,15 +627,21 @@ export default function App() {
       setSteps((prev) => {
         const failedStepIds = prev.filter((s) => s.status === 'fail').map((s) => s.id)
         void maybeNotifySuiteRunFinished(ntfyPrefsRef.current, {
-          ok: !!ev.ok,
+          ok: finishedOk,
           elapsedSeconds,
           totalSeconds,
           failedStepIds,
         })
-        if (skipped.size === 0) return prev
-        return prev.map((s) =>
-          skipped.has(s.id) && s.status === 'pending' ? { ...s, status: 'skipped' } : s
-        )
+        const next =
+          skipped.size === 0
+            ? prev
+            : prev.map((s) =>
+                skipped.has(s.id) && s.status === 'pending'
+                  ? { ...s, status: 'skipped' as const }
+                  : s
+              )
+        persistResumePoint(next, finishedOk, ev.cancelled)
+        return next
       })
     }
     if (ev.type === 'error' && ev.text) {
@@ -545,11 +664,12 @@ export default function App() {
         setActiveRunId(null)
         setRunId(null)
       }
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
       setRunning(false)
       setRunClockStartedAt(null)
+    } catch (e) {
+      setError(
+        `Cancel failed — the suite may still be running in the background: ${(e as Error).message}`
+      )
     }
   }
 
@@ -831,11 +951,22 @@ export default function App() {
       <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
         <Button
           variant="contained"
-          onClick={handleRun}
+          onClick={() => void handleRun()}
           disabled={running || plan.length === 0 || !orchReady || orchLoading}
         >
           Run suite
         </Button>
+        {resumeOffer && (
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={() => void handleRun(resumeOffer.startFromStepId)}
+            disabled={running || !orchReady || orchLoading}
+            title={`Skip steps before “${resumeOffer.startFromLabel}”`}
+          >
+            Resume from {resumeOffer.startFromLabel}
+          </Button>
+        )}
         <Button
           variant="outlined"
           onClick={handleCancel}
@@ -928,6 +1059,19 @@ export default function App() {
                 <Typography variant="body2" sx={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
                   {step.label}
                 </Typography>
+                {!running && plan.length > 0 && (
+                  <IconButton
+                    size="small"
+                    aria-label={`Run from ${step.label}`}
+                    title={`Run suite from “${step.label}” (earlier steps skipped)`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleRun(step.id)
+                    }}
+                  >
+                    <PlayArrowIcon fontSize="small" />
+                  </IconButton>
+                )}
                 <StepChipIcons planStep={plan.find((p) => p.id === step.id)} />
               </Stack>
               {(timing.eta ||
@@ -938,6 +1082,8 @@ export default function App() {
                 step.gpuAvg != null ||
                 step.gpuPeak != null ||
                 step.liveGpuPeak != null ||
+                step.liveGpuAvg != null ||
+                step.liveMemPeak != null ||
                 step.memPeak != null ||
                 (step.memPressurePeak != null && step.memPressurePeak >= 1) ||
                 (step.swapPeakGb != null && step.swapPeakGb > 0.01)) && (
@@ -972,7 +1118,8 @@ export default function App() {
               )}
               {(step.gpuAvg != null ||
                 step.gpuPeak != null ||
-                step.liveGpuPeak != null) && (
+                step.liveGpuPeak != null ||
+                step.liveGpuAvg != null) && (
                 <Chip
                   size="small"
                   label={`GPU ${Math.round(
@@ -997,11 +1144,11 @@ export default function App() {
                   }
                 />
               )}
-              {step.memPeak != null && (
+              {(step.memPeak != null || step.liveMemPeak != null) && (
                 <Chip
                   size="small"
-                  label={`RAM ${Math.round(step.memAvg ?? 0)}% / ${Math.round(step.memPeak)}%`}
-                  color={step.memPeak >= 85 ? 'warning' : 'default'}
+                  label={`RAM ${Math.round(step.memAvg ?? step.liveMemAvg ?? 0)}% / ${Math.round(step.memPeak ?? step.liveMemPeak ?? 0)}%`}
+                  color={(step.memPeak ?? step.liveMemPeak ?? 0) >= 85 ? 'warning' : 'default'}
                   variant="outlined"
                 />
               )}

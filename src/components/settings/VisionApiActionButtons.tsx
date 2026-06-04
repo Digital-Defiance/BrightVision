@@ -1,10 +1,10 @@
 import ApiIcon from '@mui/icons-material/Api'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import StopIcon from '@mui/icons-material/Stop'
 import Tooltip from '@mui/material/Tooltip'
 import { Alert, Button, Chip, CircularProgress, Stack, Typography } from '@mui/material'
 import { DISPLAY_VISION_API } from '../../brand'
+import { VisionApiStartIcon } from '../icons/ActionChipIcons'
 import type { VisionApiControls } from '../../hooks/useVisionApiControls'
 
 interface VisionApiActionButtonsProps {
@@ -25,7 +25,7 @@ export function VisionApiActionButtons({
           size="small"
           variant="contained"
           color="primary"
-          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <PlayArrowIcon />}
+          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <VisionApiStartIcon />}
           disabled={busy}
           data-testid="vision-api-start"
           onClick={() => void runStart()}

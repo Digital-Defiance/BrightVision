@@ -377,7 +377,7 @@ class RepoSet:
                     dirty.add(fname)
         return list(dirty)
 
-    def commit(
+    async def commit(
         self,
         fnames=None,
         context=None,

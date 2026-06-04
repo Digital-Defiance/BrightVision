@@ -1,10 +1,10 @@
 import NetworkPingIcon from '@mui/icons-material/NetworkPing'
-import Tooltip from '@mui/material/Tooltip'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import StopIcon from '@mui/icons-material/Stop'
+import Tooltip from '@mui/material/Tooltip'
 import { Alert, Button, CircularProgress, Stack, Typography } from '@mui/material'
 import { DISPLAY_VISION_API } from '../../brand'
+import { ChipAiStartIcon } from '../icons/ActionChipIcons'
 import type { LocalLlmControls } from '../../hooks/useLocalLlmControls'
 
 interface LocalLlmActionButtonsProps {
@@ -39,7 +39,7 @@ export function LocalLlmActionButtons({
           size="small"
           variant="contained"
           color="success"
-          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <PlayArrowIcon />}
+          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <ChipAiStartIcon />}
           disabled={busy}
           data-testid="local-llm-start"
           onClick={() => void runStart()}

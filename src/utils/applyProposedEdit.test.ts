@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { splitAssistantSections } from './chatStream'
+import { parseAssistantContent } from './proposedEdits'
 import {
   applySearchReplaceToContent,
   parseSearchReplacePairs,
@@ -50,6 +52,22 @@ new line
 
   it('resolves path from title', () => {
     expect(resolveProposedEditPath('src/foo.ts', '', '')).toBe('src/foo.ts')
+  })
+
+  it('applies e2e indented.ts assistant token (section split + fuzzy indent)', () => {
+    const token =
+      '► **ANSWER**\n\n```src/indented.ts\n<<<<<<< SEARCH\nconst x = 1;\n=======\nconst x = 2;\n>>>>>>> REPLACE\n```\n'
+    const sections = splitAssistantSections(token)
+    const answer = sections.find((s) => s.kind === 'answer') ?? sections[0]!
+    const edit = parseAssistantContent(answer.content).find((s) => s.type === 'proposed_edit')
+    expect(edit).toBeDefined()
+    expect(edit!.kind).toBe('search_replace')
+    const path = resolveProposedEditPath(edit!.title, edit!.body, edit!.language)
+    expect(path).toBe('src/indented.ts')
+    const pairs = parseSearchReplacePairs(edit!.body)
+    expect(pairs).toHaveLength(1)
+    const out = applySearchReplaceToContent('  const x = 1;\n', pairs[0]!.search, pairs[0]!.replace)
+    expect(out).toBe('  const x = 2;\n')
   })
 
   it('applies multiple SEARCH/REPLACE pairs in order', () => {

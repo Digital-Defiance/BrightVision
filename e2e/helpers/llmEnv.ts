@@ -355,7 +355,8 @@ export function buildVisionCoreEnv(
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra }
   env.PYTHONSAFEPATH = '1'
   env.BRIGHT_VISION_HEADLESS = '1'
-  env.BRIGHT_VISION_HEADLESS = '1'
+  env.BRIGHT_VISION_ROOT = env.BRIGHT_VISION_ROOT ?? REPO_ROOT
+  env.BV_ROOT = env.BV_ROOT ?? REPO_ROOT
   delete env.PYTHONPATH
   return env
 }

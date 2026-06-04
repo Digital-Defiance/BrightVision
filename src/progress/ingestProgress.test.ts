@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isAgentPreprocHeartbeatProgress,
   isWaitingForModelProgress,
   phaseForProgressLabel,
   progressEventToUpdate,
   progressFraction,
+  shouldHoldPostTokenProgress,
 } from './ingestProgress'
 
 describe('progressFraction', () => {
@@ -54,5 +56,17 @@ describe('progressEventToUpdate', () => {
 describe('phaseForProgressLabel', () => {
   it('detects repo map work', () => {
     expect(phaseForProgressLabel('Updating repo map', '')).toBe('scan')
+  })
+})
+
+describe('post-token progress hold', () => {
+  it('detects agent slash preproc heartbeats', () => {
+    const u = progressEventToUpdate({
+      type: 'progress',
+      label: 'Vision',
+      message: 'Running slash commands (176s)',
+    })
+    expect(isAgentPreprocHeartbeatProgress(u)).toBe(true)
+    expect(shouldHoldPostTokenProgress(u)).toBe(true)
   })
 })

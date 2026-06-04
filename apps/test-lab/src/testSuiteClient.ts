@@ -70,6 +70,8 @@ export type TestSuiteEvent = {
   failFast?: boolean
   skippedStepIds?: string[]
   shortCircuit?: boolean
+  cancelled?: boolean
+  reason?: string
 }
 
 let resolvedBase: string | null = null
@@ -270,6 +272,7 @@ export async function startRun(opts: {
   useBrightDate?: boolean
   failFast?: boolean
   shortCircuit?: boolean
+  startFromStepId?: string | null
 } & SuiteLaneOptions): Promise<{ run_id: string; transcript_path?: string | null }> {
   const res = await fetch(`${suiteBaseUrl()}/test-suite/runs`, {
     method: 'POST',
@@ -288,6 +291,7 @@ export async function startRun(opts: {
       save_transcript: Boolean(opts.saveTranscript),
       fail_fast: Boolean(opts.failFast),
       short_circuit: Boolean(opts.shortCircuit),
+      start_from_step_id: opts.startFromStepId || null,
     }),
   })
   if (res.status === 409) throw new Error('A run is already in progress')

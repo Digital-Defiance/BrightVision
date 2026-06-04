@@ -5,8 +5,8 @@ import { buildVisionCoreEnv, coreHealthUrl, ollamaEnvForCore, REPO_ROOT } from '
 
 const PID_FILE = path.join(REPO_ROOT, '.e2e-llm-core.pid')
 const CORE_PORT = 8741
-/** Cold ``http_api`` import can take 30s+; under Test Lab CPU load allow headroom. */
-const DEFAULT_HEALTH_TIMEOUT_MS = 180_000
+/** Cold ``http_api`` import can take 30–90s; under Test Lab CPU/RAM load allow headroom. */
+const DEFAULT_HEALTH_TIMEOUT_MS = 300_000
 
 function coreHealthTimeoutMs(): number {
   const raw = process.env.E2E_CORE_HEALTH_TIMEOUT_MS?.trim()
@@ -118,6 +118,67 @@ function assertPythonReady(python: string, repoRoot: string): void {
   }
 }
 
+function killStaleCoreServeProcesses(): void {
+  const patterns = [
+    `bright-vision-core-serve --host 127.0.0.1 --port ${CORE_PORT}`,
+    `uvicorn bright_vision_core.http_api:app --host 127.0.0.1 --port ${CORE_PORT}`,
+  ]
+  for (const pat of patterns) {
+    try {
+      execFileSync('pkill', ['-f', pat], { stdio: 'ignore' })
+    } catch {
+      /* no matching process */
+    }
+  }
+}
+
+/** Warm .pyc / page cache so the spawned serve process imports faster. */
+function prewarmHttpApiImport(python: string, repoRoot: string, env: NodeJS.ProcessEnv): void {
+  if (process.env.E2E_SKIP_HTTP_API_PREWARM === '1') return
+  console.error('[e2e-core] prewarming http_api import (cold cache can take 30–90s)…')
+  const t0 = Date.now()
+  try {
+    execFileSync(
+      python,
+      ['-c', 'from bright_vision_core.http_api import app'],
+      {
+        cwd: repoRoot,
+        env,
+        stdio: 'pipe',
+        timeout: coreHealthTimeoutMs(),
+        maxBuffer: 10 * 1024 * 1024,
+      }
+    )
+  } catch (err) {
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `http_api prewarm failed after ${elapsed}s (${msg}).\n` +
+        `  source activate.sh; free RAM; sh scripts/free-core-port.sh\n` +
+        `  or raise E2E_CORE_HEALTH_TIMEOUT_MS / set E2E_SKIP_HTTP_API_PREWARM=1`
+    )
+  }
+  console.error(`[e2e-core] prewarm finished in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+}
+
+function attachCoreServerOutput(child: ChildProcess, stderrLines: string[]): void {
+  child.stdout?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      console.error(`[e2e-core stdout] ${trimmed}`)
+    }
+  })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    for (const line of chunk.toString().split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      stderrLines.push(trimmed)
+      console.error(`[e2e-core] ${trimmed}`)
+    }
+  })
+}
+
 async function waitForHealth(
   timeoutMs: number,
   child?: ChildProcess,
@@ -125,12 +186,23 @@ async function waitForHealth(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let lastErr = 'unknown'
+  let lastProgressLog = 0
   while (Date.now() < deadline) {
     if (child?.pid && !childAlive(child.pid)) {
       const tail = stderrLines.slice(-8).join('\n')
       throw new Error(
         `Vision API process exited before healthy (${lastErr})` +
           (tail ? `\n[e2e-core stderr tail]\n${tail}` : '')
+      )
+    }
+    const now = Date.now()
+    if (now - lastProgressLog >= 30_000) {
+      lastProgressLog = now
+      const elapsed = Math.round((now - (deadline - timeoutMs)) / 1000)
+      const latest = stderrLines[stderrLines.length - 1]
+      console.error(
+        `[e2e-core] still waiting for /health (${elapsed}s/${Math.round(timeoutMs / 1000)}s` +
+          `${latest ? `; latest stderr: ${latest}` : ''})`
       )
     }
     try {
@@ -159,6 +231,7 @@ export async function startRealCoreServer(): Promise<void> {
   const forceRestart = process.env.E2E_INTEGRATION === '1' || process.env.E2E_LLM === '1'
   if (forceRestart) {
     await stopRealCoreServer()
+    killStaleCoreServeProcesses()
     killListenersOnPort(CORE_PORT)
   } else if (fs.existsSync(PID_FILE)) {
     try {
@@ -192,6 +265,8 @@ export async function startRealCoreServer(): Promise<void> {
     LLM_SPEC_GEN_TURN_TIMEOUT_S: process.env.LLM_SPEC_GEN_TURN_TIMEOUT_S ?? '1800',
   })
 
+  prewarmHttpApiImport(python, repoRoot, env)
+
   const serveCli = path.join(repoRoot, '.venv', 'bin', 'bright-vision-core-serve')
   const useServeCli = fs.existsSync(serveCli)
   const spawnCmd = useServeCli
@@ -217,31 +292,10 @@ export async function startRealCoreServer(): Promise<void> {
     {
       cwd: repoRoot,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // stdout inherit: avoid pipe fill before headless stdio redirect; stderr piped for tail on failure.
+      stdio: ['ignore', 'inherit', 'pipe'],
     }
-  );
-
-  // Wait for the server to start
-  await new Promise((resolve, reject) => {
-    child.stdout.on('data', (data) => {
-      if (data.includes('uvicorn started')) {
-        resolve();
-      }
-    });
-    child.stderr.on('data', (data) => {
-      console.error(`[e2e-core] ${data}`);
-      reject(new Error(`Server startup failed: ${data}`));
-    });
-    child.on('error', (err) => {
-      console.error(`[e2e-core] spawn failed: ${err.message}`);
-      reject(err);
-    });
-  });
-
-  // Wait for the server to be healthy
-  const healthTimeoutMs = coreHealthTimeoutMs();
-  console.error(`[e2e-core] waiting for /health (timeout ${healthTimeoutMs}ms)`);
-  await waitForHealth(healthTimeoutMs, child, stderrLines);
+  )
 
   child.on('error', (err) => {
     console.error(`[e2e-core] spawn failed: ${err.message}`)
@@ -254,15 +308,7 @@ export async function startRealCoreServer(): Promise<void> {
   }
 
   fs.writeFileSync(PID_FILE, String(child.pid))
-
-  child.stderr?.on('data', (chunk: Buffer) => {
-    for (const line of chunk.toString().split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      stderrLines.push(trimmed)
-      console.error(`[e2e-core] ${trimmed}`)
-    }
-  })
+  attachCoreServerOutput(child, stderrLines)
 
   child.on('exit', (code, signal) => {
     if (code !== null && code !== 0) {

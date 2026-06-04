@@ -5,6 +5,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { VisionConfig } from './config'
 import type { CoreEventBase } from './events'
+import { isCoreEvent } from './events'
 import type { CoreSessionInfo, ModelRouterApiConfig, SendMessageOptions } from './httpClient'
 import { createCoreHttpClient } from './httpClient'
 import type { CoreHttpClient } from './httpClient'
@@ -216,7 +217,12 @@ export function createVisionApiSession(
             )
           : client.sendMessage(sessionId, content, signal, options)
         for await (const event of stream) {
-          onEvent(event)
+          if (!isCoreEvent(event)) continue
+          try {
+            onEvent(event)
+          } catch (err) {
+            console.error('[vision] core event handler failed', err, event)
+          }
         }
       } catch (err) {
         if (isUserCancellationError(err)) return
@@ -243,7 +249,12 @@ export function createVisionApiSession(
         files_in_chat: result.files_in_chat,
       }
       for (const event of result.events) {
-        onEvent(event as CoreEventBase)
+        if (!isCoreEvent(event)) continue
+        try {
+          onEvent(event)
+        } catch (err) {
+          console.error('[vision] core event handler failed', err, event)
+        }
       }
       return { info: sessionInfo, events: result.events as CoreEventBase[] }
     },
@@ -265,7 +276,12 @@ export function createVisionApiSession(
         files_in_chat: result.files_in_chat,
       }
       for (const event of result.events) {
-        onEvent(event as CoreEventBase)
+        if (!isCoreEvent(event)) continue
+        try {
+          onEvent(event)
+        } catch (err) {
+          console.error('[vision] core event handler failed', err, event)
+        }
       }
       return { info: sessionInfo, events: result.events as CoreEventBase[] }
     },
@@ -314,7 +330,12 @@ export function createVisionApiSession(
           }>(apiUrl, `sessions/${sessionId}/undo`, apiToken, {})
         : await client.undo(sessionId)
       for (const event of result.events) {
-        onEvent(event as CoreEventBase)
+        if (!isCoreEvent(event)) continue
+        try {
+          onEvent(event)
+        } catch (err) {
+          console.error('[vision] core event handler failed', err, event)
+        }
       }
     },
   }

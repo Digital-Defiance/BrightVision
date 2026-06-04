@@ -208,6 +208,38 @@ git -C cecli checkout upstream/v0.100.1
 
 See [CECLI_PIN.md](./CECLI_PIN.md).
 
+## `/add cecli/…` blocked: “matched .gitignore under the session workspace”
+
+**Symptoms:** Dogfooding BrightVision on the superproject repo, the agent asks to `/add cecli/cecli/helpers/responses.py` (or similar tracked submodule paths). Tool error:
+
+```text
+Can't add cecli/cecli/helpers/responses.py: matched .gitignore under the session workspace.
+If this is normal tracked source, check the project folder in Settings.
+```
+
+**Cause:** The `cecli/` submodule uses a root `.gitignore` whitelist (`*` then `!/cecli/**`). Cecli’s ignore check used to resolve repo-relative paths against **process cwd** (superproject root) instead of the **submodule repo root**, so paths like `cecli/helpers/responses.py` were mis-resolved to `BrightVision/cecli/helpers/…` (missing the inner `cecli/`) and falsely matched `*`.
+
+**Fix (engine):** Pull latest cecli submodule + reinstall Vision API:
+
+```bash
+cd /path/to/BrightVision
+git submodule update --init cecli
+source activate.sh
+pip install -e .
+# Terminal → Stop / Start (or kill :8741 and restart)
+```
+
+**Workarounds while on an older build:**
+
+| Approach | When to use |
+|----------|-------------|
+| **Settings → project folder** = superproject root (`BrightVision/`), not `cecli/` alone | Always — wrong root causes many `/add` failures |
+| **Edit cecli in Cursor** (or open the file manually) | Agent can still patch via tools once the path is known; `/add` is only for chat context |
+| **Paste file contents** into chat | Quick unblock when `/add` fails |
+| **Answer “Add file?” confirms** for parent-tree files (`src/…`, `bright_vision_core/…`) | Submodule adds may still fail until the engine fix is running |
+
+After restart, `/add cecli/cecli/main.py` should succeed (see [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md)).
+
 ## `activate.sh`: `command not found: pip` / python not under `.venv`
 
 Usually a **stale `.venv`** from an old checkout path (e.g. `/Users/.../BrightVision` vs `/Volumes/.../BrightVision`) or macOS `/usr/bin/python3` (3.9) used to create the venv.
@@ -227,6 +259,32 @@ Optional: `export BRIGHT_VISION_PYTHON=/opt/homebrew/bin/python3.14` before sour
 
 Set **Settings → Python** to `.venv/bin/python3` or leave blank for auto-detect.
 
+## `yarn vision` / `yarn lab` slow (minutes on activate)
+
+**Expected:** `activate.sh` under launchers is **instant** (~0.2s). Pip runs **once** via `scripts/ensure-venv.sh` only when `.venv` cannot `import cecli, bright_vision_core, uvicorn, pytest`.
+
+**If every launch pip-installs for minutes:**
+
+1. Check imports: `.venv/bin/python3 -c 'import cecli, bright_vision_core, uvicorn, pytest'`
+2. If that fails, run once: `source activate.sh` (from repo root, same path as `yarn vision`)
+3. Debug path: `BRIGHT_VISION_ACTIVATE_DEBUG=1 yarn vision` — should print `fast: launcher`, not `slow: pip install`
+4. Force reinstall after submodule pull: `BV_VISION_SETUP=1 yarn vision`
+
+Partial venv (cecli installed but not `bright_vision_core`) used to re-pip on **every** launch; launchers now skip pip and `ensure-venv` runs setup only when imports fail.
+
+## `verify:ears`: `No module named pytest`
+
+Test Lab / `yarn verify:ears` runs pytest from **repo `.venv`**, not system Python. The error path may show Homebrew `python3.14` even when the venv is used (symlink).
+
+**Fix:** from repo root:
+
+```bash
+source activate.sh
+yarn verify:ears
+```
+
+Or let the script self-heal: `verify-ears.sh` calls `ensure-venv.sh` when pytest is missing. If that still fails, recreate the venv: `rm -rf .venv && source activate.sh`.
+
 ## `uvicorn is required`
 
 ```bash
@@ -243,7 +301,7 @@ Raw `pip install -e .` without **`SETUPTOOLS_SCM_PRETEND_VERSION`** fails when t
 
 ```bash
 source activate.sh
-BV_RESET_PIP=1 yarn vision
+BV_VISION_SETUP=1 yarn vision
 ```
 
 Or manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]` (match `package.json` version with `-brightN` → `.postN`).

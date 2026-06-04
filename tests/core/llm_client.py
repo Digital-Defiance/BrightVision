@@ -22,6 +22,12 @@ def _live_stderr() -> bool:
     )
 
 
+def _live_duration_label(sec: float) -> str:
+    from bright_vision_core.test_suite.timing import format_duration
+
+    return format_duration(sec)
+
+
 def _emit_live_progress(line: str) -> None:
     if _live_stderr():
         print(line, file=sys.stderr, flush=True)
@@ -74,7 +80,8 @@ def stream_session_message(
                     wait = int(time.time() - started)
                     if wait >= 5:
                         _emit_live_progress(
-                            f"… first SSE byte after {wait}s (Ollama may have been cold)"
+                            f"… first SSE byte after {_live_duration_label(wait)} "
+                            "(Ollama may have been cold)"
                         )
                 buf += chunk.decode("utf-8", errors="replace")
                 batch, buf = parse_sse_chunk(buf)
@@ -101,7 +108,8 @@ def stream_session_message(
         while not stop_watch.wait(30.0):
             elapsed = int(time.time() - started)
             _emit_live_progress(
-                f"… waiting for SSE ({elapsed}s / {int(cap)}s cap) — "
+                f"… waiting for SSE ({_live_duration_label(elapsed)} / "
+                f"{_live_duration_label(cap)} cap) — "
                 "if this persists, run: ollama ps && sh scripts/ollama-warmup-for-tests.sh"
             )
 
@@ -117,7 +125,7 @@ def stream_session_message(
         except Exception:
             pass
         raise TimeoutError(
-            f"SSE timed out after {int(cap)}s for message: {content[:120]!r}"
+            f"SSE timed out after {_live_duration_label(cap)} for message: {content[:120]!r}"
         ) from err
     finally:
         stop_watch.set()

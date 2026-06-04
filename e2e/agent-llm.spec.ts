@@ -62,7 +62,11 @@ test.describe('Agent slash (real Ollama + Vision API)', () => {
 
     await expect(page.getByText(/Turn stalled/i)).toHaveCount(0)
     await expect(page.getByText(/Slash commands.*timed out/i)).toHaveCount(0)
-    await settleTurnAfterReply(page, 180_000)
+    // /agent runs inside slash preproc; assistant text can appear long before SSE `done`.
+    await settleTurnAfterReply(page, replyTimeoutMs, {
+      allowPostAnswerSettle: true,
+      postAnswerGraceMs: 45_000,
+    })
     await page.getByTestId('chat-input').fill('agent follow-up probe')
     await expect(page.getByTestId('chat-send')).toBeEnabled({ timeout: 30_000 })
   })

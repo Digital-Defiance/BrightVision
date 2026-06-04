@@ -13,7 +13,7 @@ from bright_vision_core.test_suite.manifest import (
     plan_steps,
 )
 from bright_vision_core.test_suite.capture_mode import gpu_capture_bin
-from bright_vision_core.test_suite.runner import build_step_env
+from bright_vision_core.test_suite.runner import build_step_env, _LLM_GPU_STALL_ABORT_ENABLED
 from bright_vision_core.test_suite.timing import (
     GPUCAP_FMT,
     expectations_for_steps,
@@ -284,8 +284,11 @@ def test_http_cancel_active_route_not_shadowed_by_run_id():
     res = client.post("/test-suite/runs/active/cancel")
     assert res.status_code == 200, res.text
     assert res.json()["ok"] is True
-    assert job_store.active_run() is None
+    assert run.cancelled() is True
     hold.set()
+    worker.join(timeout=2.0)
+    job_store.reconcile_active()
+    assert job_store.active_run() is None
 
 
 def test_reconcile_clears_dead_active_run():
@@ -359,6 +362,47 @@ def test_run_suite_fail_fast_stops_after_first_failure(monkeypatch):
     assert finished["skippedStepIds"] == ["c"]
 
 
+def test_run_suite_start_from_step_id(monkeypatch):
+    from bright_vision_core.test_suite import runner as runner_mod
+
+    steps = [
+        SuiteStep("a", "step a", ("true",)),
+        SuiteStep("b", "step b", ("true",)),
+        SuiteStep("c", "step c", ("true",)),
+    ]
+    calls: list[str] = []
+    events: list[dict] = []
+
+    monkeypatch.setattr(runner_mod, "plan_steps", lambda **_: steps)
+    monkeypatch.setattr(runner_mod, "_shutil_which", lambda _: True)
+    monkeypatch.setattr(runner_mod, "resolve_capture_mode", lambda **_: "off")
+    monkeypatch.setattr(runner_mod, "gpu_wrap_enabled", lambda **_: False)
+    monkeypatch.setattr(runner_mod, "record_total", lambda *a, **k: None)
+    monkeypatch.setattr(runner_mod, "record_step", lambda *a, **k: None)
+
+    def fake_run_step(step, **kwargs):
+        calls.append(step.id)
+        return True, 1.0, None, None, ""
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+
+    ok = runner_mod.run_suite(
+        skip_llm=True,
+        skip_gpu=True,
+        skip_time=True,
+        start_from_step_id="b",
+        on_event=events.append,
+    )
+    assert ok is True
+    assert calls == ["b", "c"]
+    skipped = [e for e in events if e.get("type") == "step_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["stepId"] == "a"
+    started = [e for e in events if e.get("type") == "run_started"][-1]
+    assert started["startFromStepId"] == "b"
+    assert started["skippedStepIds"] == ["a"]
+
+
 def test_gpu_baseline_for_step(tmp_path, monkeypatch):
     from bright_vision_core.test_suite.timing import gpu_baseline_for_step, record_step
 
@@ -380,3 +424,17 @@ def test_line_indicates_test_fail():
     assert not _line_indicates_test_fail("FAIL: tests/core/test_foo.py:12: in test_bar")
     assert not _line_indicates_test_fail("Test Files  1 failed (53)")
     assert not _line_indicates_test_fail("PASS: ok")
+
+
+def test_gpu_stall_abort_enabled_by_default():
+    assert _LLM_GPU_STALL_ABORT_ENABLED is True
+
+
+def test_gpu_stall_abort_can_disable(monkeypatch):
+    monkeypatch.setenv("BV_LLM_GPU_STALL_ABORT", "0")
+    import importlib
+    import bright_vision_core.test_suite.runner as runner_mod
+
+    importlib.reload(runner_mod)
+    assert runner_mod._LLM_GPU_STALL_ABORT_ENABLED is False
+    importlib.reload(runner_mod)

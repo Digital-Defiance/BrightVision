@@ -34,9 +34,11 @@ yarn test:everything
 Orchestrator only (for web UI dev):
 
 ```bash
-bright-vision-test-suite-serve
-# http://127.0.0.1:8743/health  (default; override with BV_TEST_ORCHESTRATOR_PORT)
+yarn test-lab:orch
+# or: bright-vision-test-suite-serve  →  http://127.0.0.1:8743/health
 ```
+
+**Resume:** After a failed or cancelled run, **Resume from …** skips earlier steps (same plan + lane checkboxes). Each step row has a ▶ control to **Run from here**. CLI: `bright-vision-test-everything --from-step llm:core`.
 
 ## Full transcript
 

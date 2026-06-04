@@ -55,22 +55,17 @@ Preferred dev launcher after `source activate.sh`:
 3. Clears a stale listener on **`BV_CORE_PORT`** (default **`8751`** — Test Lab orchestrator port; Vision HTTP API is still **`:8741`** via Terminal → Start).
 4. Runs **`yarn tauri dev`** (Vite **`:1420`**, Tauri window).
 
-### `BV_RESET_PIP` — force editable reinstall
+### `BV_VISION_SETUP` — force editable reinstall
 
 When you pull cecli or `bright_vision_core` changes and want a clean editable reinstall **before** the window opens:
 
 ```bash
-BV_RESET_PIP=1 yarn vision
+BV_VISION_SETUP=1 yarn vision
 ```
 
-This runs:
+This runs full `source activate.sh` (pip install -e cecli, brightdate, `.[dev]`, uvicorn) via `scripts/ensure-venv.sh`.
 
-- `pip install -e cecli`
-- `pip install -e .[dev]` for the parent **`bright_vision_core`** package
-
-Both use the same **`SETUPTOOLS_SCM_PRETEND_VERSION`** logic as `activate.sh` (maps `package.json` tags like `0.2.1-bright1` → PEP 440 `0.2.1.post1` so `pip install -e .` does not fail on `*-brightN` git tags).
-
-**Normal daily use:** omit `BV_RESET_PIP` — `source activate.sh` already installs editable cecli + parent when the venv is new or stale. Use **`BV_RESET_PIP=1`** after submodule bumps, agent-turn fixes, or when `/health` shows an old engine.
+**Normal daily use:** `yarn vision` activates in ~instant and only pip-installs when imports are missing (first run or broken venv). After submodule bumps use **`BV_VISION_SETUP=1 yarn vision`** or `BRIGHT_VISION_ACTIVATE_FORCE=1 source activate.sh`.
 
 Override pretend version manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]`
 

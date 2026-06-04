@@ -27,7 +27,9 @@ fn drain_sse_events(buffer: &mut String, out: &mut Vec<Value>) {
                     continue;
                 }
                 if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-                    out.push(v);
+                    if !v.is_null() && v.get("type").and_then(|t| t.as_str()).is_some() {
+                        out.push(v);
+                    }
                 }
             }
         }

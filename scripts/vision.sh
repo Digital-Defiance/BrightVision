@@ -13,6 +13,9 @@ export BRIGHT_VISION_ACTIVATE_QUIET=1
 # shellcheck source=activate.sh
 source "${ROOT}/activate.sh"
 
+# shellcheck source=ensure-venv.sh
+. "${ROOT}/scripts/ensure-venv.sh"
+
 PORT="${BV_CORE_PORT:-8751}"
 if command -v lsof >/dev/null 2>&1; then
   # shellcheck disable=SC2046
@@ -21,9 +24,4 @@ fi
 
 export BV_CORE_PORT="$PORT"
 echo "vision: starting BrightVision window (Vite :1420, orchestrator :${PORT})…" >&2
-if [ -n "${BV_RESET_PIP:-}" ]; then
-  echo "Performing pip install..."
-  pip install -e cecli
-  install_bright_vision_editable "[dev]"
-fi
 exec yarn tauri dev "$@"

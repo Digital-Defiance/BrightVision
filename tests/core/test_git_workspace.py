@@ -1,4 +1,5 @@
 import inspect
+import asyncio
 import subprocess
 import types
 import unittest
@@ -47,6 +48,7 @@ class TestGitWorkspace(unittest.TestCase):
         """Cecli dirty_commit calls repo.commit(coder_edits=True) on RepoSet."""
         params = inspect.signature(RepoSet.commit).parameters
         self.assertIn("coder_edits", params)
+        self.assertTrue(asyncio.iscoroutinefunction(RepoSet.commit))
 
     def test_discover_submodule_paths(self):
         with GitTemporaryDirectory() as root:
@@ -127,7 +129,13 @@ class TestGitWorkspace(unittest.TestCase):
             sub_file = root / "vendor/lib/pkg.py"
             sub_file.write_text("x = 2\n")
 
-            res = ws.commit(fnames=["vendor/lib/pkg.py"], message="update pkg", aider_edits=True)
+            res = asyncio.run(
+                ws.commit(
+                    fnames=["vendor/lib/pkg.py"],
+                    message="update pkg",
+                    aider_edits=True,
+                )
+            )
             self.assertIsNotNone(res)
 
             sub_repo = ws.repo_for_rel_path("vendor/lib/pkg.py")
@@ -181,10 +189,12 @@ class TestGitWorkspace(unittest.TestCase):
             sub_file = root / "vendor/lib/pkg.py"
             sub_file.write_text("x = 99\n")
 
-            res = ws.commit(
-                fnames=["vendor/lib/pkg.py"],
-                aider_edits=True,
-                message="update pkg",
+            res = asyncio.run(
+                ws.commit(
+                    fnames=["vendor/lib/pkg.py"],
+                    aider_edits=True,
+                    message="update pkg",
+                )
             )
             self.assertIsNotNone(res)
             self.assertGreaterEqual(len(ws.last_commit_batch), 1)

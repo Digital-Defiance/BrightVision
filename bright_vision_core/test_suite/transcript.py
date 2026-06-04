@@ -48,6 +48,12 @@ def format_event_line(event: dict[str, Any]) -> str | None:
         return "\n".join(lines)
     if t == "step_started":
         return f"\n> {event.get('label', event.get('stepId', ''))}\n{'-' * 80}"
+    if t == "step_skipped":
+        reason = event.get("reason", "skipped")
+        return (
+            f"[ SKIP ] {event.get('label', event.get('stepId', ''))} "
+            f"(resume — {reason})"
+        )
     if t == "step_line":
         stream = event.get("stream", "stdout")
         line = event.get("line", "")
@@ -55,7 +61,10 @@ def format_event_line(event: dict[str, Any]) -> str | None:
             return f"[stderr] {line}"
         return str(line)
     if t == "step_finished":
-        mark = "SUCCESS" if event.get("ok") else "FAIL"
+        if event.get("cancelled"):
+            mark = "CANCELLED"
+        else:
+            mark = "SUCCESS" if event.get("ok") else "FAIL"
         parts = [f"[ {mark} ] {event.get('label', event.get('stepId', ''))}"]
         if event.get("seconds") is not None:
             parts.append(f"  time: {event['seconds']:.3f}s")
@@ -73,12 +82,17 @@ def format_event_line(event: dict[str, Any]) -> str | None:
             parts.append(f"  swap peak: {event['swapPeakGb']} GiB")
         return "\n".join(parts)
     if t == "run_finished":
-        mark = "ALL TEST SUITES SUCCESSFUL" if event.get("ok") else "RUN FAILED"
+        if event.get("cancelled"):
+            mark = "CANCELLED"
+        else:
+            mark = "ALL TEST SUITES SUCCESSFUL" if event.get("ok") else "RUN FAILED"
         return (
             f"\n=== run finished {mark} "
             f"(total {event.get('totalSeconds', 0):.1f}s, "
             f"elapsed {event.get('elapsedSeconds', 0):.1f}s) ===\n"
         )
+    if t == "run_cancelled":
+        return f"\n=== run cancelled by user ({event.get('reason', 'user request')}) ===\n"
     if t == "error":
         return f"[error] {event.get('text', '')}"
     if t == "core_port_warning":

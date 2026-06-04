@@ -85,10 +85,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Fail llm:core if phased pytest hits EARS gate (default: skip).",
     )
     parser.add_argument(
-        "--logged",
-        action="store_true",
-        help="Write full transcript to .bright-vision/test-suite-runs/ "
-        "(or TEST_EVERYTHING_LOG path)",
+        "--from-step",
+        metavar="STEP_ID",
+        help="Skip steps before STEP_ID (e.g. llm:core, e2e:llm). Resume a partial suite.",
     )
     parser.add_argument(
         "--transcript",
@@ -116,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
         elif t == "step_started":
             print(f"\n> {event.get('label')}", file=sys.stderr)
             print("-" * 80, file=sys.stderr)
+        elif t == "step_skipped":
+            print(f"[ SKIP ] {event.get('label', event.get('stepId', ''))}", file=sys.stderr)
         elif t == "step_finished":
             mark = "SUCCESS" if event.get("ok") else "FAIL"
             print(f"[ {mark} ]", file=sys.stderr)
@@ -156,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
             fail_fast=args.fail_fast,
             run_options=run_options,
             on_event=on_event,
+            start_from_step_id=args.from_step,
         )
     finally:
         if writer:

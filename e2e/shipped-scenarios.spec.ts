@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectOptimisticSend } from './helpers/chatSend'
+import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
 import { E2E_EDIT_BLOCK_NEW, E2E_EDIT_BLOCK_REL } from './helpers/fixtureWorkspaces'
 import { listScenarioNames } from './helpers/scenarios'
 import { openChat, openTasks, startMockSession } from './helpers/session'
@@ -53,7 +53,8 @@ for (const name of listScenarioNames()) {
           expect(String(writes.at(-1)?.content ?? '')).toContain(E2E_EDIT_BLOCK_NEW.trim())
           break
         case 'applied-edit':
-          await expect(page.getByText('Applied', { exact: true })).toBeVisible({ timeout: 15_000 })
+          await expectTurnIdle(page, 30_000)
+          await expect(page.getByTestId('proposed-edit-applied')).toBeVisible({ timeout: 15_000 })
           break
         case 'display-fence':
           await expect(page.getByTestId('chat-fence-block')).toBeVisible({ timeout: 15_000 })

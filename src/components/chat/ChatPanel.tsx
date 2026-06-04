@@ -13,8 +13,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { mergeChatTimeline } from '../../utils/chatStream'
+import { useChatFind } from '../../hooks/useChatFind'
 import { DISPLAY_CORE } from '../../brand'
 import type { VisionCommand } from '../../ipc/commands'
 import type { CoreConfirmEvent } from '../../ipc/events'
@@ -43,7 +44,9 @@ import { ChatAgentBar } from './ChatAgentBar'
 import { ChatEasyStart } from './ChatEasyStart'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
-import { ChatMarkdown } from './ChatMarkdown'
+import { ChatFindBar } from './ChatFindBar'
+import { UserMessageBody } from './UserMessageBody'
+import { CHAT_FIND_MARK, CHAT_FIND_MARK_ACTIVE } from '../../utils/chatFindHighlight'
 import { TurnsTableMessage } from './TurnsTableMessage'
 import type { AssistantContentSegment } from '../../utils/proposedEdits'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
@@ -237,6 +240,9 @@ export function ChatPanel({
     [messages, meaningfulToolEvents]
   )
 
+  const chatScrollRef = useRef<HTMLDivElement>(null)
+  const chatFind = useChatFind(chatScrollRef, timeline)
+
   const canClearHistory =
     Boolean(onClearHistory) && (messages.length > 0 || meaningfulToolEvents.length > 0)
 
@@ -283,7 +289,39 @@ export function ChatPanel({
           </Typography>
         </Alert>
       )}
-      <Box sx={{ flex: 1, overflow: 'auto', mb: 1, px: 1, minHeight: 0 }}>
+      <Box
+        ref={chatScrollRef}
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          mb: 1,
+          px: 1,
+          minHeight: 0,
+          [`& mark.${CHAT_FIND_MARK}`]: {
+            bgcolor: 'warning.light',
+            color: 'inherit',
+            borderRadius: 0.25,
+            px: 0.15,
+          },
+          [`& mark.${CHAT_FIND_MARK_ACTIVE}`]: {
+            bgcolor: 'warning.main',
+            outline: 1,
+            outlineColor: 'warning.dark',
+          },
+        }}
+      >
+        {chatFind.open && (
+          <ChatFindBar
+            query={chatFind.query}
+            matchIndex={chatFind.matchIndex}
+            matchCount={chatFind.matchCount}
+            inputRef={chatFind.inputRef}
+            onQueryChange={chatFind.setQuery}
+            onClose={chatFind.close}
+            onNext={chatFind.goNext}
+            onPrev={chatFind.goPrev}
+          />
+        )}
         {!isRunning && easyStart && (
           <Box sx={{ mb: messages.length === 0 && meaningfulToolEvents.length === 0 ? 0 : 2 }}>
             <ChatEasyStart
@@ -384,9 +422,7 @@ export function ChatPanel({
                       }
                     />
                   ) : entry.item.role === 'user' ? (
-                    <Box sx={{ pr: 3, '& .vision-chat-markdown': { color: 'primary.contrastText' } }}>
-                      <ChatMarkdown content={entry.item.content} />
-                    </Box>
+                    <UserMessageBody content={entry.item.content} />
                   ) : (
                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pr: 3 }}>
                       {entry.item.content}

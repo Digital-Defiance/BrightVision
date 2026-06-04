@@ -85,3 +85,10 @@ def test_run_from_running_event_loop() -> None:
         return run(_inner())
 
     assert asyncio.run(_outer()) == 99
+
+
+def test_reposet_commit_is_async_def() -> None:
+    """Cecli dirty_commit does ``await repo.commit(...)``; RepoSet must match GitRepo."""
+    from bright_vision_core.git_workspace import RepoSet
+
+    assert asyncio.iscoroutinefunction(RepoSet.commit)

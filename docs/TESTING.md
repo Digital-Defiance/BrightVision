@@ -145,7 +145,7 @@ yarn playwright test --ui                        # debug interactively
 
 Playwright uses **`vite.config.ts`** only (do not commit a stale `vite.config.js` — Vite prefers `.js` over `.ts` and will skip the E2E health stub + enable the `:8741` proxy).
 
-Playwright starts a fresh `E2E=1` preview via `scripts/e2e-preview.sh` (kills anything listening on port **4173** first). If preview still fails:
+Playwright starts a fresh `E2E=1` preview via `scripts/e2e-preview.sh` (kills anything listening on port **4173** first). In Test Lab / `yarn test:everything`, **`test-local:release` already builds `dist/`** — later `e2e:llm` skips rebuild when `BV_TEST_SUITE_ACTIVE=1` **only if** `dist/index.html` is newer than key UI sources (`src/App.tsx`, `packages/vision-client/…`). If you changed the React head after release, preview rebuilds automatically; set `BV_E2E_FORCE_BUILD=1` to force rebuild anyway. LLM Playwright config allows **300s** for preview startup (`E2E_PREVIEW_WEBSERVER_TIMEOUT_MS` to override). If preview still fails:
 
 ```bash
 lsof -ti tcp:4173 | xargs kill -9   # macOS/Linux
@@ -235,6 +235,8 @@ Optional env:
 | `OLLAMA_WARMUP_EXCLUSIVE` | `1` (default in Test Lab / suite `llm:core`): `ollama stop` other loaded models before warmup so a pinned heavy model (e.g. `qwen3.6:27b` with `keep_alive=-1`) does not block `llama3.2:3b`. Set `0` to keep all models loaded. |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
+| `E2E_CORE_HEALTH_TIMEOUT_MS` | Playwright global setup wait for `GET /health` on `:8741` (default **`300000`**). Also caps the one-time `http_api` prewarm import. Cold import is often **30–90s**; under Test Lab CPU/RAM load allow headroom. |
+| `E2E_SKIP_HTTP_API_PREWARM` | Set to `1` to skip the pre-spawn `http_api` import warm-up (slightly faster setup when page cache is already hot). |
 | `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |
 
 E2E clears **`PYTHONPATH`**. Do not export `PYTHONPATH=$PWD` — the repo’s `cecli/` folder is not the Python package and will break `import cecli` (`unknown location`).
@@ -303,7 +305,7 @@ yarn test:e2e:integration
 
 See [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md#real-core-integration-no-mocked-apicore).
 
-`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
+`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. The assistant reply can appear **minutes before** slash preproc finishes and SSE `done` — `agent-llm` uses post-answer settle (same as router e2e) after asserting reply text. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
 
 ## Manual smoke (not Playwright)
 
@@ -311,7 +313,7 @@ After `yarn test:full`, when you change engine or desktop integration:
 
 ```bash
 source activate.sh
-yarn vision          # recommended; BV_RESET_PIP=1 after engine/submodule pulls
+yarn vision          # recommended; BV_VISION_SETUP=1 after engine/submodule pulls
 ```
 
 Or `yarn tauri dev` (same window; `yarn vision` also clears stale orchestrator on `:8751`).

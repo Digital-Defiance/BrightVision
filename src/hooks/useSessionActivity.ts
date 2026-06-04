@@ -26,8 +26,9 @@ export function useSessionActivity() {
   }, [])
 
   const wrapHandler = useCallback(
-    (handler: (ev: CoreEventBase) => void) => (raw: CoreEventBase) => {
-      if (isCoreEvent(raw)) ingestEvent(raw)
+    (handler: (ev: CoreEventBase) => void) => (raw: unknown) => {
+      if (!isCoreEvent(raw)) return
+      ingestEvent(raw)
       handler(raw)
     },
     [ingestEvent]

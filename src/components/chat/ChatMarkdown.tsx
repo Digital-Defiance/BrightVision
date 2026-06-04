@@ -2,6 +2,7 @@ import { Box, Link, Typography } from '@mui/material'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { withMarkdownHardBreaks } from '../../utils/markdownNewlines'
 import { ChatFenceBlock } from './ChatFenceBlock'
 
 const markdownComponents: Components = {
@@ -97,7 +98,7 @@ export function ChatMarkdown({ content }: ChatMarkdownProps) {
   return (
     <Box className="vision-chat-markdown" data-testid="chat-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
+        {withMarkdownHardBreaks(content)}
       </ReactMarkdown>
     </Box>
   )

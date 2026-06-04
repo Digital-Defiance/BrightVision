@@ -48,7 +48,11 @@ export default defineConfig({
     command: 'sh scripts/e2e-preview.sh',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // globalSetup starts :8741 first; allow headroom when a cold ``yarn build`` is required.
+    timeout: Math.max(
+      120_000,
+      Number(process.env.E2E_PREVIEW_WEBSERVER_TIMEOUT_MS) || 300_000
+    ),
     env: {
       E2E: '1',
       E2E_LLM: '1',

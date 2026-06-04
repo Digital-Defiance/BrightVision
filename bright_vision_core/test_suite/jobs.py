@@ -121,7 +121,7 @@ class TestSuiteJobStore:
             self._reconcile_active_locked()
 
     def abort_active(self) -> bool:
-        """Cancel the active run and release the slot so a new run can start."""
+        """Cancel the active run. Sets the cancel flag; worker stops the subprocess."""
         with self._lock:
             if not self._active_id:
                 return False
@@ -142,15 +142,8 @@ class TestSuiteJobStore:
             if thread_gone or run.status not in ("pending", "running"):
                 self._reconcile_active_locked()
                 return True
-            # Worker still running; release slot so UI is not stuck on 409. The
-            # daemon thread may finish in the background.
-            run.status = "cancelled"
-            run.ok = False
-            run.error = "Cancelled"
-            run.append_event({"type": "error", "text": "Cancelled by user"})
-            run.append_event({"type": "run_finished", "ok": False})
-            run.append_event({"type": "done"})
-            self._active_id = None
+            # Worker still stopping the subprocess — keep active_id until it exits.
+            run.status = "running"
         return True
 
     def cancel_active(self) -> bool:
@@ -168,6 +161,7 @@ class TestSuiteJobStore:
         transcript_path: str | None = None,
         fail_fast: bool = False,
         short_circuit: bool = False,
+        start_from_step_id: str | None = None,
     ) -> TestSuiteRun:
         with self._lock:
             self._reconcile_active_locked()
@@ -196,8 +190,11 @@ class TestSuiteJobStore:
                     writer.write_event(event)
                 run.append_event(event)
                 if event.get("type") == "run_finished":
-                    run.ok = bool(event.get("ok"))
-                    run.status = "completed" if run.ok else "error"
+                    run.ok = bool(event.get("ok")) and not event.get("cancelled")
+                    if event.get("cancelled"):
+                        run.status = "cancelled"
+                    else:
+                        run.status = "completed" if run.ok else "error"
 
             try:
                 ok = run_suite(
@@ -210,6 +207,7 @@ class TestSuiteJobStore:
                     run_options=run_options,
                     on_event=on_event,
                     cancel_check=run.cancelled,
+                    start_from_step_id=start_from_step_id,
                 )
                 if run.cancelled():
                     run.status = "cancelled"

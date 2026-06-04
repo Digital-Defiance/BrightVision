@@ -7,6 +7,7 @@ import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from './todo
 import type { PatchTodoResult, TodoItem, TodoStore } from './todos/types'
 import { normalizeStore, normalizeTodo } from './todos/storage'
 import type { CoreEventBase } from './events'
+import { isCoreEvent } from './events'
 import {
   readStreamChunkWithIdleTimeout,
   sseEventResetsIdleTimer,
@@ -855,7 +856,8 @@ export class CoreHttpClient {
         for (const line of part.split('\n')) {
           if (!line.startsWith('data: ')) continue
           try {
-            yield JSON.parse(line.slice(6)) as CoreEventBase
+            const parsed: unknown = JSON.parse(line.slice(6))
+            if (isCoreEvent(parsed)) yield parsed
           } catch {
             /* skip malformed SSE chunk */
           }

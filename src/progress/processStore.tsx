@@ -8,11 +8,12 @@ import {
   type ReactNode,
 } from 'react'
 import type { CoreEventBase, CoreProgressEvent } from '../ipc/events'
+import { isCoreEvent } from '../ipc/events'
 import { isBenignTurnStopError } from '../utils/abort'
 import {
-  isWaitingForModelProgress,
   progressEventToUpdate,
   progressUpdateAfterStreamedTokens,
+  shouldHoldPostTokenProgress,
 } from './ingestProgress'
 import {
   IDLE_SNAPSHOT,
@@ -103,14 +104,18 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
   )
 
   const idle = useCallback(() => dispatch({ type: 'idle' }), [])
-  const fail = useCallback((message: string) => dispatch({ type: 'fail', message }), [])
+  const fail = useCallback((message: string) => {
+    dispatch({ type: 'fail', message })
+    window.setTimeout(() => dispatch({ type: 'idle' }), 4000)
+  }, [])
 
   const ingestCoreEvent = useCallback((ev: CoreEventBase) => {
+    if (!isCoreEvent(ev)) return
     switch (ev.type) {
       case 'progress': {
         const raw = progressEventToUpdate(ev as CoreProgressEvent)
         const update =
-          streamedTokensThisTurnRef.current && isWaitingForModelProgress(raw)
+          streamedTokensThisTurnRef.current && shouldHoldPostTokenProgress(raw)
             ? progressUpdateAfterStreamedTokens(ev as CoreProgressEvent)
             : raw
         dispatch({ type: 'apply', update })

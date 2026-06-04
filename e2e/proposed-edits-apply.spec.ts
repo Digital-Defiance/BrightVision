@@ -27,7 +27,7 @@ test.describe('Proposed edits apply (roadmap #2)', () => {
     await page.getByTestId('chat-send').click()
 
     await expect(page.getByText('Proposed only')).toBeVisible({ timeout: 15_000 })
-    await page.getByRole('button', { name: /src\/example\.ts/ }).click()
+    await expect(page.getByTestId('proposed-edit-apply')).toBeVisible()
     await page.getByTestId('proposed-edit-apply').click()
 
     await expect.poll(() => writes.length).toBeGreaterThan(0)
@@ -69,7 +69,7 @@ test.describe('Proposed edits apply (roadmap #2)', () => {
     await page.getByTestId('chat-input').fill('Patch src/indented.ts')
     await page.getByTestId('chat-send').click()
     await expect(page.getByText('Proposed only')).toBeVisible({ timeout: 15_000 })
-    await page.getByRole('button', { name: /src\/indented\.ts/ }).click()
+    await expect(page.getByTestId('proposed-edit-apply')).toBeVisible()
     await page.getByTestId('proposed-edit-apply').click()
 
     await expect.poll(() => writes.length).toBeGreaterThan(0)

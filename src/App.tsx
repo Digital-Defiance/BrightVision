@@ -16,7 +16,7 @@ import GitHubIcon from '@mui/icons-material/GitHub'
 import SettingsIcon from '@mui/icons-material/Settings'
 import TerminalIcon from '@mui/icons-material/Terminal'
 import CodeIcon from '@mui/icons-material/Code'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import { ChipCpuStartIcon } from './components/icons/ActionChipIcons'
 import StopIcon from '@mui/icons-material/Stop'
 import { Alert, Box, Button, Chip, Paper, Snackbar, Stack, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
@@ -38,7 +38,7 @@ import {
   type LocalLlmSnapshot,
 } from './ipc/localLlm'
 import { LocalLlmPanel } from './components/local-llm/LocalLlmPanel'
-import { type CoreConfirmEvent, type CoreEventBase } from './ipc/events'
+import { type CoreConfirmEvent, type CoreEventBase, isCoreEvent } from './ipc/events'
 import { SseIdleTimeoutError } from './ipc/sseIdle'
 import {
   appendStreamingToken,
@@ -779,6 +779,7 @@ function AppShell({
   const stallWatchRef = useRef<(type: string, detail?: string) => void>(() => {})
 
   const handleCoreEvent = useCallback((ev: CoreEventBase) => {
+    if (!isCoreEvent(ev)) return
     const progressDetail =
       ev.type === 'progress'
         ? String((ev as { message?: string }).message ?? (ev as { label?: string }).label ?? '')
@@ -1157,14 +1158,18 @@ function AppShell({
                   return null
                 })()
               : null)
-          if (attachId === null || !turnTiming) return prev
+          if (attachId === null) return prev
+          const hasApplied = applied.length > 0
+          if (!turnTiming && !hasApplied) return prev
           return capList(
             prev.map((m) => {
               if (m.id !== attachId) return m
               return {
                 ...m,
-                ...(applied.length > 0 ? { appliedFiles: applied } : {}),
-                turnTiming: resolveMessageTurnTiming(m.turnTiming, turnTiming),
+                ...(hasApplied ? { appliedFiles: applied } : {}),
+                ...(turnTiming
+                  ? { turnTiming: resolveMessageTurnTiming(m.turnTiming, turnTiming) }
+                  : {}),
               }
             }),
             MAX_CHAT_MESSAGES
@@ -3502,7 +3507,7 @@ function AppShell({
                 <Button
                   variant="contained"
                   color="success"
-                  startIcon={<PlayArrowIcon />}
+                  startIcon={<ChipCpuStartIcon />}
                   data-testid="terminal-start"
                   onClick={() => void handleStart()}
                   disabled={lifecycleActive}

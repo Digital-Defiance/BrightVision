@@ -1,10 +1,11 @@
 #!/usr/bin/env sh
 # Dev: editable Cecli (submodule) + bright_vision_core (parent package).
 # Safe to source: does not enable set -e in your interactive shell.
-# When .venv is warm (cecli + bright_vision_core + uvicorn importable), skips pip installs
+# When .venv is warm (cecli + bright_vision_core + uvicorn + pytest importable), skips pip installs
 # — speeds up yarn lab / yarn vision. Launchers set BRIGHT_VISION_ACTIVATE_QUIET=1 for
-# instant re-activate when .venv exists; interactive `source activate.sh` runs import check.
-# Force reinstall: BRIGHT_VISION_ACTIVATE_FORCE=1
+# instant PATH-only activate; scripts/ensure-venv.sh runs pip once when imports are missing.
+# Interactive `source activate.sh` runs import probe. Force reinstall: BRIGHT_VISION_ACTIVATE_FORCE=1
+# or BV_VISION_SETUP=1 yarn vision
 # When sourced: zsh/BSH use %x; bash uses BASH_SOURCE; lab.sh sets BRIGHT_VISION_ROOT / BV_ROOT.
 # BSH (https://bsh.digitaldefiance.org) is a zsh fork — exposes BSH_VERSION, not ZSH_VERSION.
 _is_zsh_family() {
@@ -181,10 +182,19 @@ venv_needs_recreate() {
   _ve=$(
     grep '^VIRTUAL_ENV=' "$_cfg" 2>/dev/null | head -1 | sed 's/^VIRTUAL_ENV=//;s/^"//;s/"$//'
   )
+  if _venv_paths_match "$_ve" "${VENV}"; then
+    return 1
+  fi
   _ve_canon="$(_canonical_dir "$_ve" 2>/dev/null || printf '%s' "$_ve")"
-  _want_canon="$(_canonical_dir "${ROOT}/.venv" 2>/dev/null || printf '%s' "${ROOT}/.venv")"
-  [ "$_ve_canon" != "$_want_canon" ] && return 0
-  return 1
+  _want_canon="$(_canonical_dir "${VENV}" 2>/dev/null || printf '%s' "${VENV}")"
+  if [ "$_ve_canon" = "$_want_canon" ]; then
+    return 1
+  fi
+  _py_prefix=$("${VENV}/bin/python3" -c 'import sys; print(sys.prefix)' 2>/dev/null || _py_prefix="")
+  if [ -n "$_py_prefix" ] && _venv_paths_match "$_py_prefix" "${VENV}"; then
+    return 1
+  fi
+  return 0
 }
 
 recreate_venv_if_needed() {
@@ -205,19 +215,20 @@ activation_force() {
   [ "${BRIGHT_VISION_ACTIVATE_FORCE:-}" = "1" ]
 }
 
-# Fast path for yarn lab / yarn vision: skip pip when .venv already has editable installs.
-activation_ready() {
+# Fast path: editable installs import cleanly from .venv (any cwd).
+deps_importable() {
   venv_needs_recreate && return 1
-  _imports='import cecli, bright_vision_core, uvicorn'
-  if [ "${BRIGHT_VISION_CORE_INSTALL:-editable}" = "pypi" ]; then
-    _imports='import cecli, bright_vision_core, uvicorn, pytest'
-  fi
+  _imports='import cecli, bright_vision_core, uvicorn, pytest'
   "${VENV}/bin/python3" -c "
 import os, sys
 if not os.path.isfile(os.path.join(sys.prefix, 'pyvenv.cfg')):
     raise SystemExit(1)
 ${_imports}
 " 2>/dev/null
+}
+
+activation_ready() {
+  deps_importable
 }
 
 apply_activation_env() {
@@ -247,6 +258,7 @@ _venv_paths_match() {
 activation_inherited() {
   activation_force && return 1
   [ -x "${VENV}/bin/python3" ] && [ -f "${VENV}/bin/activate" ] || return 1
+  deps_importable || return 1
   if [ -n "${BRIGHT_VISION_ACTIVATED:-}" ]; then
     _act_canon="$(_canonical_dir "$BRIGHT_VISION_ACTIVATED" 2>/dev/null || printf '%s' "$BRIGHT_VISION_ACTIVATED")"
     [ "$_act_canon" = "$ROOT" ] && return 0
@@ -257,13 +269,17 @@ activation_inherited() {
   return 1
 }
 
-# yarn lab / yarn vision: trust a structurally valid .venv (skip cecli import probe).
-activation_trusted_launcher() {
+# yarn lab / yarn vision: never pip — deps are verified by the launcher script.
+activation_launcher() {
   [ "${BRIGHT_VISION_ACTIVATE_QUIET:-}" = "1" ] || return 1
   activation_force && return 1
-  venv_needs_recreate && return 1
   [ -x "${VENV}/bin/python3" ] && [ -f "${VENV}/bin/activate" ] || return 1
-  return 0
+  "${VENV}/bin/python3" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null
+}
+
+_activate_log() {
+  [ "${BRIGHT_VISION_ACTIVATE_DEBUG:-}" = "1" ] || return 0
+  echo "activate.sh: $*" >&2
 }
 
 inherit_activation_env() {
@@ -322,17 +338,20 @@ print_activation_summary() {
 }
 
 if activation_inherited; then
+  _activate_log "fast: inherited"
   inherit_activation_env
   return 0 2>/dev/null || exit 0
 fi
 
-if activation_trusted_launcher; then
+if activation_launcher; then
+  _activate_log "fast: launcher (yarn vision/lab — no pip)"
   inherit_activation_env
   mark_activation_done
   return 0 2>/dev/null || exit 0
 fi
 
 if activation_ready && ! activation_force; then
+  _activate_log "fast: warm venv (import probe ok)"
   apply_activation_env
   mark_activation_done
   if [ "${BRIGHT_VISION_ACTIVATE_QUIET:-}" != "1" ]; then
@@ -340,6 +359,8 @@ if activation_ready && ! activation_force; then
   fi
   return 0 2>/dev/null || exit 0
 fi
+
+_activate_log "slow: pip install (venv missing or deps not importable)"
 
 recreate_venv_if_needed
 PY_BOOT="$(pick_python)" || die "need Python 3.10+ (install python@3.12 or set BRIGHT_VISION_PYTHON)"
