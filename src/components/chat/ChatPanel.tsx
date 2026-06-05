@@ -45,6 +45,7 @@ import { ChatEasyStart } from './ChatEasyStart'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
 import { ChatFindBar } from './ChatFindBar'
+import { TurnActivityHintOverlay } from './TurnActivityHintOverlay'
 import { UserMessageBody } from './UserMessageBody'
 import { CHAT_FIND_MARK, CHAT_FIND_MARK_ACTIVE } from '../../utils/chatFindHighlight'
 import { TurnsTableMessage } from './TurnsTableMessage'
@@ -87,7 +88,6 @@ interface ChatPanelProps {
   inputValue: string
   isRunning: boolean
   isBusy: boolean
-  queuedCount: number
   pendingConfirm: CoreConfirmEvent | null
   pathSuggestions: string[]
   pathAssistActive: boolean
@@ -168,7 +168,6 @@ export function ChatPanel({
   inputValue,
   isRunning,
   isBusy,
-  queuedCount,
   pendingConfirm,
   pathSuggestions,
   pathAssistActive,
@@ -277,26 +276,29 @@ export function ChatPanel({
           </Typography>
         </Alert>
       )}
-      {(isBusy || queuedCount > 0) && turnActivityHint && (
-        <Alert
-          severity={turnStalled ? 'warning' : 'info'}
-          variant="outlined"
-          sx={{ mb: 1, mx: 1, py: 0.25 }}
-          data-testid="turn-activity-hint"
-        >
-          <Typography variant="caption" component="span">
-            {turnActivityHint}
-          </Typography>
-        </Alert>
-      )}
-      <Box
-        ref={chatScrollRef}
-        sx={{
-          flex: 1,
-          overflow: 'auto',
-          mb: 1,
-          px: 1,
-          minHeight: 0,
+      <Box sx={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        {isBusy && turnActivityHint ? (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 6,
+              right: 8,
+              zIndex: 2,
+              pointerEvents: 'none',
+              '& > *': { pointerEvents: 'auto' },
+            }}
+          >
+            <TurnActivityHintOverlay hint={turnActivityHint} stalled={Boolean(turnStalled)} />
+          </Box>
+        ) : null}
+        <Box
+          ref={chatScrollRef}
+          sx={{
+            flex: 1,
+            overflow: 'auto',
+            mb: 1,
+            px: 1,
+            minHeight: 0,
           [`& mark.${CHAT_FIND_MARK}`]: {
             bgcolor: 'warning.light',
             color: 'inherit',
@@ -519,13 +521,19 @@ export function ChatPanel({
               '& > *': { pointerEvents: 'auto' },
             }}
           >
-            <Tooltip title="Clear chat history">
+            <Tooltip
+              title={
+                isBusy
+                  ? 'Clear chat view (current turn keeps running until Stop; /clear queues if session is active)'
+                  : 'Clear chat history'
+              }
+            >
               <span>
                 <IconButton
                   size="small"
                   aria-label="Clear chat history"
                   data-testid="chat-clear-history"
-                  disabled={!canClearHistory || isBusy}
+                  disabled={!canClearHistory}
                   onClick={onClearHistory}
                   sx={{
                     width: 28,
@@ -546,6 +554,7 @@ export function ChatPanel({
           </Box>
         )}
         <div ref={chatEndRef} />
+      </Box>
       </Box>
 
       <TokenStatsBar stats={tokenStats} />

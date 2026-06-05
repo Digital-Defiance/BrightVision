@@ -41,6 +41,10 @@ import { LocalLlmPanel } from './components/local-llm/LocalLlmPanel'
 import { type CoreConfirmEvent, type CoreEventBase, isCoreEvent } from './ipc/events'
 import { SseIdleTimeoutError } from './ipc/sseIdle'
 import {
+  formatVisionStreamTransportError,
+  turnHadStartedBeforeSendError,
+} from './utils/abort'
+import {
   appendStreamingToken,
   capList,
   MAX_CHAT_MESSAGES,
@@ -91,6 +95,7 @@ import {
 } from './theme/suggestedFilesPrefs'
 import { loadSpecFocusPref, saveSpecFocusPref } from './theme/specFocusPrefs'
 import { SessionContextChip } from './components/session/SessionContextChip'
+import { MessageQueueChip } from './components/session/MessageQueueChip'
 import {
   buildEmptyLlmRetryMessage,
   isEmptyLlmWarning,
@@ -199,6 +204,9 @@ import {
   turnCaptureExtras,
 } from './utils/turnCapture'
 import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
+import { downloadSpecJobDebugBundle } from './utils/specJobDebugExport'
+import type { RecentSpecJob, SpecJobOutcome } from './utils/recentSpecJob'
+import { SpecJobStatusChip } from './components/spec/SpecJobStatusChip'
 import { workspacePathsEqual } from './utils/workspacePath'
 import {
   resolveMessageTurnTiming,
@@ -438,6 +446,8 @@ function AppShell({
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [specFocusMode, setSpecFocusMode] = useState(() => loadSpecFocusPref())
   const [specGenerating, setSpecGenerating] = useState(false)
+  const [recentSpecJob, setRecentSpecJob] = useState<RecentSpecJob | null>(null)
+  const [lastExportableSessionId, setLastExportableSessionId] = useState<string | null>(null)
   const [specIndexRefreshToken, setSpecIndexRefreshToken] = useState(0)
   const [specAgentEarsLinting, setSpecAgentEarsLinting] = useState(false)
   const [specAgentTracing, setSpecAgentTracing] = useState(false)
@@ -1368,7 +1378,9 @@ function AppShell({
     isStarting,
     isBusy,
     queuedCount,
+    queuedMessages,
     clearQueue,
+    removeQueuedAt,
     sessionInfo,
     httpClient,
     start,
@@ -1383,8 +1395,13 @@ function AppShell({
     patchSessionFiles,
   } = useVisionSession(wrapHandler(handleCoreEvent), { onOutboundMessage })
 
+  const isRunningRef = useRef(isRunning)
+  isRunningRef.current = isRunning
   httpClientRef.current = httpClient
   sessionInfoIdRef.current = sessionInfo?.session_id ?? null
+  useEffect(() => {
+    if (sessionInfo?.session_id) setLastExportableSessionId(sessionInfo.session_id)
+  }, [sessionInfo?.session_id])
   hydrateChatFromCoreRef.current = (client, sessionId) => {
     void client
       .getSessionTranscript(sessionId)
@@ -1640,6 +1657,22 @@ function AppShell({
       void specLayersSavedRef.current(id, layers)
     },
   })
+
+  const visionSessionReady = isRunning && Boolean(sessionInfo?.session_id)
+  const sessionWorkspaceMismatch =
+    lifecycleActive &&
+    Boolean(sessionInfo?.workspace) &&
+    !workspacePathsEqual(sessionInfo!.workspace, savedConfig.workingDir)
+
+  useEffect(() => {
+    if (isRunning || !specGenerating) return
+    specGenerateAbortRef.current?.abort()
+    setSnackbar({
+      message:
+        'Session ended while spec generation was running — use the header chip to export debug',
+      severity: 'warning',
+    })
+  }, [isRunning, specGenerating])
 
   const turnEta = useMemo(() => {
     if (!thinkingTiming.live || !isRunning) return null
@@ -2183,16 +2216,19 @@ function AppShell({
   }, [isRunning, terminalLines])
 
   const handleExportSessionDebug = useCallback(async () => {
-    const sid = sessionInfo?.session_id
+    const sid = sessionInfo?.session_id ?? lastExportableSessionId
     const client = httpClient ?? todoApiClient
     if (!sid) {
-      setSnackbar({ message: 'Start a session before exporting debug data', severity: 'info' })
+      setSnackbar({ message: 'No session to export — start a session first', severity: 'info' })
       return
     }
     try {
       await downloadSessionDebugBundle(client, sid)
       setSnackbar({
-        message: 'Session debug bundle downloaded (share when reporting tool-call issues)',
+        message:
+          sessionInfo?.session_id === sid
+            ? 'Session debug bundle downloaded (share when reporting tool-call issues)'
+            : 'Last session debug bundle downloaded (session may have ended)',
         severity: 'info',
       })
     } catch (err) {
@@ -2201,7 +2237,45 @@ function AppShell({
         severity: 'error',
       })
     }
-  }, [sessionInfo?.session_id, httpClient, todoApiClient])
+  }, [sessionInfo?.session_id, lastExportableSessionId, httpClient, todoApiClient])
+
+  const handleCopySpecJobId = useCallback(() => {
+    const jobId = recentSpecJob?.id
+    if (!jobId) return
+    void navigator.clipboard.writeText(jobId).then(
+      () =>
+        setSnackbar({
+          message: `Copied spec job ID ${jobId.slice(0, 8)}…`,
+          severity: 'info',
+        }),
+      () => setSnackbar({ message: 'Could not copy job ID', severity: 'warning' })
+    )
+  }, [recentSpecJob?.id])
+
+  const handleExportSpecJobDebug = useCallback(async () => {
+    const client = httpClient ?? todoApiClient
+    const jobId = recentSpecJob?.id
+    if (!jobId) {
+      setSnackbar({ message: 'No spec job to export yet', severity: 'info' })
+      return
+    }
+    try {
+      await downloadSpecJobDebugBundle(client, jobId)
+      setSnackbar({
+        message: 'Spec job debug bundle downloaded (use when reporting stalled generation)',
+        severity: 'info',
+      })
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [recentSpecJob?.id, httpClient, todoApiClient])
+
+  const handleDismissRecentSpecJob = useCallback(() => {
+    setRecentSpecJob(null)
+  }, [])
 
   const handleAttachContextDirectory = useCallback(async () => {
     if (!isRunning || !isTauriRuntime()) return
@@ -2574,6 +2648,13 @@ function AppShell({
       const ac = new AbortController()
       specGenerateAbortRef.current = ac
       setSpecGenerating(true)
+      setRecentSpecJob({
+        id: '',
+        outcome: 'running',
+        prompt,
+        mode,
+        section: section === 'all' ? null : section,
+      })
       setSpecJobMode(mode)
       setSpecJobSection(section === 'all' ? null : section)
       setSpecJobPrompt(prompt)
@@ -2613,9 +2694,25 @@ function AppShell({
             enforce_ears: true,
             background: true,
           },
-          ac.signal
+          ac.signal,
+          {
+            onJobStarted: (jobId) =>
+              setRecentSpecJob((prev) =>
+                prev
+                  ? { ...prev, id: jobId, outcome: 'running' }
+                  : {
+                      id: jobId,
+                      outcome: 'running',
+                      prompt,
+                      mode,
+                      section: section === 'all' ? null : section,
+                    }
+              ),
+          }
         )
         await reloadTodos()
+        const finishOutcome: SpecJobOutcome = gen.ears_blocked ? 'ears_blocked' : 'saved'
+        setRecentSpecJob((prev) => (prev ? { ...prev, outcome: finishOutcome } : prev))
         if (gen.ears_blocked) {
           notifySpecJob('ears_blocked')
           setSnackbar({
@@ -2642,7 +2739,15 @@ function AppShell({
           })
         }
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          setRecentSpecJob((prev) =>
+            prev?.id
+              ? { ...prev, outcome: isRunningRef.current ? 'aborted' : 'session_lost' }
+              : prev
+          )
+          return
+        }
+        setRecentSpecJob((prev) => (prev ? { ...prev, outcome: 'error' } : prev))
         notifySpecJob('error')
         setSnackbar({
           message: err instanceof Error ? err.message : String(err),
@@ -2838,6 +2943,14 @@ function AppShell({
         void reloadTodos()
       }
     } catch (err) {
+      const hadTurnActivity = turnHadStartedBeforeSendError({
+        hadAssistantOutput: turnHadAssistantOutputRef.current,
+        wallStartMs: turnWallStartMsRef.current,
+      })
+      if (agentTurnActiveRef.current) {
+        agentTurnActiveRef.current = false
+        setAgentTurnLive(false)
+      }
       turnWallStartMsRef.current = null
       turnAssistantMessageIdRef.current = null
       turnHadAssistantOutputRef.current = false
@@ -2848,15 +2961,15 @@ function AppShell({
         setStatusMessage('Stopped')
         return
       }
-      removeLastPendingUserMessage()
-      setInputValue(text)
+      if (!hadTurnActivity) {
+        removeLastPendingUserMessage()
+        setInputValue(text)
+      }
       setSnackbar({
         message:
           err instanceof SseIdleTimeoutError
             ? err.message
-            : err instanceof Error
-              ? err.message
-              : String(err),
+            : formatVisionStreamTransportError(err),
         severity: 'error',
       })
     }
@@ -2887,10 +3000,13 @@ function AppShell({
   const handleClearChatHistory = useCallback(async () => {
     if (chatMessages.length === 0 && toolEvents.length === 0) return
     const syncCore = isRunning
+    const busyNote = syncCore && isBusy
+      ? 'The current turn is still running — /clear will queue after it finishes (use Stop first to abort the agent).\n\n'
+      : ''
     if (
       !window.confirm(
         syncCore
-          ? 'Clear all messages and tool output from this view, and send /clear so the agent forgets prior turns?\n\nFiles stay in context (/drop to remove). File edits are not undone.'
+          ? `${busyNote}Clear all messages and tool output from this view, and send /clear so the agent forgets prior turns?\n\nFiles stay in context (/drop to remove). File edits are not undone.`
           : 'Clear all messages and tool output from this view? File edits are not undone.'
       )
     ) {
@@ -2926,7 +3042,7 @@ function AppShell({
       // /clear SSE may append tool_output; keep the clear control disabled.
       setToolEvents([])
     }
-  }, [chatMessages.length, toolEvents.length, isRunning, send])
+  }, [chatMessages.length, toolEvents.length, isRunning, isBusy, send])
 
   const handleUndo = async () => {
     try {
@@ -3001,35 +3117,39 @@ function AppShell({
       {agentGuard.snapshot.pauseState === 'pause_after_turn' && isBusy && (
         <Chip label="Pausing after step…" size="small" color="warning" variant="outlined" />
       )}
-      {specGenerating && (
+      {recentSpecJob?.id ? (
+        <SpecJobStatusChip
+          job={{
+            ...recentSpecJob,
+            outcome: specGenerating ? 'running' : recentSpecJob.outcome,
+          }}
+          onCancel={specGenerating ? () => specGenerateAbortRef.current?.abort() : undefined}
+          onCopyJobId={handleCopySpecJobId}
+          onExportDebug={() => void handleExportSpecJobDebug()}
+          onDismiss={specGenerating ? undefined : handleDismissRecentSpecJob}
+        />
+      ) : specGenerating ? (
         <Chip
-          label="Spec job running"
+          label="Spec job starting…"
           size="small"
           color="info"
           variant="outlined"
           data-testid="spec-generating-chip"
           onDelete={() => specGenerateAbortRef.current?.abort()}
         />
-      )}
+      ) : null}
       {queuedCount > 0 && (
-        <>
-          <Chip label={`${queuedCount} queued`} size="small" color="info" variant="outlined" />
-          <Button
-            size="small"
-            variant="text"
-            color="inherit"
-            data-testid="clear-message-queue"
-            onClick={() => {
-              clearQueue()
-              setSnackbar({
-                message: 'Cleared queued messages — current turn still runs until Stop or done',
-                severity: 'info',
-              })
-            }}
-          >
-            Clear queue
-          </Button>
-        </>
+        <MessageQueueChip
+          messages={queuedMessages}
+          onRemoveAt={removeQueuedAt}
+          onClearAll={() => {
+            clearQueue()
+            setSnackbar({
+              message: 'Cleared queued messages — current turn still runs until Stop or done',
+              severity: 'info',
+            })
+          }}
+        />
       )}
       {activeTodo && (
         <Chip
@@ -3158,7 +3278,6 @@ function AppShell({
               inputValue={inputValue}
               isRunning={isRunning}
               isBusy={isBusy}
-              queuedCount={queuedCount}
               pendingConfirm={pendingConfirm}
               pathSuggestions={pathSuggestions}
               pathAssistActive={pathAssistActive}
@@ -3224,14 +3343,18 @@ function AppShell({
               inputValue={specInputValue}
               isRunning={isRunning}
               isBusy={isBusy}
-              sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
+              sessionReady={visionSessionReady}
+              sessionBusy={isBusy}
+              workspaceMismatch={sessionWorkspaceMismatch}
               activeTodo={activeTodo}
               sessionMode={savedConfig.sessionMode}
               liveSessionMode={liveSessionMode}
               sessionRunning={isRunning}
               onSessionModeChange={handleSessionModeChange}
               specGenerating={specGenerating}
+              recentSpecJob={recentSpecJob}
               specJobPrompt={specJobPrompt}
+              onExportSpecJobDebug={() => void handleExportSpecJobDebug()}
               earsLinting={specAgentEarsLinting}
               specTracing={specAgentTracing}
               chatEndRef={specChatEndRef}
@@ -3257,8 +3380,9 @@ function AppShell({
               }
               onGenerateSpec={
                 activeTodo && isRunning
-                  ? (prompt) =>
+                  ? (prompt, section = 'requirements') =>
                       void handleGenerateSpec(activeTodo.id, prompt, 'generate', {
+                        section,
                         contextPaths: sessionFiles,
                       })
                   : undefined
@@ -3419,16 +3543,15 @@ function AppShell({
               httpReady={todosHttpReady}
               tauriLocal={todosTauriLocal}
               currentBranch={gitStatus?.branch ?? null}
-              sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
+              sessionReady={visionSessionReady}
               sessionBusy={isBusy}
               specGenerating={specGenerating}
+              recentSpecJob={recentSpecJob}
+              onExportSpecJobDebug={() => void handleExportSpecJobDebug()}
+              onDismissRecentSpecJob={handleDismissRecentSpecJob}
               specIndexRefreshToken={specIndexRefreshToken}
               projectPath={savedConfig.workingDir}
-              sessionWorkspaceMismatch={
-                lifecycleActive &&
-                Boolean(sessionInfo?.workspace) &&
-                !workspacePathsEqual(sessionInfo!.workspace, savedConfig.workingDir)
-              }
+              sessionWorkspaceMismatch={sessionWorkspaceMismatch}
               onGenerateSpec={(id, prompt, mode, opts) => handleGenerateSpec(id, prompt, mode, opts)}
               contextPaths={sessionFiles}
               contextUsage={contextUsage}
@@ -3629,7 +3752,7 @@ function AppShell({
                 subagents={subagents}
                 agentModeAvailable={agentModeAvailable}
                 sessionActive={isRunning}
-                sessionId={sessionInfo?.session_id}
+                sessionId={sessionInfo?.session_id ?? lastExportableSessionId}
                 onExportSessionDebug={handleExportSessionDebug}
                 cecliWorkspace={cecliWorkspace.info}
                 cecliWorkspaceLoading={cecliWorkspace.loading}

@@ -11,6 +11,7 @@ AGENT_TURN_FEATURES = {
     "agent_auto_confirm": True,
     "skip_add_file_confirm_in_chat": True,
     "agent_continue_after_shell": True,
+    "agent_continue_after_token_limit": True,
 }
 
 _PROSE_SHELL_FENCE = re.compile(
@@ -52,6 +53,30 @@ def is_tool_activity_event(event: dict) -> bool:
     if _TOKEN_STATS.match(text):
         return False
     return True
+
+
+def is_agent_tool_output_text(text: str) -> bool:
+    """True for cecli agent tool headers mirrored as ``tool_output`` in headless EventIO."""
+    line = (text or "").strip()
+    return line.startswith("Tool Call:") and "Local" in line
+
+
+def is_agent_tool_activity_event(event: dict) -> bool:
+    """True when an agent tool (Local • Grep, ls, …) ran, not legacy shell helpers."""
+    if event.get("type") == "tool_call":
+        return True
+    if event.get("type") != "tool_output":
+        return False
+    return is_agent_tool_output_text(str(event.get("text") or ""))
+
+
+def empty_local_llm_response_in_events(events: list[dict] | tuple) -> bool:
+    for event in events:
+        if event.get("type") != "tool_warning":
+            continue
+        if "Empty response from the local model" in str(event.get("text") or ""):
+            return True
+    return False
 
 
 def extract_prose_shell_commands(assistant_text: str) -> list[str]:
@@ -163,10 +188,35 @@ def is_agent_shell_only_stop(
     return had_tool_activity and not had_tool_call
 
 
+def should_auto_continue_after_shell(
+    *,
+    had_tool_activity: bool,
+    had_tool_call: bool,
+    events: list[dict] | tuple,
+) -> bool:
+    """One-shot auto-continue only for legacy shell output — not agent tools or empty Ollama."""
+    if not is_agent_shell_only_stop(
+        had_tool_activity=had_tool_activity,
+        had_tool_call=had_tool_call,
+    ):
+        return False
+    if empty_local_llm_response_in_events(events):
+        return False
+    return True
+
+
+def empty_ollama_auto_continue_blocked_warning() -> str:
+    return (
+        "Skipped auto-continue: the local model returned an empty response (context limit or "
+        "Ollama stall). Stop, send **continue** with a narrower prompt, or retry one checklist item."
+    )
+
+
 def agent_continue_after_shell_message() -> str:
     return (
         "/agent Continue the active task. Shell command output is already in the conversation. "
-        "Analyze it, summarize the crate layout, and update the checklist using agent tools."
+        "Analyze it and update the checklist using agent tools. "
+        "Do not reset completed checklist items or repeat exploration you already did."
     )
 
 
@@ -174,4 +224,70 @@ def agent_stopped_after_shell_warning() -> str:
     return (
         "/agent ran a shell command and added output, then stopped before analyzing results. "
         "BrightVision will auto-continue once; if it still stops, send **continue** or retry /agent."
+    )
+
+
+def token_limit_exhausted_in_events(events: list[dict] | tuple) -> bool:
+    """True when cecli emitted a token-limit tool_error during the turn."""
+    for event in events:
+        if event.get("type") != "tool_error":
+            continue
+        if "has hit a token limit" in str(event.get("text") or ""):
+            return True
+    return False
+
+
+def token_limit_exhausted_in_text(assistant_text: str) -> bool:
+    return "FinishReasonLength exception" in (assistant_text or "")
+
+
+def token_limit_exhausted(
+    *,
+    events: list[dict] | tuple,
+    assistant_text: str,
+) -> bool:
+    return token_limit_exhausted_in_events(events) or token_limit_exhausted_in_text(
+        assistant_text
+    )
+
+
+def should_auto_continue_after_token_limit(
+    *,
+    events: list[dict] | tuple,
+    assistant_text: str,
+) -> bool:
+    """One-shot auto-continue when /agent stopped on model output/context length."""
+    if not AGENT_TURN_FEATURES.get("agent_continue_after_token_limit"):
+        return False
+    return token_limit_exhausted(events=events, assistant_text=assistant_text)
+
+
+def agent_continue_after_token_limit_message() -> str:
+    return (
+        "/agent Continue the active task from where you stopped. "
+        "The previous turn hit a model token limit during tool use. "
+        "Use agent editing tools to create or modify files — do not repeat failed "
+        "exploration (grep/ls/git status) unless strictly necessary. "
+        "Do not reset completed checklist items."
+    )
+
+
+def agent_token_limit_recovery_warning(*, auto_continue_attempted: bool) -> str:
+    if auto_continue_attempted:
+        return (
+            "/agent still hit a token limit after auto-continue. "
+            "Send **continue** with a narrower step, use **Clear chat** to free context, "
+            "or **Stop → Start** on a fresh session."
+        )
+    return (
+        "/agent hit a model token limit before finishing. "
+        "BrightVision will auto-continue once; if it still stops, send **continue** "
+        "with a narrower task or clear chat to free context."
+    )
+
+
+def vibe_token_limit_recovery_warning() -> str:
+    return (
+        "This turn hit a model token limit before finishing. "
+        "Send **continue** with a narrower next step, or use **Clear chat** to free context."
     )

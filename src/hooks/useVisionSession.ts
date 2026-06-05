@@ -32,6 +32,7 @@ export function useVisionSession(
   const [isStarting, setIsStarting] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [queuedCount, setQueuedCount] = useState(0)
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [sessionInfo, setSessionInfo] = useState<CoreSessionInfo | null>(null)
   const [apiUrl, setApiUrl] = useState<string | null>(null)
   const [httpClient, setHttpClient] = useState<CoreHttpClient | null>(null)
@@ -45,14 +46,24 @@ export function useVisionSession(
     setIsBusy(inflightRef.current > 0)
   }, [])
 
-  const syncQueueCount = useCallback(() => {
+  const syncQueueState = useCallback(() => {
     setQueuedCount(queueRef.current.length)
+    setQueuedMessages(queueRef.current.map((item) => item.content))
   }, [])
 
   const clearQueue = useCallback(() => {
     queueRef.current = []
-    syncQueueCount()
-  }, [syncQueueCount])
+    syncQueueState()
+  }, [syncQueueState])
+
+  const removeQueuedAt = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= queueRef.current.length) return
+      queueRef.current.splice(index, 1)
+      syncQueueState()
+    },
+    [syncQueueState]
+  )
 
   const startGenerationRef = useRef(0)
 
@@ -212,10 +223,10 @@ export function useVisionSession(
   const drainQueue = useCallback(async () => {
     while (queueRef.current.length > 0 && sessionRef.current && inflightRef.current === 0) {
       const next = queueRef.current.shift()!
-      syncQueueCount()
+      syncQueueState()
       await sendOne(next.content, next.options)
     }
-  }, [sendOne, syncQueueCount])
+  }, [sendOne, syncQueueState])
 
   drainQueueRef.current = drainQueue
 
@@ -229,14 +240,14 @@ export function useVisionSession(
       if (inflightRef.current > 0) {
         queueRef.current.push({ content, options: todoOptions })
         onOutboundMessageRef.current?.(content)
-        syncQueueCount()
+        syncQueueState()
         return { queued: true as const }
       }
       await sendOne(content, todoOptions)
       await drainQueue()
       return { queued: false as const }
     },
-    [sendOne, drainQueue, syncQueueCount]
+    [sendOne, drainQueue, syncQueueState]
   )
 
   const undo = useCallback(async () => {
@@ -289,7 +300,9 @@ export function useVisionSession(
     isStarting,
     isBusy,
     queuedCount,
+    queuedMessages,
     clearQueue,
+    removeQueuedAt,
     sessionInfo,
     apiUrl,
     httpClient,

@@ -54,6 +54,7 @@ from bright_vision_core.agent_todos import (
 from bright_vision_core.http_auth import auth_enabled, configure_auth, get_token_from_env, verify_bearer
 from bright_vision_core.session import Session
 from bright_vision_core.session_debug import build_session_debug_export
+from bright_vision_core.spec_job_debug import build_spec_job_debug_export
 from bright_vision_core.session_transcript import transcript_rows_from_coder
 from bright_vision_core.todo_spec_jobs import spec_gen_timeout_s, spec_job_store
 from bright_vision_core.workspace_files import filter_existing_workspace_paths
@@ -1198,6 +1199,25 @@ def get_workspace_spec_job(job_id: str):
     return _job_status_response(job)
 
 
+@app.get("/workspaces/todos/generate-spec/{job_id}/debug")
+def get_workspace_spec_job_debug(job_id: str):
+    """Export debug bundle for a background spec generation job (live or finished)."""
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    spec_job_store.snapshot_job_if_live(job_id)
+    job = spec_job_store.get(job_id)
+    payload = build_spec_job_debug_export(job)  # type: ignore[arg-type]
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="brightvision-spec-job-{job_id[:8]}-debug.json"'
+            ),
+        },
+    )
+
+
 @app.get("/sessions/{session_id}/todos/generate-spec/{job_id}", response_model=GenerateTodoSpecJobStatus)
 def get_session_spec_job(session_id: str, job_id: str):
     _get_session(session_id)
@@ -1205,6 +1225,25 @@ def get_session_spec_job(session_id: str, job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_status_response(job)
+
+
+@app.get("/sessions/{session_id}/todos/generate-spec/{job_id}/debug")
+def get_session_spec_job_debug(session_id: str, job_id: str):
+    _get_session(session_id)
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    spec_job_store.snapshot_job_if_live(job_id)
+    job = spec_job_store.get(job_id)
+    payload = build_spec_job_debug_export(job)  # type: ignore[arg-type]
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="brightvision-spec-job-{job_id[:8]}-debug.json"'
+            ),
+        },
+    )
 
 
 @app.post(

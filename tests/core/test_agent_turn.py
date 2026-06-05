@@ -83,6 +83,61 @@ def test_is_agent_shell_only_stop():
     assert not is_agent_shell_only_stop(had_tool_activity=False, had_tool_call=False)
 
 
+def test_is_agent_tool_output_text():
+    from bright_vision_core.agent_turn import (
+        is_agent_tool_activity_event,
+        is_agent_tool_output_text,
+    )
+
+    assert is_agent_tool_output_text("Tool Call: Local • ls")
+    assert not is_agent_tool_output_text("Tool Call: server • x")
+    assert not is_agent_tool_output_text("Running find .")
+    assert is_agent_tool_activity_event(
+        {"type": "tool_output", "text": "Tool Call: Local • Grep"}
+    )
+
+
+def test_should_auto_continue_after_shell():
+    from bright_vision_core.agent_turn import should_auto_continue_after_shell
+
+    shell_only = [{"type": "tool_output", "text": "Running find ."}]
+    assert should_auto_continue_after_shell(
+        had_tool_activity=True, had_tool_call=False, events=shell_only
+    )
+    agent_tools = [{"type": "tool_output", "text": "Tool Call: Local • ls"}]
+    assert not should_auto_continue_after_shell(
+        had_tool_activity=True, had_tool_call=True, events=agent_tools
+    )
+    empty_ollama = [
+        {"type": "tool_output", "text": "Running find ."},
+        {
+            "type": "tool_warning",
+            "text": "Empty response from the local model (Ollama). The model may have timed out.",
+        },
+    ]
+    assert not should_auto_continue_after_shell(
+        had_tool_activity=True, had_tool_call=False, events=empty_ollama
+    )
+
+
+def test_token_limit_detection_and_auto_continue():
+    from bright_vision_core.agent_turn import (
+        should_auto_continue_after_token_limit,
+        token_limit_exhausted_in_events,
+        token_limit_exhausted_in_text,
+    )
+
+    events = [{"type": "tool_error", "text": "Model foo has hit a token limit!\n"}]
+    assert token_limit_exhausted_in_events(events)
+    assert not token_limit_exhausted_in_events([{"type": "tool_error", "text": "other"}])
+    assert token_limit_exhausted_in_text("FinishReasonLength exception: you sent too many tokens")
+    assert should_auto_continue_after_token_limit(
+        events=events,
+        assistant_text="partial output",
+    )
+    assert not should_auto_continue_after_token_limit(events=[], assistant_text="ok")
+
+
 def test_empty_agent_turn_warning():
     from bright_vision_core.agent_turn import empty_agent_turn_warning
 

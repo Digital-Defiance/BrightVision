@@ -20,6 +20,29 @@ export function isBenignTurnStopError(text: string): boolean {
   return false
 }
 
+/** User-facing message when the desktop SSE transport drops mid-turn. */
+export function formatVisionStreamTransportError(err: unknown): string {
+  if (err instanceof Error) {
+    const msg = err.message
+    if (/timed?\s*out|timeout/i.test(msg)) {
+      return (
+        'Vision API stream disconnected (timeout). The turn may still be running on the server — ' +
+        'use Stop, then retry or continue. Export session debug from Settings if this repeats.'
+      )
+    }
+    return msg
+  }
+  return String(err)
+}
+
+/** True when the send failed after the turn already produced chat/tool activity. */
+export function turnHadStartedBeforeSendError(opts: {
+  hadAssistantOutput: boolean
+  wallStartMs: number | null
+}): boolean {
+  return opts.hadAssistantOutput || opts.wallStartMs != null
+}
+
 /** Combine abort signals; aborts when any source aborts. */
 export function mergeAbortSignals(...sources: (AbortSignal | undefined)[]): AbortSignal {
   const controller = new AbortController()

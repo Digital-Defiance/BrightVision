@@ -34,6 +34,16 @@ curl -s http://127.0.0.1:11434/api/tags   # Ollama up?
 
 Restart the Vision API after changing env vars (`Terminal → Stop` / **Start**).
 
+## `/agent` stopped at exactly 1 hour (message back in input, no `done`)
+
+**Symptoms:** Long `/agent` task on a local model runs for ~60 minutes, then the chat stops updating. The send box is prefilled with your last prompt (often `/agent Work the active task checklist…`) but nothing sends. Session debug export ends at `Running slash commands (3600s)` with no `done` or `error` event.
+
+**Cause:** Desktop builds before mid-2026 applied a **1-hour reqwest timeout** on the Tauri SSE transport (`send_vision_message`). The Vision API was still running; the WebKit/reqwest client dropped the stream. The UI restored your outbound text to the input on transport failure.
+
+**Current behavior:** No wall-clock cap on the desktop SSE client (stall detection uses 15-minute idle limits in the UI; use **Stop** to cancel). After a transport drop, partial turns stay in chat; use **Stop** then retry or send **continue**. Rebuild the desktop app after pulling the fix.
+
+**Also check:** If you set `VISION_AGENT_PREPROC_TIMEOUT_S=3600` (or any positive value), the **server** will cap slash preproc and emit a proper `error` + `done` — unset it or set `0` for unlimited agent runs.
+
 ## `/agent` showed a shell command but nothing ran (turn ends Ready)
 
 **Symptoms:** The agent writes prose plus a markdown code block like ` ```bash find … ``` `, status goes **Ready**, and there is no **Shell** tool output or observation. Or the turn ends in **~1s** with **no assistant bubble**, empty `assistant_text` in debug export, and only `Running slash commands…` before `done`.
@@ -47,6 +57,8 @@ Restart the Vision API after changing env vars (`Terminal → Stop` / **Start**)
 - If the turn finishes with a prose shell block and **no tool activity**, Vision emits an orange **tool_warning** explaining the dead end and suggesting retry/nudge.
 - **Read-only recovery:** when the model writes a safe exploration command in a markdown shell block (`find`, `ls`, `git status`, …), Vision auto-runs it and appends the output to the turn (requires restarted core). Look for **Recovered prose shell (read-only)** in the activity log.
 - **Auto-continue:** when cecli runs that shell and adds output but `/agent` stops before analyzing (common with local models), Vision automatically sends one follow-up `/agent continue` turn in the same session.
+- Auto-continue **does not** run when agent tools already ran (`Tool Call: Local • …`), when Ollama returned an empty response, or on the continue leg itself (one shot only).
+- **Token-limit recovery:** when `/agent` stops with **has hit a token limit** or `FinishReasonLength exception`, Vision auto-sends one follow-up `/agent` turn instructing the model to **edit files** instead of repeating grep/ls exploration. Same one-shot rule as shell auto-continue. Regular (non-`/agent`) turns get an orange warning suggesting **continue** or **Clear chat**.
 
 **If recovery still did not run** (debug export shows prose shell, `tool_invocations: []`, no **Recovered prose shell** and no orange warning): an older core could finish the turn on the main chat path instead of the `/agent` finalize path — reinstall with `pip install -e .`, kill `:8741`, Stop/Start. `agent_turn_features` in `/health` is a capability flag; all listed features must be in the running `session.py` / `event_io.py` build.
 
@@ -293,18 +305,18 @@ source activate.sh
 
 (`activate.sh` installs `uvicorn[standard]`; only run `pip install "uvicorn[standard]"` manually if you skipped activate.)
 
-## `pip install -e .`: `Invalid version: 'v0.2.1-bright1'`
+## `pip install -e .`: `Invalid version: 'v0.2.1-brightN'`
 
-Raw `pip install -e .` without **`SETUPTOOLS_SCM_PRETEND_VERSION`** fails when the repo git tag uses BrightVision’s `*-brightN` suffix (setuptools-scm expects PEP 440).
+BrightVision git tags use a `*-brightN` suffix (e.g. `v0.2.1-bright5`). setuptools-scm expects PEP 440, so a bare install can fail with `Invalid version: 'v0.2.1-bright5'`.
 
-**Fix:** use `activate.sh` helpers — do not run bare `pip install -e .` from repo root.
+**Fix (default):** `pyproject.toml` maps tags via `scripts/git_describe_pep440.sh` (`v0.2.1-bright5` → `0.2.1.post5`). From repo root:
 
 ```bash
 source activate.sh
-BV_VISION_SETUP=1 yarn vision
+pip install -e .
 ```
 
-Or manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]` (match `package.json` version with `-brightN` → `.postN`).
+**Fallback** if describe still fails (shallow clone, missing tags): `SETUPTOOLS_SCM_PRETEND_VERSION=0.2.1.post5 pip install -e .` (match `-brightN` → `.postN` in `package.json` / `src-tauri/Cargo.toml`).
 
 ## Tauri build: `failed to read plugin permissions` under `/Volumes/Code/BrightVision/…`
 

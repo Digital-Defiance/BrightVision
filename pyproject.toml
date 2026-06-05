@@ -35,3 +35,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 write_to = "bright_vision_core/_version.py"
 local_scheme = "no-local-version"
+# BrightVision release tags are v0.2.1-brightN; map to v0.2.1.postN for packaging.version.
+git_describe_command = ["sh", "scripts/git_describe_pep440.sh"]

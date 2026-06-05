@@ -53,9 +53,10 @@ pub async fn send_vision_message(
 
     let result = async {
         let base = base_url.trim().trim_end_matches('/');
+        // No overall request timeout — /agent preproc can run for hours. SSE stall detection
+        // lives in the React layer (`desktopVisionSse.ts` idle limits); use Stop to cancel.
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(30))
-            .timeout(std::time::Duration::from_secs(3600))
             .build()
             .map_err(|e| e.to_string())?;
 

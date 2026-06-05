@@ -65,6 +65,10 @@ class SpecGenerationJob:
     job_id: str
     workspace: str
     todo_id: str
+    prompt: str = ""
+    mode: str = "generate"
+    section: str = "all"
+    model: str | None = None
     status: JobStatus = "pending"
     error: str | None = None
     requirements: str = ""
@@ -74,6 +78,8 @@ class SpecGenerationJob:
     item: Any = None
     ears_blocked: bool = False
     ears_issues: list[dict] = field(default_factory=list)
+    recent_io_events: list[dict] = field(default_factory=list)
+    messages: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
 
@@ -82,6 +88,25 @@ class SpecJobStore:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._jobs: dict[str, SpecGenerationJob] = {}
+        self._live_sessions: dict[str, Session] = {}
+
+    def _snapshot_job_session(self, job_id: str, session: Session | None) -> None:
+        if session is None:
+            return
+        from bright_vision_core.spec_job_debug import snapshot_session_into_job
+
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return
+            snapshot_session_into_job(job, session)
+            job.updated_at = time.time()
+
+    def snapshot_job_if_live(self, job_id: str) -> None:
+        """Refresh debug fields from the in-flight headless session when still running."""
+        with self._lock:
+            session = self._live_sessions.get(job_id)
+        self._snapshot_job_session(job_id, session)
 
     def _prune(self) -> None:
         now = time.time()
@@ -132,12 +157,18 @@ class SpecJobStore:
         model: str | None = None,
     ) -> SpecGenerationJob:
         job_id = uuid.uuid4().hex
-        job = SpecGenerationJob(job_id=job_id, workspace=workspace, todo_id=todo_id)
+        job = SpecGenerationJob(
+            job_id=job_id,
+            workspace=workspace,
+            todo_id=todo_id,
+            prompt=prompt,
+            mode=mode,
+            section=section,
+            model=model,
+        )
         with self._lock:
             self._prune()
             self._jobs[job_id] = job
-
-        session_holder: dict[str, Session] = {}
 
         def _run() -> dict[str, Any]:
             session = Session.create(
@@ -148,9 +179,10 @@ class SpecJobStore:
                 auto_commits=False,
                 echo_to_console=False,
                 chat_history_file=False,
-                map_tokens=0,
+                spec_focus=True,
             )
-            session_holder["session"] = session
+            with self._lock:
+                self._live_sessions[job_id] = session
             try:
                 return session.generate_todo_layers(
                     todo_id,
@@ -162,7 +194,9 @@ class SpecJobStore:
                     context_paths=context_paths,
                 )
             finally:
-                session_holder.pop("session", None)
+                self._snapshot_job_session(job_id, session)
+                with self._lock:
+                    self._live_sessions.pop(job_id, None)
 
         def worker() -> None:
             self._set_status(job_id, "running")
@@ -173,12 +207,14 @@ class SpecJobStore:
                 result = fut.result(timeout=wall_s)
                 self._complete_job(job_id, result)
             except concurrent.futures.TimeoutError:
-                sess = session_holder.get("session")
+                with self._lock:
+                    sess = self._live_sessions.get(job_id)
                 if sess is not None:
                     try:
                         sess.interrupt_turn()
                     except Exception:
                         pass
+                    self._snapshot_job_session(job_id, sess)
                 self._set_error(
                     job_id,
                     f"Spec generation job timed out after {int(wall_s)}s",

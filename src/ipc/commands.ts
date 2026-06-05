@@ -42,4 +42,9 @@ export async function fetchSessionCommands(
   return mergeAgentCommandFallbacks(merged)
 }
 
+/** Default slash list for pre-session UI and when command fetch fails. */
+export function buildDefaultCommandCatalog(): VisionCommand[] {
+  return mergeAgentCommandFallbacks(mergeCommandCatalog(DEFAULT_COMMANDS))
+}
+
 export { mergeCommandCatalog, VISION_CLIENT_COMMANDS } from './visionClientCommands'

@@ -78,7 +78,8 @@ Kiro-style **Requirements → Design → Tasks** with edit-between steps:
 | Dedicated spec agent product surface | **Spec** tab (dedicated transcript) + spec-focus + generate/refine jobs | **#20** Partial — vibe/spec session types, hooks |
 | EARS validation & formal spec analysis | Validate EARS, trace, lint in generate/refine, apply gate | **#21** Partial — [EARS_MODULE.md](./EARS_MODULE.md) |
 | Sync Files / repo-wide spec index | Spec index scan + **Repair folders** | **#22** Partial |
-| Steering files | `.cecli/STEERING.md`, `.cecli/steering/*.md` in spec-focus | Expand defaults / UI editor |
+| Steering files | `.cecli/STEERING.md`, `.cecli/steering/*.md` in spec-focus **and generate-spec** prompts | Expand defaults / UI editor |
+| Repo-grounded spec | **`spec_gen_agent.py`** — repo map, `/agent` read-only explore, auto deepen pass (#53) | Longer: multi-review workflows (EARS E7+) |
 | Vibe vs Spec session | **Spec tab → Session mode** (`Vibe` \| `Spec`); spec opens this tab on Start | Per-turn override via Spec focus toggle on Tasks |
 | Save → EARS check | `PATCH` returns `ears_*` fields; UI snackbar on regression | Optional file-watcher hook (longer-term) |
 

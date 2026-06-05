@@ -226,6 +226,15 @@ export function createVisionApiSession(
         }
       } catch (err) {
         if (isUserCancellationError(err)) return
+        if (sessionId && apiUrl) {
+          if (isTauriRuntime()) {
+            void desktopVisionPost(apiUrl, `sessions/${sessionId}/interrupt`, apiToken, {}).catch(
+              () => {}
+            )
+          } else {
+            void client?.interruptTurn(sessionId).catch(() => {})
+          }
+        }
         throw err
       } finally {
         sendAbort = null

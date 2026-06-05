@@ -16,13 +16,10 @@ interface ChatAgentBarProps {
 
 export function ChatAgentBar({
   subagents,
-  agentModeAvailable,
+  agentModeAvailable: _agentModeAvailable,
   disabled = false,
   onPickCommand,
 }: ChatAgentBarProps) {
-  const showBar = agentModeAvailable || subagents.length > 0
-  if (!showBar) return null
-
   return (
     <Stack spacing={0.75} sx={{ mb: 1 }} data-testid="chat-agent-bar">
       <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap alignItems="center">

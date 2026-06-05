@@ -31,8 +31,13 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
             )
             todo_id = created.json()["id"]
 
-            with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
-                res = client.post(
+            with patch("bright_vision_core.spec_gen_agent.spec_gen_agent_enabled", return_value=False):
+                with patch(
+                    "bright_vision_core.spec_gen_agent.spec_gen_richness_gate_enabled",
+                    return_value=False,
+                ):
+                    with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
+                        res = client.post(
                     f"/workspaces/todos/{todo_id}/generate-spec"
                     f"?workspace={temp_dir}&session_id={session_id}",
                     json={
@@ -49,8 +54,13 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
             self.assertIn("REQ-001", item.get("requirements", ""))
             self.assertIn("Overview", item.get("design", ""))
 
-            with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
-                res = client.post(
+            with patch("bright_vision_core.spec_gen_agent.spec_gen_agent_enabled", return_value=False):
+                with patch(
+                    "bright_vision_core.spec_gen_agent.spec_gen_richness_gate_enabled",
+                    return_value=False,
+                ):
+                    with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
+                        res = client.post(
                     f"/workspaces/todos/{todo_id}/generate-spec"
                     f"?workspace={temp_dir}&session_id={session_id}",
                     json={

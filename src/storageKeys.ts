@@ -15,7 +15,6 @@ export const MODEL_ROUTER_PREFS_STORAGE_KEY = `${PRODUCT_VISION}-model-router`
 export const NTFY_ALERTS_STORAGE_KEY = `${PRODUCT_VISION}-ntfy-alerts`
 export const SPEC_FOCUS_STORAGE_KEY = `${PRODUCT_VISION}-spec-focus`
 export const AGENT_GUARD_STORAGE_KEY = `${PRODUCT_VISION}-agent-guard`
-
 /** Read key; returns null when unset. */
 export function readStorageItem(currentKey: string): string | null {
   return localStorage.getItem(currentKey)

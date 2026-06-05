@@ -168,6 +168,17 @@ export class CoreHttpClient {
     return res.blob()
   }
 
+  /** Background spec job debug bundle (headless session events + job metadata). */
+  async fetchSpecJobDebugBlob(jobId: string): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/workspaces/todos/generate-spec/${jobId}/debug`, {
+      headers: this.headers(false),
+    })
+    if (!res.ok) {
+      throw new Error(`spec job debug export: ${res.status} ${await res.text()}`)
+    }
+    return res.blob()
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
       method: 'DELETE',
@@ -714,7 +725,8 @@ export class CoreHttpClient {
       enforce_ears?: boolean
       background?: boolean
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    hooks?: { onJobStarted?: (jobId: string) => void }
   ): Promise<{
     requirements: string
     design: string
@@ -740,6 +752,7 @@ export class CoreHttpClient {
     })
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
+      hooks?.onJobStarted?.(started.job_id)
       const done = await this.pollSpecGenerateJob(started.job_id, signal)
       return {
         requirements: done.requirements,
@@ -764,7 +777,8 @@ export class CoreHttpClient {
       enforce_ears?: boolean
       background?: boolean
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    hooks?: { onJobStarted?: (jobId: string) => void }
   ): Promise<{
     requirements: string
     design: string
@@ -789,6 +803,7 @@ export class CoreHttpClient {
     )
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
+      hooks?.onJobStarted?.(started.job_id)
       const done = await this.pollSpecGenerateJob(started.job_id, signal)
       return {
         requirements: done.requirements,

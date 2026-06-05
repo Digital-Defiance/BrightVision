@@ -28,6 +28,7 @@ import {
   IconButton,
   InputLabel,
   Switch,
+  Tooltip,
   List,
   ListItem,
   ListItemButton,
@@ -56,12 +57,15 @@ import { TODO_TEMPLATES } from '../../todos/types'
 import { SessionContextHint } from '../session/SessionContextHint'
 import type { SessionContextUsage } from '../../utils/contextUsage'
 import {
+  defaultPromptForSection,
   gateSpecTabSwitch,
   specWizardNudges,
   wizardPromptForSection,
   type SpecLayerSection,
   type SpecWizardTab,
 } from '../../utils/specWizard'
+import { specGenerateBlockedReason } from '../../utils/specGenerateGate'
+import type { RecentSpecJob } from '../../utils/recentSpecJob'
 
 const STATUS_COLOR: Record<TodoStatus, 'default' | 'primary' | 'success' | 'warning'> = {
   open: 'default',
@@ -108,6 +112,9 @@ interface TodoPanelProps {
   sessionReady?: boolean
   sessionBusy?: boolean
   specGenerating?: boolean
+  recentSpecJob?: RecentSpecJob | null
+  onExportSpecJobDebug?: () => void
+  onDismissRecentSpecJob?: () => void
   contextPaths?: string[]
   contextUsage?: SessionContextUsage
   onOpenSpec?: () => void
@@ -158,6 +165,9 @@ export function TodoPanel({
   sessionReady,
   sessionBusy,
   specGenerating,
+  recentSpecJob,
+  onExportSpecJobDebug,
+  onDismissRecentSpecJob,
   contextPaths = [],
   contextUsage,
   onOpenSpec,
@@ -206,6 +216,7 @@ export function TodoPanel({
   const [generateMode, setGenerateMode] = useState<'generate' | 'refine'>('generate')
   const [generateSection, setGenerateSection] = useState<SpecLayerSection | 'all'>('all')
   const [tabGateAlert, setTabGateAlert] = useState<string | null>(null)
+  const [layerGenPrompt, setLayerGenPrompt] = useState('')
 
   const selected = todos.find((t) => t.id === selectedId) ?? null
   const layerDraft = useMemo(
@@ -229,6 +240,85 @@ export function TodoPanel({
     setEarsLint(null)
     setSpecTrace(null)
   }, [selectedId])
+
+  useEffect(() => {
+    if (!selected || specTab === 'checklist') return
+    const section: SpecLayerSection =
+      specTab === 'design' ? 'design' : specTab === 'tasks' ? 'tasks_md' : 'requirements'
+    setLayerGenPrompt(defaultPromptForSection(section, selected.title))
+  }, [selected?.id, selected?.title, specTab])
+
+  const layerGenSection = (): SpecLayerSection | null => {
+    if (specTab === 'requirements') return 'requirements'
+    if (specTab === 'design') return 'design'
+    if (specTab === 'tasks') return 'tasks_md'
+    return null
+  }
+
+  const generateBlockedReason = specGenerateBlockedReason({
+    hasTask: Boolean(selected),
+    visionSessionReady: Boolean(sessionReady),
+    sessionBusy,
+    specGenerating,
+    workspaceMismatch: sessionWorkspaceMismatch,
+  })
+
+  const runLayerGenerate = (section: SpecLayerSection) => {
+    if (!selected || !onGenerateSpec || generateBlockedReason) return
+    const prompt = layerGenPrompt.trim()
+    if (!prompt) return
+    void Promise.resolve(
+      onGenerateSpec(selected.id, prompt, 'generate', {
+        section,
+        contextPaths,
+      })
+    ).catch(() => {
+      /* parent snackbar */
+    })
+  }
+
+  const renderGenerateButton = (
+    label: string,
+    onClick: () => void,
+    testId: string,
+    extraDisabled = false
+  ) => {
+    const disabled = Boolean(generateBlockedReason) || specGenerating || extraDisabled
+    const btn = (
+      <Button
+        size="small"
+        startIcon={specGenerating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+        disabled={disabled}
+        data-testid={testId}
+        onClick={onClick}
+      >
+        {label}
+      </Button>
+    )
+    return generateBlockedReason ? (
+      <Tooltip title={generateBlockedReason}>
+        <span>{btn}</span>
+      </Tooltip>
+    ) : (
+      btn
+    )
+  }
+
+  const renderLayerGenPrompt = (section: SpecLayerSection) => (
+    <TextField
+      label="Generation prompt"
+      size="small"
+      fullWidth
+      multiline
+      minRows={3}
+      maxRows={8}
+      value={layerGenPrompt}
+      onChange={(e) => setLayerGenPrompt(e.target.value)}
+      helperText={wizardPromptForSection(section, selected?.title).helper}
+      data-testid="spec-layer-gen-prompt"
+      placeholder="Describe the feature in plain language — the AI writes EARS requirements in the document below."
+    />
+  )
 
   const runEarsLint = async () => {
     if (!selected || !onLintRequirements) return
@@ -368,8 +458,8 @@ export function TodoPanel({
             <Button
               color="inherit"
               size="small"
-              disabled={specGenerating}
-              onClick={() => openGenerateWizard(nudge.actionSection!, 'generate')}
+              disabled={Boolean(generateBlockedReason) || specGenerating}
+              onClick={() => runLayerGenerate(nudge.actionSection!)}
             >
               {nudge.actionLabel}
             </Button>
@@ -595,20 +685,47 @@ export function TodoPanel({
         <Box component="code">UpdateTodoList</Box> syncs into Tasks when a chat turn finishes or when
         you open this tab.
       </Typography>
-      {specGenerating && (
+      {(specGenerating || recentSpecJob?.id) && (
         <Alert
-          severity="info"
+          severity={
+            recentSpecJob?.outcome === 'error' || recentSpecJob?.outcome === 'session_lost'
+              ? 'warning'
+              : 'info'
+          }
           sx={{ mx: 1 }}
           data-testid="spec-generating-banner"
           action={
-            onCancelSpecGenerate ? (
-              <Button color="inherit" size="small" onClick={onCancelSpecGenerate}>
-                Cancel
-              </Button>
-            ) : undefined
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              {recentSpecJob?.id && onExportSpecJobDebug ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  data-testid="spec-job-export-debug-banner"
+                  onClick={onExportSpecJobDebug}
+                >
+                  Export debug
+                </Button>
+              ) : null}
+              {!specGenerating && recentSpecJob?.id && onDismissRecentSpecJob ? (
+                <Button color="inherit" size="small" onClick={onDismissRecentSpecJob}>
+                  Dismiss
+                </Button>
+              ) : null}
+              {specGenerating && onCancelSpecGenerate ? (
+                <Button color="inherit" size="small" onClick={onCancelSpecGenerate}>
+                  Cancel
+                </Button>
+              ) : null}
+            </Stack>
           }
         >
-          Generating spec in the background — switch to Chat or other tabs while you wait.
+          {specGenerating
+            ? `Generating spec in the background${recentSpecJob?.id ? ` (job ${recentSpecJob.id.slice(0, 8)}…)` : ''} — export debug if it stalls.`
+            : recentSpecJob?.outcome === 'session_lost'
+              ? `Spec job ${recentSpecJob.id.slice(0, 8)}… stopped when the session ended — export debug to investigate.`
+              : recentSpecJob?.outcome === 'error'
+                ? `Spec job ${recentSpecJob.id.slice(0, 8)}… failed — export debug to investigate.`
+                : `Spec job ${recentSpecJob?.id.slice(0, 8)}… finished — export debug if you need the trace.`}
         </Alert>
       )}
       {specIndex && (
@@ -874,8 +991,9 @@ export function TodoPanel({
               {specTab === 'requirements' && (
                 <Stack spacing={1}>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('requirements')}
                   <TextField
-                    label="Requirements (EARS-style)"
+                    label="Requirements document"
                     size="small"
                     fullWidth
                     multiline
@@ -885,6 +1003,7 @@ export function TodoPanel({
                     onChange={(e) => setRequirements(e.target.value)}
                     onBlur={persistRequirements}
                     placeholder="WHEN … THE system SHALL …"
+                    helperText="Output: AI-generated or hand-written EARS requirements. Edit here after generation, or write directly."
                   />
                   {earsLint && (
                     <Alert
@@ -921,6 +1040,7 @@ export function TodoPanel({
               {specTab === 'design' && (
                 <Stack spacing={1}>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('design')}
                   <TextField
                     label="Design"
                     size="small"
@@ -938,6 +1058,7 @@ export function TodoPanel({
               {specTab === 'tasks' && (
                 <>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('tasks_md')}
                   {specTrace && (
                     <Alert
                       severity={specTrace.ok ? 'success' : 'warning'}
@@ -1103,37 +1224,26 @@ export function TodoPanel({
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 {onGenerateSpec && (
                   <>
-                    <Button
-                      size="small"
-                      startIcon={
-                        specGenerating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />
-                      }
-                      disabled={!sessionReady || sessionBusy || specGenerating}
-                      data-testid="todo-generate-spec-wizard"
-                      onClick={() => {
-                        const section: SpecLayerSection | 'all' =
-                          specTab === 'requirements'
-                            ? 'requirements'
-                            : specTab === 'design'
-                              ? 'design'
-                              : specTab === 'tasks'
-                                ? 'tasks_md'
-                                : 'all'
-                        openGenerateWizard(section, 'generate')
-                      }}
-                    >
-                      {specTab === 'requirements'
+                    {renderGenerateButton(
+                      specTab === 'requirements'
                         ? 'Generate requirements'
                         : specTab === 'design'
                           ? 'Generate design'
                           : specTab === 'tasks'
                             ? 'Generate tasks'
-                            : 'Generate spec'}
-                    </Button>
+                            : 'Generate spec',
+                      () => {
+                        const section = layerGenSection()
+                        if (section) runLayerGenerate(section)
+                        else openGenerateWizard('all', 'generate')
+                      },
+                      'todo-generate-spec-wizard',
+                      specTab !== 'checklist' && !layerGenPrompt.trim()
+                    )}
                     {specTab !== 'checklist' && (
                       <Button
                         size="small"
-                        disabled={!sessionReady || sessionBusy || specGenerating}
+                        disabled={Boolean(generateBlockedReason) || specGenerating}
                         onClick={() => openGenerateWizard('all', 'generate')}
                         data-testid="todo-generate-spec-all"
                       >
@@ -1142,7 +1252,7 @@ export function TodoPanel({
                     )}
                     <Button
                       size="small"
-                      disabled={!sessionReady || sessionBusy || specGenerating}
+                      disabled={Boolean(generateBlockedReason) || specGenerating}
                       onClick={() => openGenerateWizard('all', 'refine')}
                     >
                       Refine spec

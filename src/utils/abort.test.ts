@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { isBenignTurnStopError, isUserCancellationError, mergeAbortSignals } from './abort'
+import {
+  formatVisionStreamTransportError,
+  isBenignTurnStopError,
+  isUserCancellationError,
+  mergeAbortSignals,
+  turnHadStartedBeforeSendError,
+} from './abort'
 
 describe('isUserCancellationError', () => {
   it('detects AbortError', () => {
@@ -28,5 +34,27 @@ describe('mergeAbortSignals', () => {
     const merged = mergeAbortSignals(parent.signal)
     parent.abort()
     expect(merged.aborted).toBe(true)
+  })
+})
+
+describe('formatVisionStreamTransportError', () => {
+  it('explains reqwest timeout drops', () => {
+    expect(formatVisionStreamTransportError(new Error('operation timed out'))).toMatch(
+      /stream disconnected/i
+    )
+  })
+})
+
+describe('turnHadStartedBeforeSendError', () => {
+  it('is true when assistant output arrived', () => {
+    expect(
+      turnHadStartedBeforeSendError({ hadAssistantOutput: true, wallStartMs: null })
+    ).toBe(true)
+  })
+
+  it('is false for send failures before any turn activity', () => {
+    expect(
+      turnHadStartedBeforeSendError({ hadAssistantOutput: false, wallStartMs: null })
+    ).toBe(false)
   })
 })

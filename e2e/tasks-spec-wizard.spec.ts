@@ -30,32 +30,27 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
   test('blocks Design tab until requirements exist', async ({ page }) => {
     await specLayerTab(page, 'Design').click()
     await expect(page.getByTestId('spec-tab-gate-alert')).toContainText(/requirements/i)
-    await expect(page.getByLabel('Requirements (EARS-style)')).toBeVisible()
+    await expect(page.getByLabel('Requirements document')).toBeVisible()
     await expect(page.getByLabel('Design')).toHaveCount(0)
   })
 
   test('blocks Tasks tab until design exists', async ({ page }) => {
-    await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
-    await page.getByLabel('Requirements (EARS-style)').blur()
+    await page.getByLabel('Requirements document').fill(REQ_DRAFT)
+    await page.getByLabel('Requirements document').blur()
     await specLayerTab(page, 'Tasks').click()
     await expect(page.getByTestId('spec-tab-gate-alert')).toContainText(/design/i)
     await expect(page.getByLabel('Implementation tasks')).toHaveCount(0)
   })
 
-  test('requirements nudge opens generate dialog for requirements layer', async ({ page }) => {
-    await page
-      .getByTestId('spec-wizard-nudge-req-missing')
-      .getByRole('button', { name: 'Generate requirements' })
-      .click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText('Generate requirements')
-    await expect(dialog.getByRole('textbox')).toHaveValue(/Feature: Wizard task/)
+  test('requirements tab separates generation prompt from EARS document', async ({ page }) => {
+    await expect(page.getByTestId('spec-layer-gen-prompt')).toHaveValue(/Feature: Wizard task/)
+    await expect(page.getByLabel('Requirements document')).toBeVisible()
+    await expect(page.getByLabel('Generation prompt')).toBeVisible()
   })
 
   test('shows design-next nudge after requirements draft', async ({ page }) => {
-    await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
-    await page.getByLabel('Requirements (EARS-style)').blur()
+    await page.getByLabel('Requirements document').fill(REQ_DRAFT)
+    await page.getByLabel('Requirements document').blur()
     await expect(page.getByTestId('spec-wizard-nudge-design-next')).toBeVisible()
     await expect(page.getByTestId('spec-wizard-nudge-design-next')).toContainText(/Requirements ready/)
   })
@@ -63,8 +58,8 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
   test('wizard button label follows active spec tab', async ({ page }) => {
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate requirements')
 
-    await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
-    await page.getByLabel('Requirements (EARS-style)').blur()
+    await page.getByLabel('Requirements document').fill(REQ_DRAFT)
+    await page.getByLabel('Requirements document').blur()
     await specLayerTab(page, 'Design').click()
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate design')
 
@@ -107,16 +102,14 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
     )
 
     await page.getByTestId('todo-generate-spec-wizard').click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Run' }).click()
-    await expect(page.getByRole('dialog')).not.toBeVisible()
     expect(postedSection).toBe('requirements')
   })
 
   test('POST section=design from design tab shows GENERATING DESIGN', async ({ page }) => {
     let postedSection: string | undefined
     let polls = 0
-    await page.getByLabel('Requirements (EARS-style)').fill(REQ_DRAFT)
-    await page.getByLabel('Requirements (EARS-style)').blur()
+    await page.getByLabel('Requirements document').fill(REQ_DRAFT)
+    await page.getByLabel('Requirements document').blur()
     await specLayerTab(page, 'Design').click()
 
     await page.route(
@@ -159,9 +152,7 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
     )
 
     await page.getByTestId('todo-generate-spec-wizard').click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Run' }).click()
     await expect(page.getByTestId('vision-activity')).toContainText('GENERATING DESIGN')
-    await expect(page.getByRole('dialog')).not.toBeVisible()
     expect(postedSection).toBe('design')
   })
 

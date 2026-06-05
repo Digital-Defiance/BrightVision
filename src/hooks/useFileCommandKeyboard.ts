@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react'
 import type { VisionCommand } from '../ipc/commands'
+import { nextSlashCommandCompletion } from '../utils/commandComplete'
 import { parseFileCommandInput, replaceFileCommandPath } from '../utils/fileCommandComplete'
 
 export interface UseFileCommandKeyboardOptions {
@@ -23,11 +24,17 @@ export function useFileCommandKeyboard({
   onSend,
 }: UseFileCommandKeyboardOptions) {
   const pathTabIndex = useRef(0)
+  const commandTabIndex = useRef(0)
   const pathPrefix = parseFileCommandInput(inputValue)?.pathPrefix ?? ''
+  const slashToken = inputValue.trimStart().split(/\s/)[0] ?? ''
 
   useEffect(() => {
     pathTabIndex.current = 0
   }, [pathPrefix, pathSuggestions.length])
+
+  useEffect(() => {
+    commandTabIndex.current = 0
+  }, [slashToken, commands.length])
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -44,13 +51,17 @@ export function useFileCommandKeyboard({
         return
       }
       if (inputValue.trim().startsWith('/')) {
-        const token = inputValue.trim().split(/\s/)[0] ?? ''
-        const match = commands.find((c) => c.name.toLowerCase().startsWith(token.toLowerCase()))
-        if (match && match.name !== token) {
+        const completed = nextSlashCommandCompletion(
+          commands,
+          inputValue,
+          commandTabIndex.current
+        )
+        if (completed) {
           e.preventDefault()
-          onPickCommand(
-            match.name + (inputValue.includes(' ') ? inputValue.slice(token.length) : ' ')
-          )
+          commandTabIndex.current += 1
+          const lead = inputValue.match(/^\s*/)?.[0] ?? ''
+          const withSpace = completed.includes(' ') ? completed : `${completed} `
+          onPickCommand(lead + withSpace)
         }
       }
     }

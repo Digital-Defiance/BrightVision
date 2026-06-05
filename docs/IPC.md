@@ -105,6 +105,17 @@ GET /sessions/{session_id}/debug
 
 Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. UI: **Settings → Session history → Export debug bundle**. Redact secrets before sharing.
 
+### Spec job debug export
+
+Background **generate-spec / refine-spec** runs in a separate headless session (not the chat session). When generation stalls or times out, export:
+
+```http
+GET /workspaces/todos/generate-spec/{job_id}/debug
+GET /sessions/{session_id}/todos/generate-spec/{job_id}/debug
+```
+
+Includes: job metadata (workspace, todo, model, section, prompt preview, status, error), LLM message snapshot, tool invocations, and `EventIO` events captured from the ephemeral session (refreshed live while `status: running`). UI: **Spec job** chip in the header while a job runs — copy job ID or **Export debug** (Tasks/Spec tabs also link **Export debug**). Redact secrets before sharing.
+
 ### Workspace tasks (no session)
 
 Same todo file; use when the Vision API is running but you have not opened a chat session:

@@ -9,6 +9,7 @@ import {
   Typography,
 } from '@mui/material'
 import { QUICK_COMMANDS, type VisionCommand } from '../../ipc/commands'
+import { filterSlashCommandSuggestions } from '../../utils/commandComplete'
 
 interface CommandAssistProps {
   commands: VisionCommand[]
@@ -30,15 +31,7 @@ export function CommandAssist({
   onPickPath,
 }: CommandAssistProps) {
   const showPalette = inputValue.trim().startsWith('/')
-  const suggestions = showPalette
-    ? (() => {
-        const token = inputValue.trim().split(/\s/)[0] ?? ''
-        const lower = token.toLowerCase()
-        return commands
-          .filter((c) => c.name.toLowerCase().startsWith(lower))
-          .slice(0, 10)
-      })()
-    : []
+  const suggestions = showPalette ? filterSlashCommandSuggestions(commands, inputValue) : []
 
   return (
     <Stack spacing={1} sx={{ mb: 1 }}>

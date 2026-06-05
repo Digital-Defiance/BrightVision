@@ -221,6 +221,15 @@ export function patchCoreHttpClientForTauri(
       'application/json'
     )
 
+  client.fetchSpecJobDebugBlob = (jobId) =>
+    desktopVisionFetchBlob(
+      'GET',
+      base,
+      `workspaces/todos/generate-spec/${jobId}/debug`,
+      token,
+      'application/json'
+    )
+
   const pollSpecGenerateJob = async (
     jobId: string,
     signal?: AbortSignal
@@ -266,7 +275,8 @@ export function patchCoreHttpClientForTauri(
     sessionId,
     todoId,
     body,
-    signal
+    signal,
+    hooks
   ) => {
     const qs = `${workspaceQs(workspace)}&session_id=${encodeURIComponent(sessionId)}`
     const payload = {
@@ -288,6 +298,7 @@ export function patchCoreHttpClientForTauri(
     )
     if (status === 202) {
       const started = resBody as { job_id: string }
+      hooks?.onJobStarted?.(started.job_id)
       const done = await pollSpecGenerateJob(started.job_id, signal)
       return {
         requirements: done.requirements,
@@ -304,7 +315,7 @@ export function patchCoreHttpClientForTauri(
     return mapSpecJobResult(resBody as Record<string, unknown>)
   }
 
-  client.generateSessionTodoSpec = async (sessionId, todoId, body, signal) => {
+  client.generateSessionTodoSpec = async (sessionId, todoId, body, signal, hooks) => {
     const payload = {
       prompt: body.prompt,
       mode: body.mode ?? 'generate',
@@ -321,6 +332,7 @@ export function patchCoreHttpClientForTauri(
     )
     if (status === 202) {
       const started = resBody as { job_id: string }
+      hooks?.onJobStarted?.(started.job_id)
       const done = await pollSpecGenerateJob(started.job_id, signal)
       return {
         requirements: done.requirements,

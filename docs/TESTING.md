@@ -223,7 +223,9 @@ Optional env:
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
-| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. |
+| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. Also disables **#53** explore/deepen agent. |
+| `BV_SPEC_GEN_AGENT` | `1` (default): read-only `/agent` explore before write. Set `0` to restore one-shot only. |
+| `BV_SPEC_GEN_RICHNESS_GATE` | `1` (default): auto deepen pass when output is thin. Set `0` to skip. Disabled when `BV_COMPACT_SPEC_GEN=1`. |
 | `E2E_SPEC_GEN_PHASED` | `1` runs phased wizard LLM e2e (3 jobs). Also: `yarn test:e2e:llm:phased`, Test Lab **Phased spec-gen LLM**, `yarn test:everything --spec-gen-phased`. Must appear in `suite env:` on the `e2e:llm` step (export alone is not enough if the orchestrator was started without it). |
 | `BV_SKIP_SPEC_GEN_E2E` | `1` omits both `spec-generate-*-llm.spec.ts` from `yarn test:e2e:llm` (faster iteration; full bar still needs all-layers) |
 | `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Defaults **`1800`** in `yarn test:llm:core`, `yarn test:e2e:llm`, Test Lab `llm:core` / `e2e:llm`, and Vision API spawn (`e2e/helpers/realCoreServer.ts`). |

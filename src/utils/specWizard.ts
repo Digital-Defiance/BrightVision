@@ -56,7 +56,7 @@ export function wizardPromptForSection(
         title: 'Generate requirements',
         defaultPrompt: base,
         helper:
-          'Uses your prompt and any existing requirements draft. Attach files via the context bar, /add in Chat or Spec, or Add folder on Chat — included automatically.',
+          'Edit the Generation prompt above, then click Generate requirements. Uses that text plus any existing requirements draft. Attach files via the context bar, /add in Chat or Spec, or Add folder on Chat.',
       }
     case 'design':
       return {
