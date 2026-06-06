@@ -1704,7 +1704,13 @@
               <code>/Applications/</code>.
             </p>
             <pre><code>brew tap digital-defiance/tap
-brew install brightvision</code></pre>
+brew trust --cask digital-defiance/tap/brightvision
+brew install --cask brightvision</code></pre>
+            <p class="install-note">
+              Homebrew 4.6+ requires trusting the cask once before install. If
+              <code>brew install</code> fails with a trust error, run the
+              <code>brew trust</code> line above and retry.
+            </p>
             <p class="install-note">
               Tap:
               <a

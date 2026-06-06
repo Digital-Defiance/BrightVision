@@ -64,6 +64,16 @@ NONINTERACTIVE=1 yarn build:mac 0.2.0 --publish --push-tap
 
 Release asset name: `BrightVision_<version>_universal.dmg` — same as the Tauri DMG and the cask `url`. Homebrew cask token: `brightvision`; the installed app is `BrightVision.app`.
 
+**Install (user machines, Homebrew 4.6+):**
+
+```bash
+brew tap digital-defiance/tap
+brew trust --cask digital-defiance/tap/brightvision
+brew install --cask brightvision
+```
+
+Document this in README and [docs/index.html](./index.html) whenever the cask changes.
+
 Update cask only (DMG already built):
 
 ```bash
