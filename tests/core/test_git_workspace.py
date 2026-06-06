@@ -89,6 +89,17 @@ class TestGitWorkspace(unittest.TestCase):
             tracked = ws.get_tracked_files()
             self.assertIn("vendor/lib/pkg.py", tracked)
 
+    def test_get_repo_files_delegates_on_reposet(self):
+        with GitTemporaryDirectory() as root:
+            root = Path(root)
+            _init_submodule(root, "vendor/lib", {"pkg.py": "x = 1\n"})
+            io = InputOutput(pretty=False, yes=True)
+            ws = create_git_workspace(io, [str(root)], None)
+            self.assertIsInstance(ws, RepoSet)
+            files = ws.get_repo_files()
+            self.assertIn("vendor/lib/pkg.py", files)
+            self.assertTrue(ws.get_cache_key())
+
     def test_get_tracked_files_excludes_submodule_gitlink(self):
         """Superproject gitlink paths are directories, not repo-map files."""
         with GitTemporaryDirectory() as root:

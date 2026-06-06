@@ -319,13 +319,30 @@ class RepoSet:
         return repo.path_in_repo(rel)
 
     def get_tracked_files(self):
+        return self._aggregate_repo_file_lists("get_tracked_files")
+
+    def get_repo_files(self) -> list[str]:
+        """Aggregate cecli file lists across superproject and submodules."""
+        return self._aggregate_repo_file_lists("get_repo_files")
+
+    def get_cache_key(self) -> str:
+        """Combined cache key for all nested repositories."""
+        import hashlib
+
+        parts = sorted(repo.get_cache_key() for repo in self.repos if repo.get_cache_key())
+        if not parts:
+            return ""
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+    def _aggregate_repo_file_lists(self, method_name: str) -> list[str]:
         files: set[str] = set()
         primary_root = Path(self.primary.root)
         for repo in self.repos:
+            getter = getattr(repo, method_name)
             prefix = Path(os.path.relpath(repo.root, primary_root))
             if str(prefix) == ".":
                 prefix = Path("")
-            for fname in repo.get_tracked_files():
+            for fname in getter():
                 posix_fname = fname.replace("\\", "/")
                 if not prefix:
                     workspace_rel = posix_fname
