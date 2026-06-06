@@ -14,7 +14,8 @@ import {
   Typography,
 } from '@mui/material'
 import { useMemo, useRef } from 'react'
-import { mergeChatTimeline } from '../../utils/chatStream'
+import { mergeChatTimelineGrouped } from '../../utils/toolOutputGroups'
+import { ToolInvocationCard } from './ToolInvocationCard'
 import { useChatFind } from '../../hooks/useChatFind'
 import { DISPLAY_CORE } from '../../brand'
 import type { VisionCommand } from '../../ipc/commands'
@@ -235,7 +236,7 @@ export function ChatPanel({
   )
 
   const timeline = useMemo(
-    () => mergeChatTimeline(messages, meaningfulToolEvents),
+    () => mergeChatTimelineGrouped(messages, meaningfulToolEvents),
     [messages, meaningfulToolEvents]
   )
 
@@ -432,6 +433,17 @@ export function ChatPanel({
                   )}
                 </Paper>
               </Box>
+            ) : entry.kind === 'tool_group' ? (
+              <Box key={`tool-group-${entry.item.id}`} sx={{ width: '100%' }}>
+                <ToolInvocationCard
+                  group={entry.item}
+                  onDismiss={() => {
+                    for (const eid of entry.item.eventIds) {
+                      onDismissToolEvent(eid)
+                    }
+                  }}
+                />
+              </Box>
             ) : (
               <Box key={`tool-${entry.item.id}`} sx={{ width: '100%' }}>
                 {entry.item.type === 'tool_warning' ? (
@@ -455,6 +467,17 @@ export function ChatPanel({
                       </Typography>
                     </Alert>
                   )
+                ) : entry.item.name === 'error' ? (
+                  <Alert
+                    severity="error"
+                    sx={{ mb: 1 }}
+                    data-testid="chat-tool-error"
+                    onClose={() => onDismissToolEvent(entry.item.id)}
+                  >
+                    <Typography variant="body2" component="span">
+                      {entry.item.output}
+                    </Typography>
+                  </Alert>
                 ) : (
                   <Paper
                     data-testid="chat-tool-output"

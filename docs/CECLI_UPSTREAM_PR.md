@@ -209,6 +209,32 @@ Drop duplicate cherry-picks once `dev-integration` contains the upstream merge c
 
 | Item | Value |
 |------|--------|
-| PR branch | `pr/read-range-empty-hint` @ `227b3437a` from `origin/main` |
-| Upstream PR | [cecli-dev/cecli#560](https://github.com/cecli-dev/cecli/pull/560) via GraphQL |
-| Cherry-pick on fork | `a4f1f2dcc` on `dev-integration` |
+| PR branch | `pr/read-range-empty-hint` @ `ef26a6464` from `v0.100.5` (#557 stack) |
+| Upstream PR | [cecli-dev/cecli#560](https://github.com/cecli-dev/cecli/pull/560) — **base `v0.100.5`**, not `main` |
+| Cherry-pick on fork | Same commit on `dev-integration` (see rebuild below) |
+
+## Rebuild `dev-integration` (2026-06)
+
+Old fork `dev-integration` (10 commits on `main` / v0.100.4) duplicated work landing in upstream **#557** (validation pipeline). Rebuilt cleanly on **`v0.100.5`** (#557 stack) until that merges to `main`:
+
+```bash
+cd cecli
+git fetch upstream origin
+git checkout -B dev-integration ef26a6464   # v0.100.5 + ReadRange (#560)
+git cherry-pick 3b194f273                   # add.py staging paths (fork-only)
+git cherry-pick 50e9b2798                   # repomap _resolve_abs_fname only — drop grep hunk if broken/superseded
+git push -f origin dev-integration
+```
+
+**Dropped** (superseded by #557 / already on `v0.100.5`): LIST_PARAMS per-tool fixes, grep JSON repair, gitignore pathspec, monorepo scaffolding.
+
+**Stack after rebuild** (`f2ad1c75c`):
+
+| Commit | What |
+|--------|------|
+| `7f3564daf` | `upstream/v0.100.5` — validation pipeline (#557) |
+| `ef26a6464` | ReadRange empty-file hint (#560) |
+| `fef6ced07` | add.py block host attachment staging |
+| `f2ad1c75c` | repomap absolute path resolve |
+
+When **#557** merges to `upstream/main`, reset `dev-integration` from `upstream/main` and cherry-pick only commits still unique (#560 if not merged, add.py, repomap).
