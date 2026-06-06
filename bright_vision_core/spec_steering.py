@@ -15,6 +15,14 @@ You are in **spec-focus**: work on the active task's requirements, design, and i
 - Do not mark implementation done until requirements pass EARS lint (WHEN/SHALL, no duplicate REQ ids).
 """
 
+IMPLEMENTATION_TOOL_HINTS = """\
+## Implementation turn (tools)
+
+- **Empty files:** `ReadRange` once with `@000`/`000@`, then **`EditText`** (replace `@000`–`@000`) or **`ContextManager`** create — do not re-read the same empty file.
+- **Scaffolding:** prefer `ContextManager` + `EditText` over repeated `ls` / `Grep` on known paths.
+- After a successful read, edit — do not loop on exploration.
+"""
+
 
 def load_steering_markdown(workspace: str | Path) -> str:
     """Load ``.cecli/STEERING.md`` and ``.cecli/steering/*.md`` if present."""

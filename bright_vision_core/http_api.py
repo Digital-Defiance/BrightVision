@@ -403,6 +403,18 @@ class GenerateTodoSpecRequest(BaseModel):
         True,
         description="Use ephemeral session in a background thread (chat session stays free)",
     )
+    wall_timeout_s: float | None = Field(
+        None,
+        ge=60,
+        le=7200,
+        description="Job wall clock (seconds); default from LLM_SPEC_GEN_TIMEOUT_S",
+    )
+    turn_timeout_s: float | None = Field(
+        None,
+        ge=60,
+        le=7200,
+        description="Per LLM turn inside generate-spec (seconds); default from LLM_SPEC_GEN_TURN_TIMEOUT_S",
+    )
 
 
 class GenerateTodoSpecJobStarted(BaseModel):
@@ -1020,13 +1032,20 @@ def _start_spec_job(
         enforce_ears=body.enforce_ears,
         context_paths=body.context_paths,
         model=model,
+        wall_timeout_s=body.wall_timeout_s,
+        turn_timeout_s=body.turn_timeout_s,
     )
     return GenerateTodoSpecJobStarted(job_id=job.job_id, status=job.status, todo_id=todo_id)
 
 
 def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    from bright_vision_core.todo_spec_jobs import job_wall_timeout_s
+
     try:
-        job = spec_job_store.wait(job_id, timeout_s=spec_gen_timeout_s())
+        job = spec_job_store.wait(job_id, timeout_s=job_wall_timeout_s(job) + 30.0)
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     except TimeoutError as err:

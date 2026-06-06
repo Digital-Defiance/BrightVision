@@ -47,7 +47,7 @@ React (src/)
 
 Deeper detail: `docs/ARCHITECTURE.md`, `docs/IPC.md`, `docs/DEVELOPMENT.md`, `docs/LOCAL_LLM.md`, `docs/TESTING_POLICY.md`.
 
-**Engine strategy (May 2026):** **Cecli** submodule + **`bright_vision_core`** Vision HTTP in this repo. Do not edit `cecli/website/`. Layout: `docs/UPSTREAM_CECLI.md`. Pin policy: `docs/CECLI_PIN.md`. Tier rules: `docs/CORE_FILE_MERGE.md`.
+**Engine strategy (May 2026):** **Cecli** submodule + **`bright_vision_core`** Vision HTTP in this repo. Do not edit `cecli/website/`. Layout: `docs/UPSTREAM_CECLI.md`. Pin policy: `docs/CECLI_PIN.md`. **Upstream cecli PRs:** `docs/CECLI_UPSTREAM_PR.md` + `scripts/cecli-open-upstream-pr.sh`. Tier rules: `docs/CORE_FILE_MERGE.md`.
 
 ## Technical constraints
 

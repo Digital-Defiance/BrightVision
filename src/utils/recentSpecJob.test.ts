@@ -13,4 +13,16 @@ describe('specJobChipLabel', () => {
       })
     ).toContain('session ended')
   })
+
+  it('labels timeout jobs', () => {
+    expect(
+      specJobChipLabel({
+        id: 'deadbeef-1234',
+        outcome: 'timeout',
+        prompt: null,
+        mode: 'generate',
+        section: 'design',
+      })
+    ).toContain('timed out')
+  })
 })

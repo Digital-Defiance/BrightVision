@@ -660,8 +660,11 @@ export class CoreHttpClient {
     }
   }
 
-  /** Poll interval + max wait aligned with `LLM_SPEC_GEN_TIMEOUT_S` (Vite: `VITE_LLM_SPEC_GEN_TIMEOUT_S`). */
-  private specGenPollMaxAttempts(): number {
+  /** Poll max wait = job wall clock + small buffer (seconds). */
+  private specGenPollMaxAttempts(wallTimeoutS?: number): number {
+    if (wallTimeoutS != null && Number.isFinite(wallTimeoutS) && wallTimeoutS > 0) {
+      return Math.max(90, Math.ceil(wallTimeoutS * 1.08))
+    }
     const meta =
       typeof import.meta !== 'undefined'
         ? (import.meta as ImportMeta & { env?: { VITE_LLM_SPEC_GEN_TIMEOUT_S?: string } }).env
@@ -673,7 +676,11 @@ export class CoreHttpClient {
     return Math.max(90, Math.ceil(cap * 1.05))
   }
 
-  private async pollSpecGenerateJob(jobId: string, signal?: AbortSignal): Promise<{
+  private async pollSpecGenerateJob(
+    jobId: string,
+    signal?: AbortSignal,
+    wallTimeoutS?: number
+  ): Promise<{
     status: string
     error?: string | null
     requirements: string
@@ -684,7 +691,7 @@ export class CoreHttpClient {
     ears_blocked?: boolean
   }> {
     const url = `${this.baseUrl}/workspaces/todos/generate-spec/${jobId}`
-    const maxAttempts = this.specGenPollMaxAttempts()
+    const maxAttempts = this.specGenPollMaxAttempts(wallTimeoutS)
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       const res = await fetch(url, { headers: this.headers(false), signal })
@@ -708,7 +715,7 @@ export class CoreHttpClient {
       await new Promise((r) => setTimeout(r, 1000))
     }
     throw new Error(
-      `Spec generation timed out after ${maxAttempts}s (set VITE_LLM_SPEC_GEN_TIMEOUT_S / LLM_SPEC_GEN_TIMEOUT_S)`
+      `Spec generation timed out after ${maxAttempts}s — increase job timeout in Settings → Spec generation`
     )
   }
 
@@ -724,6 +731,8 @@ export class CoreHttpClient {
       apply?: boolean
       enforce_ears?: boolean
       background?: boolean
+      wall_timeout_s?: number
+      turn_timeout_s?: number
     },
     signal?: AbortSignal,
     hooks?: { onJobStarted?: (jobId: string) => void }
@@ -747,13 +756,15 @@ export class CoreHttpClient {
         apply: body.apply ?? true,
         enforce_ears: body.enforce_ears ?? true,
         background: body.background ?? true,
+        wall_timeout_s: body.wall_timeout_s,
+        turn_timeout_s: body.turn_timeout_s,
       }),
       signal,
     })
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
       hooks?.onJobStarted?.(started.job_id)
-      const done = await this.pollSpecGenerateJob(started.job_id, signal)
+      const done = await this.pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,
@@ -776,6 +787,8 @@ export class CoreHttpClient {
       apply?: boolean
       enforce_ears?: boolean
       background?: boolean
+      wall_timeout_s?: number
+      turn_timeout_s?: number
     },
     signal?: AbortSignal,
     hooks?: { onJobStarted?: (jobId: string) => void }
@@ -797,6 +810,8 @@ export class CoreHttpClient {
           mode: body.mode ?? 'generate',
           apply: body.apply ?? true,
           background: body.background ?? true,
+          wall_timeout_s: body.wall_timeout_s,
+          turn_timeout_s: body.turn_timeout_s,
         }),
         signal,
       }
@@ -804,7 +819,7 @@ export class CoreHttpClient {
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
       hooks?.onJobStarted?.(started.job_id)
-      const done = await this.pollSpecGenerateJob(started.job_id, signal)
+      const done = await this.pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,

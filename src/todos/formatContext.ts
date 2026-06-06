@@ -118,22 +118,21 @@ export function buildStartWorkMessage(todo: TodoItem, allTodos: TodoItem[]): str
     const dep = allTodos.find((t) => t.id === depId || t.id.startsWith(depId))
     return dep && dep.status !== 'done'
   })
+  let body: string
   if (todoHasSpecLayers(item)) {
     if (blocked) {
-      return (
+      body =
         'Implement the active task per the injected requirements, design, and implementation tasks. ' +
         'Resolve or acknowledge blocking dependencies first.'
-      )
+    } else {
+      body =
+        'Implement the active task per the injected requirements, design, and implementation tasks. ' +
+        'Work through implementation tasks in order; update the checklist as you complete acceptance items.'
     }
-    return (
-      'Implement the active task per the injected requirements, design, and implementation tasks. ' +
-      'Work through implementation tasks in order; update the checklist as you complete acceptance items.'
-    )
+    return `/agent ${body}`
   }
   if (blocked) {
-    return (
-      'Work the active task checklist in order. Resolve or acknowledge blocking dependencies first.'
-    )
+    return 'Work the active task checklist in order. Resolve or acknowledge blocking dependencies first.'
   }
   return 'Work the active task checklist in order. Mark items done as you complete them.'
 }
@@ -144,7 +143,7 @@ export function buildImplementStepMessage(step: ImplementationStep, todo: TodoIt
       ? ' Acknowledge any blocking dependencies noted in context before coding.'
       : ''
   return (
-    `Implement only implementation task ${step.number}: ${step.text}. ` +
+    `/agent Implement only implementation task ${step.number}: ${step.text}. ` +
     `Do not implement other numbered tasks in this turn unless required as a direct dependency.${blocked}`
   )
 }

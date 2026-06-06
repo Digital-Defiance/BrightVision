@@ -15,7 +15,7 @@ from bright_vision_core.session_debug import (
     _tool_invocations,
     _truncate_text,
 )
-from bright_vision_core.todo_spec_jobs import SpecGenerationJob, spec_gen_timeout_s
+from bright_vision_core.todo_spec_jobs import SpecGenerationJob, job_wall_timeout_s, spec_gen_timeout_s
 
 _MAX_RAW_PREVIEW = 12_000
 
@@ -39,9 +39,11 @@ def build_spec_job_debug_export(job: SpecGenerationJob) -> dict[str, Any]:
             "prompt_preview": _truncate_text(job.prompt, 500),
             "error": job.error,
             "ears_blocked": bool(job.ears_blocked),
+            "ears_issues": list(getattr(job, "ears_issues", None) or []),
             "created_at": job.created_at,
             "updated_at": job.updated_at,
-            "wall_timeout_s": spec_gen_timeout_s(),
+            "wall_timeout_s": job_wall_timeout_s(job),
+            "turn_timeout_s": getattr(job, "turn_timeout_s", None),
         },
         "environment": {
             "python": sys.version.split()[0],

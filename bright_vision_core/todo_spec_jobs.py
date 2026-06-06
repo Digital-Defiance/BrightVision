@@ -60,6 +60,18 @@ def spec_gen_section_wait_s() -> float:
     return min(spec_gen_timeout_s(), spec_gen_turn_timeout_s() + 120.0)
 
 
+def job_wall_timeout_s(job: SpecGenerationJob) -> float:
+    if job.wall_timeout_s is not None and job.wall_timeout_s > 0:
+        return float(job.wall_timeout_s)
+    return spec_gen_timeout_s()
+
+
+def job_turn_timeout_s(job: SpecGenerationJob) -> float:
+    if job.turn_timeout_s is not None and job.turn_timeout_s > 0:
+        return float(job.turn_timeout_s)
+    return spec_gen_turn_timeout_s()
+
+
 @dataclass
 class SpecGenerationJob:
     job_id: str
@@ -78,6 +90,8 @@ class SpecGenerationJob:
     item: Any = None
     ears_blocked: bool = False
     ears_issues: list[dict] = field(default_factory=list)
+    wall_timeout_s: float | None = None
+    turn_timeout_s: float | None = None
     recent_io_events: list[dict] = field(default_factory=list)
     messages: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
@@ -121,7 +135,7 @@ class SpecJobStore:
         """Mark jobs stuck in running past the wall clock (poll may beat worker timeout)."""
         if job.status != "running":
             return
-        wall_s = spec_gen_timeout_s()
+        wall_s = job_wall_timeout_s(job)
         if time.time() - job.updated_at <= wall_s + 30.0:
             return
         job.status = "error"
@@ -155,8 +169,22 @@ class SpecJobStore:
         enforce_ears: bool = True,
         context_paths: list[str] | None = None,
         model: str | None = None,
+        wall_timeout_s: float | None = None,
+        turn_timeout_s: float | None = None,
     ) -> SpecGenerationJob:
         job_id = uuid.uuid4().hex
+        resolved_wall = (
+            max(60.0, float(wall_timeout_s))
+            if wall_timeout_s is not None and wall_timeout_s > 0
+            else None
+        )
+        resolved_turn = (
+            max(60.0, float(turn_timeout_s))
+            if turn_timeout_s is not None and turn_timeout_s > 0
+            else None
+        )
+        if resolved_wall is not None and resolved_turn is not None:
+            resolved_turn = min(resolved_turn, resolved_wall - 30.0)
         job = SpecGenerationJob(
             job_id=job_id,
             workspace=workspace,
@@ -165,6 +193,8 @@ class SpecJobStore:
             mode=mode,
             section=section,
             model=model,
+            wall_timeout_s=resolved_wall,
+            turn_timeout_s=resolved_turn,
         )
         with self._lock:
             self._prune()
@@ -192,6 +222,7 @@ class SpecJobStore:
                     apply=apply,
                     enforce_ears=enforce_ears,
                     context_paths=context_paths,
+                    turn_timeout_s=job_turn_timeout_s(job),
                 )
             finally:
                 self._snapshot_job_session(job_id, session)
@@ -200,7 +231,7 @@ class SpecJobStore:
 
         def worker() -> None:
             self._set_status(job_id, "running")
-            wall_s = spec_gen_timeout_s()
+            wall_s = job_wall_timeout_s(job)
             pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             fut = pool.submit(_run)
             try:
@@ -250,7 +281,11 @@ class SpecJobStore:
             return j
 
     def wait(self, job_id: str, *, timeout_s: float | None = None) -> SpecGenerationJob:
-        timeout_s = spec_gen_timeout_s() if timeout_s is None else timeout_s
+        job = self.get(job_id)
+        if not job:
+            raise KeyError(f"Unknown job: {job_id}")
+        if timeout_s is None:
+            timeout_s = job_wall_timeout_s(job) + 30.0
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             job = self.get(job_id)

@@ -252,6 +252,100 @@ pip install -e .
 
 After restart, `/add cecli/cecli/main.py` should succeed (see [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md)).
 
+## Generated implementation tasks disappear after save
+
+**Symptom:** Tasks tab shows “Implementation tasks generated and saved”, then the **Implementation tasks** field is empty (or reverts to a short agent checklist).
+
+**Cause:** After generate-spec, the UI reloads Tasks and **imports the chat session’s Cecli `todo.txt`**. That sync updates the runtime **checklist** but used to **overwrite** spec-generated `tasks_md` (numbered steps, REQ refs, `depends:`).
+
+**Fix (engine):** Agent import now preserves spec-style `tasks_md` when pulling agent plans. Reinstall and restart the Vision API:
+
+```bash
+source activate.sh
+pip install -e .
+# Terminal → Stop / Start (or kill :8741)
+```
+
+**Also:** Blurring the tasks field while generation runs could save an empty draft over the result — the Tasks editor now skips auto-save during generation.
+
+## Agent turn dies after “token limit” or “Repetition Detected” (local LLM)
+
+**Symptoms:** Turn stops with `FinishReasonLength exception` or **token limit** even though usage shows ~6k input / **~0 output**. Auto-continue may run, then **Repetition Detected** on `EditText`, and the turn ends with no further progress.
+
+**Also:** Turn runs 10+ minutes with ls/ReadRange/GitStatus, then **Empty response from the local model** and **Repetition Detected** on read tools — chat shows only opening prose and **no auto-recovery**.
+
+**Cause:** Ollama/Qwen often returns `finish_reason=length` with an empty body — not real context exhaustion. Auto-continue then drives a second huge implement pass; the model batches many `EditText` calls (`@000` on a dozen files), triggering cecli repetition guard. Separately, exploration-heavy turns can end when Ollama stalls after read tools with no EditText — previously no recovery ran.
+
+**Current behavior (2026-06):**
+
+- Spurious Ollama token limits (~0 output, input ≪ window) **no longer auto-continue**; snackbar explains the stall.
+- **Stalled exploration** (agent tools ran + empty Ollama or repetition on ls/ReadRange with no edits) **auto-continues once** with a directive to EditText one file — no more silent 14-minute dead ends.
+- Token-limit continue prompts scope to **one numbered task** and **one file per EditText**.
+- Prefer **Implement** on step **1.1** only — not open-ended **Start work** for greenfield scaffolding.
+
+**What to do:**
+
+1. **Clear chat**, then **Implement** a single step (e.g. “1.1 Scaffold lib/”).
+2. After **ContextManager** creates empty stubs, **EditText one file at a time** — do not batch pubspec + many lib files in one call.
+3. If Ollama keeps returning empty: `ollama ps`, restart Ollama, or try a smaller quant.
+4. **Repetition Detected** on EditText: send **continue** naming one file — or clear chat and retry one step.
+
+## Agent turn stuck in ReadRange loops (spec-focus implement)
+
+**Symptoms:** Chat shows many `ReadRange` calls on empty `pubspec.yaml`, then **Repetition Detected** / turn stops with no `lib/` or edits.
+
+**Cause:** Spec-focus re-injected the full requirements + design (~12k chars) every turn; the local model explored empty files instead of using `EditText`. Cecli agent repetition guard then blocks further reads.
+
+**Current behavior (2026-06):**
+
+- Full spec inject **once** per task activation (`inject_todo_spec` on first send); follow-up turns get preamble only (spec stays in chat history).
+- **Start work** / **Implement step** use a **lean inject** (REQ headings + truncated design + full tasks) and **`/agent`** routing.
+- Preamble includes **Implementation turn (tools)** hints: empty file → `EditText` `@000`, not repeated `ReadRange`.
+- ReadRange on empty files tells the model to edit next (cecli).
+
+**What to do:**
+
+1. Use **Implement** on a single numbered step (not open-ended “implement everything”).
+2. **Clear chat** if the thread is already stuck in a read loop, then **Start work** again.
+3. Turn off **Spec focus** for pure scaffolding if you do not need EARS steering every turn.
+4. Remove stale root **`STEERING.md`** if it duplicates `.cecli/specs/` (model may fixate on wrong doc).
+
+See [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md) for cecli fixes; restart Vision API after submodule bump.
+
+## Spec generate timed out (design / requirements / tasks)
+
+**Symptom:** Job runs 20+ minutes, chip says **timed out**, snackbar mentions the minute limit. Debug export shows `status: error`, `section: design` (or requirements/tasks), message like `Spec generation job timed out after 1200s`. The model may have been streaming good content but the job was killed before save.
+
+**Cause:** Background generate-spec has two limits — **whole job wall clock** and **per LLM turn**. Large local models (e.g. 27B Qwen on rich greenfield specs) often exceed the default **20 min job / 12 min per turn**.
+
+**Fix in the app (no Vision API restart):**
+
+1. **Tasks** banner → **Extend & retry** — switches to **Extended (40 min / 20 min per turn)** and reruns the last generate with the same task and prompt.
+2. Or **Settings → Spec generation timeouts** → **Extended (40 min)** before the next run.
+
+**Server defaults** (optional env overrides before `bright-vision-core-serve`; restart required):
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `LLM_SPEC_GEN_TIMEOUT_S` | `1200` | Whole background job wall clock (seconds) |
+| `LLM_SPEC_GEN_TURN_TIMEOUT_S` | `720` | Per LLM turn inside generate-spec (seconds) |
+
+Per-run values from Settings override env defaults for that job only. Debug export includes `wall_timeout_s` and `turn_timeout_s` for the failed job.
+
+## Spec generate shows “EARS blocked” (draft not saved)
+
+**Symptom:** Job completes (~10+ min), chip says **EARS blocked**, snackbar: “Spec draft returned but not saved”.
+
+**Not the same as:** the Tasks list **blocked** chip (unfinished dependency tasks) or the Generate button tooltip (session not started / no task selected).
+
+**Debug export:** `job.ears_blocked: true` with a large `requirements_chars` count means the LLM output was fine but **EARS lint** rejected save. Future exports include `job.ears_issues` with the exact errors.
+
+**Common false positive (fixed):** Kiro-style `**User Story:**` lines that contain everyday words like *while* or *if* were parsed as EARS clauses without **SHALL**. Reinstall core after pull.
+
+**Workaround until updated:** **Validate EARS** on the Requirements tab to see errors, edit manually, or **Refine** with “fix EARS errors listed above”.
+
+**Generate without active task:** Select any task in the list — it does **not** need to be the active (★) task. Generation runs against the **selected** task’s id.
+
 ## `activate.sh`: `command not found: pip` / python not under `.venv`
 
 Usually a **stale `.venv`** from an old checkout path (e.g. `/Users/.../BrightVision` vs `/Volumes/.../BrightVision`) or macOS `/usr/bin/python3` (3.9) used to create the venv.

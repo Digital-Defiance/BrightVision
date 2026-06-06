@@ -78,7 +78,7 @@ python -m pytest \
   tests/core/test_http_session_persistence.py -q
 ```
 
-Or `yarn test:bright-core` (BrightVision `tests/core/*` modules; run cecli tests before upstream PR).
+Or `yarn test:bright-core` (BrightVision `tests/core/*` modules; run cecli tests before upstream PR — see [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md)).
 
 ## Rust (Tauri git_ops)
 

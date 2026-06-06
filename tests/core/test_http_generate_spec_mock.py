@@ -150,6 +150,43 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         self.assertEqual(finished.status, "error", finished.error)
         self.assertIn("timed out", (finished.error or "").lower())
 
+    def test_background_spec_job_per_request_wall_timeout(self):
+        from bright_vision_core.todo_spec_jobs import job_wall_timeout_s, spec_job_store
+
+        mock_session = MagicMock()
+        mock_session.generate_todo_layers.return_value = {
+            "requirements": "",
+            "design": "",
+            "tasks_md": "",
+            "raw": "",
+            "item": None,
+            "ears_blocked": False,
+            "ears_issues": [],
+        }
+
+        with patch.object(Session, "create", return_value=mock_session):
+            job = spec_job_store.start(
+                "/tmp/workspace",
+                "todo-id",
+                "ping",
+                mode="generate",
+                apply=True,
+                enforce_ears=True,
+                wall_timeout_s=2400,
+                turn_timeout_s=1200,
+            )
+            self.assertEqual(job_wall_timeout_s(job), 2400.0)
+            finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+
+        self.assertEqual(finished.status, "completed", finished.error)
+        self.assertEqual(finished.wall_timeout_s, 2400.0)
+        self.assertEqual(finished.turn_timeout_s, 1200.0)
+        mock_session.generate_todo_layers.assert_called_once()
+        self.assertEqual(
+            mock_session.generate_todo_layers.call_args.kwargs.get("turn_timeout_s"),
+            1200.0,
+        )
+
     def test_background_spec_job_late_finish_does_not_overwrite_error(self):
         from bright_vision_core.todo_spec_jobs import spec_job_store
 

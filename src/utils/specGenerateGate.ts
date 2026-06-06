@@ -15,7 +15,7 @@ export function specGenerateBlockedReason(opts: {
     return 'Start a coding session — Chat tab → Start (launches LLM, Vision API, and session).'
   }
   if (!opts.hasTask) {
-    return 'Create a task on the Tasks tab and set it active (or select one for Generate spec).'
+    return 'Create or select a task on the Tasks tab (it does not need to be the active task).'
   }
   return null
 }

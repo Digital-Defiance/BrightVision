@@ -512,6 +512,14 @@ class Session:
                 "Continuing /agent after token limit…",
             )
 
+        def _maybe_continue_agent_after_stall() -> Iterator[dict[str, Any]]:
+            from bright_vision_core.agent_turn import agent_continue_after_stall_message
+
+            yield from _run_agent_continuation(
+                agent_continue_after_stall_message(),
+                "Continuing /agent after stalled exploration (empty model / repetition)…",
+            )
+
         def _maybe_warn_agent_shell_stop() -> Iterator[dict[str, Any]]:
             if not agent_cmd or agent_continuation:
                 return
@@ -599,12 +607,17 @@ class Session:
             )
             yield from _maybe_recover_prose_shell()
             from bright_vision_core.agent_turn import (
+                agent_stall_recovery_warning,
                 agent_token_limit_recovery_warning,
+                agent_turn_stalled,
                 empty_local_llm_response_in_events,
                 empty_ollama_auto_continue_blocked_warning,
                 is_agent_shell_only_stop,
+                should_auto_continue_after_agent_stall,
                 should_auto_continue_after_shell,
                 should_auto_continue_after_token_limit,
+                spurious_ollama_token_limit_in_events,
+                spurious_ollama_token_limit_warning,
                 token_limit_exhausted,
             )
 
@@ -621,6 +634,14 @@ class Session:
                 if should_auto_continue_after_token_limit(events=ring, assistant_text=blob):
                     yield from _maybe_continue_agent_after_token_limit()
                     return
+                if should_auto_continue_after_agent_stall(
+                    had_tool_call=turn_had_tool_call,
+                    events=ring,
+                    assistant_text=blob,
+                    coder=self.coder,
+                ):
+                    yield from _maybe_continue_agent_after_stall()
+                    return
                 if (
                     is_agent_shell_only_stop(
                         had_tool_activity=turn_had_tool_activity,
@@ -630,13 +651,28 @@ class Session:
                 ):
                     yield self.io.tool_warning(empty_ollama_auto_continue_blocked_warning())
                 elif token_limit_exhausted(events=ring, assistant_text=blob):
-                    yield self.io.tool_warning(
-                        agent_token_limit_recovery_warning(auto_continue_attempted=False)
-                    )
+                    if spurious_ollama_token_limit_in_events(ring):
+                        yield self.io.tool_warning(spurious_ollama_token_limit_warning())
+                    else:
+                        yield self.io.tool_warning(
+                            agent_token_limit_recovery_warning(auto_continue_attempted=False)
+                        )
+                elif agent_turn_stalled(
+                    had_tool_call=turn_had_tool_call,
+                    events=ring,
+                    coder=self.coder,
+                ):
+                    yield self.io.tool_warning(agent_stall_recovery_warning(auto_continue_attempted=False))
             elif token_limit_exhausted(events=ring, assistant_text=blob):
                 yield self.io.tool_warning(
                     agent_token_limit_recovery_warning(auto_continue_attempted=True)
                 )
+            elif agent_turn_stalled(
+                had_tool_call=turn_had_tool_call,
+                events=ring,
+                coder=self.coder,
+            ):
+                yield self.io.tool_warning(agent_stall_recovery_warning(auto_continue_attempted=True))
             yield from _maybe_warn_incomplete_agent()
             yield from _maybe_warn_agent_shell_stop()
             self.sync_agent_todos_with_workspace()
@@ -1219,6 +1255,7 @@ class Session:
         apply: bool = True,
         enforce_ears: bool = True,
         context_paths: list[str] | None = None,
+        turn_timeout_s: float | None = None,
     ) -> dict[str, Any]:
         from bright_vision_core.todo_spec_generate import (
             SpecSection,
@@ -1239,7 +1276,11 @@ class Session:
         from bright_vision_core.spec_gen_agent import run_spec_layer_llm
         from bright_vision_core.todo_spec_jobs import spec_gen_turn_timeout_s
 
-        turn_timeout = spec_gen_turn_timeout_s()
+        turn_timeout = (
+            float(turn_timeout_s)
+            if turn_timeout_s is not None and turn_timeout_s > 0
+            else spec_gen_turn_timeout_s()
+        )
         raw = run_spec_layer_llm(
             self,
             workspace=str(self.coder.root),
@@ -1264,6 +1305,16 @@ class Session:
             if compact_spec_gen_enabled():
                 req_text = repair_requirements_missing_shall(req_text)
                 merged = {**merged, "requirements": req_text}
+        target_layer = {
+            "requirements": "requirements",
+            "design": "design",
+            "tasks_md": "tasks_md",
+        }.get(sec)
+        if target_layer and not (merged.get(target_layer) or "").strip():
+            raise ValueError(
+                f"Spec generation produced no {target_layer.replace('_', ' ')} content — "
+                "retry with a narrower prompt or export the job debug bundle."
+            )
         if apply and any(merged.values()):
             ok, ears_issues = requirements_pass_ears(req_text)
             ears_gate = sec in ("all", "requirements")

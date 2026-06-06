@@ -38,7 +38,10 @@ function mapSpecJobResult(data: {
   }
 }
 
-function specGenPollMaxAttempts(): number {
+function specGenPollMaxAttempts(wallTimeoutS?: number): number {
+  if (wallTimeoutS != null && Number.isFinite(wallTimeoutS) && wallTimeoutS > 0) {
+    return Math.max(90, Math.ceil(wallTimeoutS * 1.08))
+  }
   const meta =
     typeof import.meta !== 'undefined'
       ? (import.meta as ImportMeta & { env?: { VITE_LLM_SPEC_GEN_TIMEOUT_S?: string } }).env
@@ -232,7 +235,8 @@ export function patchCoreHttpClientForTauri(
 
   const pollSpecGenerateJob = async (
     jobId: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    wallTimeoutS?: number
   ): Promise<{
     status: string
     error?: string | null
@@ -244,7 +248,7 @@ export function patchCoreHttpClientForTauri(
     ears_blocked?: boolean
   }> => {
     const path = `workspaces/todos/generate-spec/${jobId}`
-    const maxAttempts = specGenPollMaxAttempts()
+    const maxAttempts = specGenPollMaxAttempts(wallTimeoutS)
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       const data = await req<{
@@ -266,7 +270,7 @@ export function patchCoreHttpClientForTauri(
       await new Promise((r) => setTimeout(r, 1000))
     }
     throw new Error(
-      `Spec generation timed out after ${maxAttempts}s (set VITE_LLM_SPEC_GEN_TIMEOUT_S / LLM_SPEC_GEN_TIMEOUT_S)`
+      `Spec generation timed out after ${maxAttempts}s — increase job timeout in Settings → Spec generation`
     )
   }
 
@@ -287,6 +291,8 @@ export function patchCoreHttpClientForTauri(
       apply: body.apply ?? true,
       enforce_ears: body.enforce_ears ?? true,
       background: body.background ?? true,
+      wall_timeout_s: body.wall_timeout_s,
+      turn_timeout_s: body.turn_timeout_s,
     }
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const { status, body: resBody } = await desktopVisionFetchRaw(
@@ -299,7 +305,7 @@ export function patchCoreHttpClientForTauri(
     if (status === 202) {
       const started = resBody as { job_id: string }
       hooks?.onJobStarted?.(started.job_id)
-      const done = await pollSpecGenerateJob(started.job_id, signal)
+      const done = await pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,
@@ -321,6 +327,8 @@ export function patchCoreHttpClientForTauri(
       mode: body.mode ?? 'generate',
       apply: body.apply ?? true,
       background: body.background ?? true,
+      wall_timeout_s: body.wall_timeout_s,
+      turn_timeout_s: body.turn_timeout_s,
     }
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
     const { status, body: resBody } = await desktopVisionFetchRaw(
@@ -333,7 +341,7 @@ export function patchCoreHttpClientForTauri(
     if (status === 202) {
       const started = resBody as { job_id: string }
       hooks?.onJobStarted?.(started.job_id)
-      const done = await pollSpecGenerateJob(started.job_id, signal)
+      const done = await pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,

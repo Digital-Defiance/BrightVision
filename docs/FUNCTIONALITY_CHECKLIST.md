@@ -1,6 +1,6 @@
 # BrightVision functionality checklist
 
-Use before changing the `cecli/` submodule pin or opening upstream PRs.
+Use before changing the `cecli/` submodule pin or opening upstream PRs. **Workflow:** [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md).
 
 ## Two layers (both required for the desktop app)
 

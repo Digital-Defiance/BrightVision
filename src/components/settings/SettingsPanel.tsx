@@ -49,6 +49,8 @@ import { AgentGuardSection } from './AgentGuardSection'
 import type { AgentGuardPrefs } from '../../theme/agentGuardPrefs'
 import type { AppVersions } from '../../hooks/useAppVersions'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
+import { SpecGenerationSection } from './SpecGenerationSection'
+import type { SpecGenTimeoutPrefs } from '../../theme/specGenTimeoutPrefs'
 import {
   SessionModeToggle,
   type SessionMode,
@@ -81,6 +83,8 @@ interface SettingsPanelProps {
   onModelRouterPrefsChange: (prefs: ModelRouterPrefs) => void
   agentGuardPrefs: AgentGuardPrefs
   onAgentGuardPrefsChange: (prefs: AgentGuardPrefs) => void
+  specGenTimeoutPrefs: SpecGenTimeoutPrefs
+  onSpecGenTimeoutPrefsChange: (prefs: SpecGenTimeoutPrefs) => void
   sessionModel: string
   onSessionModeChange: (mode: SessionMode) => void
   liveSessionMode?: SessionMode | null
@@ -124,6 +128,8 @@ export function SettingsPanel({
   onModelRouterPrefsChange,
   agentGuardPrefs,
   onAgentGuardPrefsChange,
+  specGenTimeoutPrefs,
+  onSpecGenTimeoutPrefsChange,
   sessionModel,
   onSessionModeChange,
   liveSessionMode = null,
@@ -473,6 +479,11 @@ export function SettingsPanel({
         prefs={agentGuardPrefs}
         brightDateMode={thinkingTimingPrefs.brightDateMode}
         onChange={onAgentGuardPrefsChange}
+      />
+
+      <SpecGenerationSection
+        prefs={specGenTimeoutPrefs}
+        onChange={onSpecGenTimeoutPrefsChange}
       />
 
       <SuggestedFilesSection

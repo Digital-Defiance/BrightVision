@@ -2,7 +2,7 @@
 
 Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain and follow it until the open backlog is complete.
 
-**Engine:** [Cecli](https://cecli.dev) in submodule **`cecli/`**, plus **`bright_vision_core/`** in this repo (Vision HTTP; PyPI package `bright-vision-core`). See [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md).
+**Engine:** [Cecli](https://cecli.dev) in submodule **`cecli/`**, plus **`bright_vision_core/`** in this repo (Vision HTTP; PyPI package `bright-vision-core`). See [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md). **Cecli bugfixes for upstream:** [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md) (`scripts/cecli-open-upstream-pr.sh`).
 
 **Project site:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org) — static landing page in `docs/index.html`, deployed via [GitHub Pages](../.github/workflows/pages.yml) on pushes to `main` under `docs/`.
 
@@ -149,6 +149,17 @@ yarn verify:submodule
 ```
 
 See [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md).
+
+## Cecli upstream PRs
+
+When a fix belongs in the **cecli** submodule (tools, coders, slash commands — not Vision HTTP):
+
+1. Read **[CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md)** — branch from `origin/main`, not `dev-integration`.
+2. Push `pr/<topic>` to **Digital-Defiance/cecli**.
+3. Open PR: `sh scripts/cecli-open-upstream-pr.sh pr/<topic> "title" "body"`.
+4. Cherry-pick the commit onto **`dev-integration`**, then pin `cecli` in the parent repo.
+
+Pin policy: [CECLI_PIN.md](./CECLI_PIN.md).
 
 ## Cutting a release
 

@@ -203,6 +203,27 @@ def rows_to_tasks_md(rows: list[AgentTodoRow]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def preserve_spec_tasks_md_on_agent_import(item: TodoItem, incoming_tasks_md: str) -> bool:
+    """Keep spec-generated implementation tasks when syncing agent todo.txt.
+
+    Agent pull updates the runtime checklist; it must not replace a rich
+    ``tasks_md`` layer produced by generate-spec (numbered steps, REQ refs).
+    """
+    existing = (item.tasks_md or "").strip()
+    if not existing:
+        return False
+    if re.search(r"(?m)^\s*(?:-\s*\[[ xX]\]\s*)?\d+\.", existing):
+        return True
+    if re.search(r"REQ-\d+", existing, re.I):
+        return True
+    if "depends:" in existing.lower():
+        return True
+    incoming = (incoming_tasks_md or "").strip()
+    if incoming and len(existing) > len(incoming) + 40:
+        return True
+    return False
+
+
 def _usable_plan_title_text(text: str) -> bool:
     """Reject char-split JSON debris (e.g. ``[``) mistaken for a task title after /agent."""
     t = text.strip()
@@ -272,7 +293,8 @@ def import_agent_plan_store(
     if target:
         target.title = plan_title_from_rows(rows) if target.title in (AGENT_PLAN_TITLE, "Untitled") else target.title
         target.checklist = checklist
-        target.tasks_md = tasks_md
+        if not preserve_spec_tasks_md_on_agent_import(target, tasks_md):
+            target.tasks_md = tasks_md
         if target.status not in ("done", "cancelled"):
             target.status = status  # type: ignore[assignment]
         target.updated_at = now
@@ -294,7 +316,8 @@ def import_agent_plan_store(
     if existing:
         existing.title = title
         existing.checklist = checklist
-        existing.tasks_md = tasks_md
+        if not preserve_spec_tasks_md_on_agent_import(existing, tasks_md):
+            existing.tasks_md = tasks_md
         existing.status = status  # type: ignore[assignment]
         existing.updated_at = now
         _ensure_agent_link(existing, agent_todo_relpath)

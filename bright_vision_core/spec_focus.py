@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from bright_vision_core.spec_steering import SPEC_FOCUS_INSTRUCTIONS, build_spec_focus_preamble
+from bright_vision_core.spec_steering import (
+    IMPLEMENTATION_TOOL_HINTS,
+    SPEC_FOCUS_INSTRUCTIONS,
+    build_spec_focus_preamble,
+)
 from bright_vision_core.workspace_todos import (
     TodoItem,
     TodoStore,
     format_todo_context,
+    format_todo_context_implement,
     format_todo_context_light,
     migrate_todo_layers,
 )
@@ -19,6 +25,11 @@ _SPEC_LAYER_PLACEHOLDERS = frozenset(
         "(No design yet.)",
         "(No implementation tasks yet.)",
     }
+)
+
+_IMPLEMENT_STEP_RE = re.compile(
+    r"^implement only implementation task\s+\d+",
+    re.IGNORECASE,
 )
 
 
@@ -37,6 +48,22 @@ def todo_has_spec_content(item: TodoItem) -> bool:
 
 def _task_has_checklist(item: TodoItem) -> bool:
     return any(entry.text.strip() for entry in item.checklist)
+
+
+def is_implement_turn_message(message: str) -> bool:
+    """Start work / implement-step prompts from Tasks tab."""
+    trimmed = message.strip()
+    lower = trimmed.lower()
+    if lower.startswith("/agent"):
+        trimmed = trimmed[6:].lstrip()
+        lower = trimmed.lower()
+    if _IMPLEMENT_STEP_RE.match(trimmed):
+        return True
+    if lower.startswith("implement the active task per the injected"):
+        return True
+    if lower.startswith("work the active task checklist"):
+        return True
+    return False
 
 
 def spec_focus_requested(
@@ -60,7 +87,10 @@ def should_inject_task_context(
         return True
     if not focus_requested:
         return False
-    return todo_has_spec_content(item) or _task_has_checklist(item)
+    # Spec layers stay in chat after the first inject — avoid re-sending ~12k every turn.
+    if todo_has_spec_content(item):
+        return False
+    return _task_has_checklist(item)
 
 
 def spec_focus_preamble_applies(
@@ -89,6 +119,7 @@ def build_user_message_with_spec_context(
     """
     turn_todo_id: str | None = None
     user_text = message
+    implement_turn = is_implement_turn_message(message)
     if should_inject_task_context(
         focus_requested=focus_requested,
         item=item,
@@ -96,15 +127,19 @@ def build_user_message_with_spec_context(
     ):
         assert item is not None
         turn_todo_id = item.id
-        formatter = (
-            format_todo_context
-            if todo_has_spec_content(item)
-            else format_todo_context_light
-        )
+        if implement_turn and todo_has_spec_content(item):
+            formatter = format_todo_context_implement
+        elif todo_has_spec_content(item):
+            formatter = format_todo_context
+        else:
+            formatter = format_todo_context_light
         user_text = formatter(item, store=store) + message
     preamble = spec_focus_preamble_applies(focus_requested=focus_requested, item=item)
     if preamble:
-        user_text = build_spec_focus_preamble(workspace) + user_text
+        blocks = [build_spec_focus_preamble(workspace)]
+        if implement_turn:
+            blocks.append(IMPLEMENTATION_TOOL_HINTS.strip())
+        user_text = "\n\n".join(blocks) + "\n\n" + user_text
     return user_text, preamble, turn_todo_id
 
 

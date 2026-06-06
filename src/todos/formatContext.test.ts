@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { appendChecklistBlock, formatTodoContextLight } from './formatContext'
+import {
+  appendChecklistBlock,
+  buildImplementStepMessage,
+  buildStartWorkMessage,
+  formatTodoContextLight,
+} from './formatContext'
 import type { TodoItem } from './types'
 
 describe('formatTodoContextLight', () => {
@@ -32,5 +37,37 @@ describe('appendChecklistBlock', () => {
     const lines: string[] = []
     appendChecklistBlock(lines, [])
     expect(lines).toEqual([])
+  })
+})
+
+const specTodo: TodoItem = {
+  id: 'abc12345',
+  title: 'Flutter app',
+  spec: '',
+  requirements: '### REQ-001\n**WHEN** x **THE** system **SHALL** y',
+  design: 'Overview',
+  tasks_md: '- [ ] 1. Scaffold',
+  depends_on: [],
+  branch: '',
+  pr_url: '',
+  status: 'open',
+  links: [],
+  checklist: [],
+  created_at: '',
+  updated_at: '',
+}
+
+describe('buildStartWorkMessage', () => {
+  it('prefixes /agent when task has spec layers', () => {
+    const msg = buildStartWorkMessage(specTodo, [])
+    expect(msg.startsWith('/agent ')).toBe(true)
+    expect(msg).toContain('Implement the active task')
+  })
+})
+
+describe('buildImplementStepMessage', () => {
+  it('prefixes /agent for implement step', () => {
+    const msg = buildImplementStepMessage({ number: 1, text: 'Scaffold lib/', done: false }, specTodo)
+    expect(msg.startsWith('/agent Implement only')).toBe(true)
   })
 })

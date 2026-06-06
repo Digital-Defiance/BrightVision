@@ -1,6 +1,6 @@
 import type { SpecLayerSection } from './specWizard'
 
-export type SpecJobOutcome = 'running' | 'saved' | 'ears_blocked' | 'error' | 'aborted' | 'session_lost'
+export type SpecJobOutcome = 'running' | 'saved' | 'ears_blocked' | 'timeout' | 'error' | 'aborted' | 'session_lost'
 
 export interface RecentSpecJob {
   id: string
@@ -19,6 +19,8 @@ export function specJobChipLabel(job: RecentSpecJob): string {
       return `Spec job ${short}… saved`
     case 'ears_blocked':
       return `Spec job ${short}… EARS blocked`
+    case 'timeout':
+      return `Spec job ${short}… timed out`
     case 'aborted':
       return `Spec job ${short}… cancelled`
     case 'session_lost':
@@ -37,6 +39,8 @@ export function specJobChipColor(
     case 'saved':
       return 'success'
     case 'ears_blocked':
+      return 'warning'
+    case 'timeout':
       return 'warning'
     case 'error':
     case 'session_lost':

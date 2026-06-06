@@ -261,6 +261,70 @@ def format_todo_context_light(item: TodoItem, *, store: TodoStore | None = None)
     return "\n".join(lines)
 
 
+_IMPLEMENT_DESIGN_MAX_CHARS = 4000
+
+
+def _truncate_spec_layer(text: str, *, max_chars: int, label: str) -> str:
+    trimmed = text.strip()
+    if not trimmed or trimmed in _SPEC_LAYER_PLACEHOLDERS:
+        return _layer_or_placeholder(trimmed, f"(No {label} yet.)")
+    if len(trimmed) <= max_chars:
+        return trimmed
+    return (
+        trimmed[:max_chars]
+        + f"\n… ({label} truncated — full text in chat history or `.cecli/specs/`)"
+    )
+
+
+def _requirements_summary_for_implement(requirements: str) -> str:
+    """REQ headings only — keeps implement turns lean on local models."""
+    headings = [
+        line.strip()
+        for line in requirements.splitlines()
+        if line.strip().startswith("### REQ-")
+    ]
+    if headings:
+        return "\n".join(headings)
+    return _truncate_spec_layer(requirements, max_chars=1500, label="requirements")
+
+
+def format_todo_context_implement(item: TodoItem, *, store: TodoStore | None = None) -> str:
+    """Lean inject for Start work / Implement step — tasks + truncated design, REQ headings only."""
+    item = migrate_todo_layers(item)
+    lines = [f"[Active task: {item.title} · id {item.id[:8]}]", ""]
+    if item.branch.strip():
+        lines.append(f"**Git branch:** {item.branch.strip()}")
+    if item.pr_url.strip():
+        lines.append(f"**Pull request:** {item.pr_url.strip()}")
+    if item.branch.strip() or item.pr_url.strip():
+        lines.append("")
+    if item.depends_on and store:
+        pending = []
+        for dep_id in item.depends_on:
+            dep = next(
+                (t for t in store.todos if t.id == dep_id or t.id.startswith(dep_id)),
+                None,
+            )
+            if dep and dep.status != "done":
+                pending.append(f"{dep.title} ({dep.id[:8]})")
+        if pending:
+            lines += ["**Blocked by:** " + ", ".join(pending), ""]
+    lines += [
+        "## Requirements (summary)",
+        _requirements_summary_for_implement(item.requirements),
+        "",
+        "## Design",
+        _truncate_spec_layer(item.design, max_chars=_IMPLEMENT_DESIGN_MAX_CHARS, label="design"),
+        "",
+        "## Implementation tasks",
+        _layer_or_placeholder(item.tasks_md, "(No implementation tasks yet.)"),
+    ]
+    if item.checklist:
+        _append_checklist_block(lines, item.checklist)
+    lines += ["", "---", ""]
+    return "\n".join(lines)
+
+
 _SPEC_LAYER_PLACEHOLDERS = frozenset(
     {
         "(No requirements yet.)",

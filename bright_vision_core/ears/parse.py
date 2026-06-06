@@ -10,6 +10,8 @@ from bright_vision_core.ears.patterns import classify_clause
 # Allow an optional title after the id (Kiro-style: "### REQ-001: Health check").
 _REQ_HEADING = re.compile(r"^###\s+(REQ-\d+)\b.*$", re.I)
 _BULLET = re.compile(r"^(\s*[-*]|\s*\d+\.)\s+")
+# Kiro-style labels — not normative EARS clauses (may contain "if"/"while" in prose).
+_SKIP_LABEL = re.compile(r"^\*\*(User Story:|Acceptance Criteria)\*\*", re.I)
 # Lines that read like normative EARS prose (vs. descriptive User Story text).
 _EARS_KEYWORD = re.compile(r"\b(SHALL|WHEN|WHILE|WHERE)\b|\bIF\b", re.I)
 
@@ -47,6 +49,9 @@ def parse_requirements_markdown(text: str) -> list[EarsClause]:
             continue
         stripped = line.strip()
         if not stripped:
+            flush()
+            continue
+        if _SKIP_LABEL.match(stripped):
             flush()
             continue
         if _BULLET.match(line) or (

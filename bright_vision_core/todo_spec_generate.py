@@ -18,7 +18,12 @@ _SECTION_HEADERS = {
     "## requirements": "requirements",
     "## design": "design",
     "## implementation tasks": "tasks_md",
+    "## tasks": "tasks_md",
+    "## implementation plan": "tasks_md",
+    "## implementation steps": "tasks_md",
 }
+
+_DEEPEN_PASS_MARKER = "--- deepen pass ---"
 
 # --- Kiro-style layer guidance (no curly braces: these are concatenated into
 # --- .format() templates, so any "{" would be parsed as a field). ---
@@ -354,8 +359,7 @@ def build_generate_message(
     ) + _generate_all_layers_body()
 
 
-def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[str, str]:
-    """Extract requirements, design, and tasks_md from model markdown."""
+def _parse_generated_layers_once(text: str) -> dict[str, str]:
     sections: dict[str, list[str]] = {k: [] for k in ("requirements", "design", "tasks_md")}
     current: str | None = None
 
@@ -367,9 +371,34 @@ def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[s
         if current:
             sections[current].append(line)
 
-    out = {k: "\n".join(v).strip() for k, v in sections.items()}
+    return {k: "\n".join(v).strip() for k, v in sections.items()}
+
+
+def _merge_parsed_layers(
+    base: dict[str, str],
+    overlay: dict[str, str],
+) -> dict[str, str]:
+    out = dict(base)
+    for key, value in overlay.items():
+        if (value or "").strip():
+            out[key] = value
+    return out
+
+
+def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[str, str]:
+    """Extract requirements, design, and tasks_md from model markdown."""
+    raw = (text or "").replace("\r\n", "\n")
+    if _DEEPEN_PASS_MARKER in raw:
+        head, _, tail = raw.partition(_DEEPEN_PASS_MARKER)
+        out = _merge_parsed_layers(
+            _parse_generated_layers_once(head),
+            _parse_generated_layers_once(tail),
+        )
+    else:
+        out = _parse_generated_layers_once(raw)
+
     if not any(out.values()):
-        cleaned = _strip_fences(text)
+        cleaned = _strip_fences(raw)
         if cleaned:
             if section == "design":
                 out["design"] = cleaned
@@ -377,6 +406,10 @@ def parse_generated_layers(text: str, *, section: SpecSection = "all") -> dict[s
                 out["tasks_md"] = cleaned
             else:
                 out["requirements"] = cleaned
+    elif section == "tasks_md" and not (out.get("tasks_md") or "").strip():
+        cleaned = _strip_fences(raw)
+        if cleaned and re.search(r"(?m)^\s*(?:-\s*\[[ xX]\]\s*)?\d+\.", cleaned):
+            out["tasks_md"] = cleaned
     return out
 
 

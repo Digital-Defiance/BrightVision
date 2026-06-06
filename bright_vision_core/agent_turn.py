@@ -12,11 +12,17 @@ AGENT_TURN_FEATURES = {
     "skip_add_file_confirm_in_chat": True,
     "agent_continue_after_shell": True,
     "agent_continue_after_token_limit": True,
+    "agent_continue_after_stall": True,
 }
 
 _PROSE_SHELL_FENCE = re.compile(
     r"```(?:bash|sh|shell|zsh|fish)\s*\n.+?```",
     re.IGNORECASE | re.DOTALL,
+)
+
+_TOKEN_LIMIT_STATS = re.compile(
+    r"Input tokens: ~([\d,]+).*Output tokens: ~([\d,]+)",
+    re.DOTALL,
 )
 
 _TOKEN_STATS = re.compile(r"^\d+k\s+[↑↓]", re.UNICODE)
@@ -259,15 +265,140 @@ def should_auto_continue_after_token_limit(
     """One-shot auto-continue when /agent stopped on model output/context length."""
     if not AGENT_TURN_FEATURES.get("agent_continue_after_token_limit"):
         return False
-    return token_limit_exhausted(events=events, assistant_text=assistant_text)
+    if not token_limit_exhausted(events=events, assistant_text=assistant_text):
+        return False
+    if empty_local_llm_response_in_events(events):
+        return False
+    if spurious_ollama_token_limit_in_events(events):
+        return False
+    return True
+
+
+def spurious_ollama_token_limit_in_events(events: list[dict] | tuple) -> bool:
+    """Ollama often returns finish_reason=length with ~0 output at modest input — not real exhaustion."""
+    for event in events:
+        if event.get("type") != "tool_error":
+            continue
+        text = str(event.get("text") or "")
+        if "has hit a token limit" not in text:
+            continue
+        match = _TOKEN_LIMIT_STATS.search(text)
+        if not match:
+            continue
+        input_tokens = int(match.group(1).replace(",", ""))
+        output_tokens = int(match.group(2).replace(",", ""))
+        if output_tokens <= 10 and input_tokens < 50_000:
+            return True
+    return False
+
+
+def spurious_ollama_token_limit_warning() -> str:
+    return (
+        "The local model returned an empty or truncated response (Ollama finish_reason=length "
+        "with ~0 output tokens — not a full context window). "
+        "Use **Implement** on a single numbered step, **Clear chat**, then retry. "
+        "Avoid batching many files in one EditText call."
+    )
+
+
+def agent_had_write_tool_in_events(events: list[dict] | tuple) -> bool:
+    """True when EditText or ContextManager ran this turn."""
+    markers = (
+        "Tool Call: Local • EditText",
+        "Tool Call: Local • ContextManager",
+        "Successfully executed EditText",
+        "Created and made editable",
+    )
+    for event in events:
+        if event.get("type") != "tool_output":
+            continue
+        text = str(event.get("text") or "")
+        if any(marker in text for marker in markers):
+            return True
+    return False
+
+
+def repetition_detected_in_coder(coder: object | None) -> bool:
+    """Cecli injects repetition as a synthetic user message in the agent loop."""
+    if coder is None:
+        return False
+    try:
+        from cecli.helpers.conversation import ConversationService, MessageTag
+
+        messages = ConversationService.get_manager(coder).get_messages_dict(MessageTag.CUR)
+        for msg in messages[-5:]:
+            if msg.get("role") != "user":
+                continue
+            if "Repetition Detected" in str(msg.get("content") or ""):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def agent_turn_stalled(
+    *,
+    had_tool_call: bool,
+    events: list[dict] | tuple,
+    coder: object | None = None,
+) -> bool:
+    """True when /agent ran tools but ended without productive edits."""
+    if not had_tool_call:
+        return False
+    empty_ollama = empty_local_llm_response_in_events(events)
+    repetition = repetition_detected_in_coder(coder)
+    wrote_files = agent_had_write_tool_in_events(events)
+    if empty_ollama:
+        return True
+    if repetition and not wrote_files:
+        return True
+    return False
+
+
+def should_auto_continue_after_agent_stall(
+    *,
+    had_tool_call: bool,
+    events: list[dict] | tuple,
+    assistant_text: str,
+    coder: object | None = None,
+) -> bool:
+    """Auto-continue when /agent explored but stalled (empty Ollama, repetition, no edits)."""
+    del assistant_text  # reserved for future prose-only stall heuristics
+    if not AGENT_TURN_FEATURES.get("agent_continue_after_stall"):
+        return False
+    return agent_turn_stalled(had_tool_call=had_tool_call, events=events, coder=coder)
+
+
+def agent_continue_after_stall_message() -> str:
+    return (
+        "/agent Continue the active task. Tool output from exploration is already in context. "
+        "Do **not** run ls, GitStatus, GitLog, or ReadRange again. "
+        "Use **EditText** on **one file** for the current numbered implementation task "
+        "(e.g. fill `lib/core/...` stubs ContextManager created, or edit `pubspec.yaml`). "
+        "One file per EditText call."
+    )
+
+
+def agent_stall_recovery_warning(*, auto_continue_attempted: bool) -> str:
+    if auto_continue_attempted:
+        return (
+            "/agent stalled again after auto-continue (empty local model or repetition guard). "
+            "Use **Implement** on a single numbered step, **Clear chat**, then retry. "
+            "Check Ollama with `ollama ps`."
+        )
+    return (
+        "/agent stopped after exploration without editing files (local model stall or repetition). "
+        "BrightVision will auto-continue once; if it still stops, use **Implement** on one step."
+    )
 
 
 def agent_continue_after_token_limit_message() -> str:
     return (
         "/agent Continue the active task from where you stopped. "
         "The previous turn hit a model token limit during tool use. "
-        "Use agent editing tools to create or modify files — do not repeat failed "
-        "exploration (grep/ls/git status) unless strictly necessary. "
+        "Implement **only the current numbered task** (e.g. 1.1). "
+        "Use **one EditText call per file** — do not batch many files. "
+        "Do not repeat exploration (grep/ls/git status/ReadRange) unless strictly necessary. "
         "Do not reset completed checklist items."
     )
 

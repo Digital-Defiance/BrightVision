@@ -123,6 +123,7 @@ def test_should_auto_continue_after_shell():
 def test_token_limit_detection_and_auto_continue():
     from bright_vision_core.agent_turn import (
         should_auto_continue_after_token_limit,
+        spurious_ollama_token_limit_in_events,
         token_limit_exhausted_in_events,
         token_limit_exhausted_in_text,
     )
@@ -136,6 +137,58 @@ def test_token_limit_detection_and_auto_continue():
         assistant_text="partial output",
     )
     assert not should_auto_continue_after_token_limit(events=[], assistant_text="ok")
+
+    spurious = [
+        {
+            "type": "tool_error",
+            "text": (
+                "Model ollama_chat/qwen has hit a token limit!\n"
+                "Input tokens: ~6,025 of 262,144\n"
+                "Output tokens: ~0 of 262,144\n"
+            ),
+        }
+    ]
+    assert spurious_ollama_token_limit_in_events(spurious)
+    assert not should_auto_continue_after_token_limit(
+        events=spurious,
+        assistant_text="FinishReasonLength exception: you sent too many tokens",
+    )
+
+
+def test_agent_stall_detection_and_auto_continue():
+    from bright_vision_core.agent_turn import (
+        agent_had_write_tool_in_events,
+        agent_turn_stalled,
+        should_auto_continue_after_agent_stall,
+    )
+
+    explore_only = [
+        {"type": "tool_output", "text": "Tool Call: Local • ls"},
+        {"type": "tool_output", "text": "Found 2 files: .cecli/chat.history, .cecli/todos.json"},
+        {
+            "type": "tool_warning",
+            "text": "Empty response from the local model (Ollama). The model may have timed out.",
+        },
+    ]
+    assert agent_turn_stalled(had_tool_call=True, events=explore_only, coder=None)
+    assert should_auto_continue_after_agent_stall(
+        had_tool_call=True,
+        events=explore_only,
+        assistant_text="I'll explore the project.",
+        coder=None,
+    )
+    assert not should_auto_continue_after_agent_stall(
+        had_tool_call=False,
+        events=explore_only,
+        assistant_text="",
+        coder=None,
+    )
+    wrote = explore_only + [
+        {"type": "tool_output", "text": "Successfully executed EditText."},
+    ]
+    assert agent_had_write_tool_in_events(wrote)
+    # Empty Ollama still counts as stalled (partial progress — continue to finish).
+    assert agent_turn_stalled(had_tool_call=True, events=wrote, coder=None)
 
 
 def test_empty_agent_turn_warning():

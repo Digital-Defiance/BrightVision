@@ -58,6 +58,8 @@ Default dev path is **editable submodule**, not PyPI `cecli` latest.
 
 ## Ship a cecli feature before upstream merges
 
+**Step-by-step (branch off main → PR → cherry-pick to dev-integration):** [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md) · **Open PR:** `sh scripts/cecli-open-upstream-pr.sh pr/<topic> "title" "body"`
+
 ```text
 1. Branch on Digital-Defiance/cecli (or cherry-pick into integration branch)
 2. Open PR to cecli-dev (cecli.dev)

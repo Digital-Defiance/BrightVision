@@ -15,6 +15,7 @@ from bright_vision_core.agent_todos import (
     parse_agent_todo_txt,
     plan_title_from_rows,
     rows_from_todo_item,
+    rows_to_tasks_md,
     format_agent_todo_txt,
     AgentTodoRow,
     _recover_char_split_agent_rows,
@@ -137,6 +138,48 @@ def test_import_merges_into_active_task(tmp_path: Path):
     assert item.title == "My feature"
     assert len(item.checklist) == 2
     assert agent_todo_link_for(rel) in item.links
+
+
+def test_import_agent_plan_preserves_spec_tasks_md(tmp_path: Path):
+    from bright_vision_core.agent_todos import preserve_spec_tasks_md_on_agent_import
+
+    spec_tasks = (
+        "- [ ] 1. Wire generate-spec API for REQ-001 (depends: none)\n"
+        "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+    )
+    agent_tasks = rows_to_tasks_md(
+        [
+            AgentTodoRow(text="Step A", done=False, current=True),
+            AgentTodoRow(text="Step B", done=False, current=False),
+        ]
+    )
+    item = TodoItem(
+        id="user1",
+        title="My feature",
+        tasks_md=spec_tasks,
+        status="in_progress",
+        links=[],
+        checklist=[],
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+    )
+    assert preserve_spec_tasks_md_on_agent_import(item, agent_tasks) is True
+
+    api = WorkspaceTodos(tmp_path)
+    store = api.load()
+    store.todos.append(item)
+    store.active_id = item.id
+    api.save(store)
+
+    agents = tmp_path / ".cecli" / "agents" / "2026-05-27" / "sess"
+    agents.mkdir(parents=True)
+    rel = ".cecli/agents/2026-05-27/sess/todo.txt"
+    (agents / "todo.txt").write_text("Remaining:\n→ Step A\n○ Step B\n", encoding="utf-8")
+
+    store2 = import_agent_plan_for_workspace(tmp_path, agent_todo_relpath=rel)
+    merged = store2.todos[0]
+    assert merged.tasks_md == spec_tasks
+    assert len(merged.checklist) == 2
 
 
 def test_export_roundtrip(tmp_path: Path):

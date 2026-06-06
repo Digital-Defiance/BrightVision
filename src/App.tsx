@@ -207,6 +207,13 @@ import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
 import { downloadSpecJobDebugBundle } from './utils/specJobDebugExport'
 import type { RecentSpecJob, SpecJobOutcome } from './utils/recentSpecJob'
 import { SpecJobStatusChip } from './components/spec/SpecJobStatusChip'
+import {
+  extendedSpecGenTimeoutPrefs,
+  loadSpecGenTimeoutPrefs,
+  saveSpecGenTimeoutPrefs,
+  type SpecGenTimeoutPrefs,
+} from './theme/specGenTimeoutPrefs'
+import { isSpecJobTimeoutError, specJobTimeoutHint } from './utils/specJobTimeout'
 import { workspacePathsEqual } from './utils/workspacePath'
 import {
   resolveMessageTurnTiming,
@@ -392,6 +399,8 @@ function AppShell({
   setModelRouterPrefs,
   agentGuardPrefs,
   setAgentGuardPrefs,
+  specGenTimeoutPrefs,
+  setSpecGenTimeoutPrefs,
 }: {
   appearance: AppearanceConfig
   setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
@@ -409,9 +418,20 @@ function AppShell({
   setModelRouterPrefs: React.Dispatch<React.SetStateAction<ModelRouterPrefs>>
   agentGuardPrefs: AgentGuardPrefs
   setAgentGuardPrefs: React.Dispatch<React.SetStateAction<AgentGuardPrefs>>
+  specGenTimeoutPrefs: SpecGenTimeoutPrefs
+  setSpecGenTimeoutPrefs: React.Dispatch<React.SetStateAction<SpecGenTimeoutPrefs>>
 }) {
   const ntfyAlertsPrefsRef = useRef(ntfyAlertsPrefs)
   ntfyAlertsPrefsRef.current = ntfyAlertsPrefs
+  const specGenTimeoutPrefsRef = useRef(specGenTimeoutPrefs)
+  specGenTimeoutPrefsRef.current = specGenTimeoutPrefs
+  const lastSpecGenerateRef = useRef<{
+    todoId: string
+    prompt: string
+    mode: 'generate' | 'refine'
+    section?: SpecLayerSection | 'all'
+    contextPaths?: string[]
+  } | null>(null)
 
   const [activeTab, setActiveTab] = useState<TabId>('chat')
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -2644,6 +2664,13 @@ function AppShell({
         return
       }
       const section = options?.section ?? 'all'
+      lastSpecGenerateRef.current = {
+        todoId,
+        prompt,
+        mode,
+        section,
+        contextPaths: options?.contextPaths,
+      }
       specGenerateAbortRef.current?.abort()
       const ac = new AbortController()
       specGenerateAbortRef.current = ac
@@ -2681,6 +2708,7 @@ function AppShell({
         })
       }
       try {
+        const timeouts = specGenTimeoutPrefsRef.current
         const gen = await client.generateWorkspaceTodoSpec(
           savedConfig.workingDir,
           sid,
@@ -2693,6 +2721,8 @@ function AppShell({
             apply: true,
             enforce_ears: true,
             background: true,
+            wall_timeout_s: timeouts.wallTimeoutS,
+            turn_timeout_s: timeouts.turnTimeoutS,
           },
           ac.signal,
           {
@@ -2740,17 +2770,23 @@ function AppShell({
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
-          setRecentSpecJob((prev) =>
-            prev?.id
-              ? { ...prev, outcome: isRunningRef.current ? 'aborted' : 'session_lost' }
-              : prev
-          )
+        setRecentSpecJob((prev) =>
+          prev?.id
+            ? { ...prev, outcome: isRunningRef.current ? 'aborted' : 'session_lost' }
+            : prev
+        )
           return
         }
-        setRecentSpecJob((prev) => (prev ? { ...prev, outcome: 'error' } : prev))
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const timedOut = isSpecJobTimeoutError(errMsg)
+        setRecentSpecJob((prev) =>
+          prev ? { ...prev, outcome: timedOut ? 'timeout' : 'error' } : prev
+        )
         notifySpecJob('error')
         setSnackbar({
-          message: err instanceof Error ? err.message : String(err),
+          message: timedOut
+            ? specJobTimeoutHint(specGenTimeoutPrefsRef.current.wallTimeoutS)
+            : errMsg,
           severity: 'error',
         })
         throw err
@@ -2766,6 +2802,25 @@ function AppShell({
     },
     [sessionInfo?.session_id, httpClient, todoApiClient, isRunning, savedConfig.workingDir, reloadTodos, todoStore?.todos]
   )
+
+  const handleExtendSpecTimeoutsAndRetry = useCallback(() => {
+    const extended = extendedSpecGenTimeoutPrefs()
+    setSpecGenTimeoutPrefs(extended)
+    saveSpecGenTimeoutPrefs(extended)
+    specGenTimeoutPrefsRef.current = extended
+    const last = lastSpecGenerateRef.current
+    if (!last) {
+      setSnackbar({
+        message: 'Extended timeouts saved — run Generate again from Tasks',
+        severity: 'info',
+      })
+      return
+    }
+    void handleGenerateSpec(last.todoId, last.prompt, last.mode, {
+      section: last.section,
+      contextPaths: last.contextPaths,
+    })
+  }, [handleGenerateSpec, setSpecGenTimeoutPrefs])
 
   const handleRefineWithTraceHint = useCallback(() => {
     if (!activeTodo) return
@@ -3549,6 +3604,8 @@ function AppShell({
               recentSpecJob={recentSpecJob}
               onExportSpecJobDebug={() => void handleExportSpecJobDebug()}
               onDismissRecentSpecJob={handleDismissRecentSpecJob}
+              onExtendSpecTimeoutsAndRetry={() => void handleExtendSpecTimeoutsAndRetry()}
+              specGenTimeoutPrefs={specGenTimeoutPrefs}
               specIndexRefreshToken={specIndexRefreshToken}
               projectPath={savedConfig.workingDir}
               sessionWorkspaceMismatch={sessionWorkspaceMismatch}
@@ -3743,6 +3800,11 @@ function AppShell({
                   setAgentGuardPrefs(prefs)
                   saveAgentGuardPrefs(prefs)
                 }}
+                specGenTimeoutPrefs={specGenTimeoutPrefs}
+                onSpecGenTimeoutPrefsChange={(prefs) => {
+                  setSpecGenTimeoutPrefs(prefs)
+                  saveSpecGenTimeoutPrefs(prefs)
+                }}
                 sessionModel={config.model}
                 onSessionModeChange={handleSessionModeChange}
                 liveSessionMode={liveSessionMode}
@@ -3805,6 +3867,9 @@ export default function App() {
   const [agentGuardPrefs, setAgentGuardPrefs] = useState<AgentGuardPrefs>(() =>
     loadAgentGuardPrefs()
   )
+  const [specGenTimeoutPrefs, setSpecGenTimeoutPrefs] = useState<SpecGenTimeoutPrefs>(() =>
+    loadSpecGenTimeoutPrefs()
+  )
   const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
   const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
 
@@ -3833,6 +3898,8 @@ export default function App() {
           setModelRouterPrefs={setModelRouterPrefs}
           agentGuardPrefs={agentGuardPrefs}
           setAgentGuardPrefs={setAgentGuardPrefs}
+          specGenTimeoutPrefs={specGenTimeoutPrefs}
+          setSpecGenTimeoutPrefs={setSpecGenTimeoutPrefs}
         />
       </ProcessProvider>
     </ThemeProvider>

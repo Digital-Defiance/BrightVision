@@ -66,6 +66,7 @@ import {
 } from '../../utils/specWizard'
 import { specGenerateBlockedReason } from '../../utils/specGenerateGate'
 import type { RecentSpecJob } from '../../utils/recentSpecJob'
+import { formatSpecGenTimeoutLabel, type SpecGenTimeoutPrefs } from '../../theme/specGenTimeoutPrefs'
 
 const STATUS_COLOR: Record<TodoStatus, 'default' | 'primary' | 'success' | 'warning'> = {
   open: 'default',
@@ -115,6 +116,8 @@ interface TodoPanelProps {
   recentSpecJob?: RecentSpecJob | null
   onExportSpecJobDebug?: () => void
   onDismissRecentSpecJob?: () => void
+  onExtendSpecTimeoutsAndRetry?: () => void
+  specGenTimeoutPrefs?: SpecGenTimeoutPrefs
   contextPaths?: string[]
   contextUsage?: SessionContextUsage
   onOpenSpec?: () => void
@@ -168,6 +171,8 @@ export function TodoPanel({
   recentSpecJob,
   onExportSpecJobDebug,
   onDismissRecentSpecJob,
+  onExtendSpecTimeoutsAndRetry,
+  specGenTimeoutPrefs,
   contextPaths = [],
   contextUsage,
   onOpenSpec,
@@ -402,7 +407,7 @@ export function TodoPanel({
   }, [specIndexRefreshToken, todos, selectedId])
 
   const persistEditor = async () => {
-    if (!selected) return
+    if (!selected || specGenerating) return
     await onUpdate(selected.id, {
       title: title.trim() || 'Untitled',
       requirements,
@@ -688,7 +693,9 @@ export function TodoPanel({
       {(specGenerating || recentSpecJob?.id) && (
         <Alert
           severity={
-            recentSpecJob?.outcome === 'error' || recentSpecJob?.outcome === 'session_lost'
+            recentSpecJob?.outcome === 'timeout' ||
+            recentSpecJob?.outcome === 'error' ||
+            recentSpecJob?.outcome === 'session_lost'
               ? 'warning'
               : 'info'
           }
@@ -696,6 +703,16 @@ export function TodoPanel({
           data-testid="spec-generating-banner"
           action={
             <Stack direction="row" spacing={0.5} alignItems="center">
+              {recentSpecJob?.outcome === 'timeout' && onExtendSpecTimeoutsAndRetry ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  data-testid="spec-job-extend-retry"
+                  onClick={onExtendSpecTimeoutsAndRetry}
+                >
+                  Extend & retry
+                </Button>
+              ) : null}
               {recentSpecJob?.id && onExportSpecJobDebug ? (
                 <Button
                   color="inherit"
@@ -720,12 +737,16 @@ export function TodoPanel({
           }
         >
           {specGenerating
-            ? `Generating spec in the background${recentSpecJob?.id ? ` (job ${recentSpecJob.id.slice(0, 8)}…)` : ''} — export debug if it stalls.`
-            : recentSpecJob?.outcome === 'session_lost'
-              ? `Spec job ${recentSpecJob.id.slice(0, 8)}… stopped when the session ended — export debug to investigate.`
-              : recentSpecJob?.outcome === 'error'
-                ? `Spec job ${recentSpecJob.id.slice(0, 8)}… failed — export debug to investigate.`
-                : `Spec job ${recentSpecJob?.id.slice(0, 8)}… finished — export debug if you need the trace.`}
+            ? `Generating spec in the background${recentSpecJob?.id ? ` (job ${recentSpecJob.id.slice(0, 8)}…)` : ''} — export debug if it stalls. Current limit: ${specGenTimeoutPrefs ? formatSpecGenTimeoutLabel(specGenTimeoutPrefs) : 'see Settings'}.`
+            : recentSpecJob?.outcome === 'timeout'
+              ? `Spec job ${recentSpecJob.id.slice(0, 8)}… timed out (${specGenTimeoutPrefs ? formatSpecGenTimeoutLabel(specGenTimeoutPrefs) : 'limit reached'}). Use Extend & retry for 40 min / 20 min per turn, or change presets in Settings → Spec generation.`
+              : recentSpecJob?.outcome === 'session_lost'
+                ? `Spec job ${recentSpecJob.id.slice(0, 8)}… stopped when the session ended — export debug to investigate.`
+                : recentSpecJob?.outcome === 'error'
+                  ? `Spec job ${recentSpecJob.id.slice(0, 8)}… failed — export debug to investigate.`
+                  : recentSpecJob?.outcome === 'ears_blocked'
+                    ? `Spec job ${recentSpecJob.id.slice(0, 8)}… completed but EARS blocked save — fix requirements and refine.`
+                    : `Spec job ${recentSpecJob?.id.slice(0, 8)}… finished — export debug if you need the trace.`}
         </Alert>
       )}
       {specIndex && (

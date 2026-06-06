@@ -95,7 +95,25 @@ class TestSpecFocusGating(unittest.TestCase):
             self.assertEqual(text, "Add revert in Git tab")
             self.assertNotIn("Spec-focus mode", text)
 
-    def test_preamble_with_active_task_and_spec(self):
+    def test_preamble_without_full_reinject_on_followup_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            item = _item(requirements="### REQ-001\n**WHEN** open **THE** UI **SHALL** show revert")
+            store = TodoStore(version=1, active_id=item.id, todos=[item])
+            text, active, tid = build_user_message_with_spec_context(
+                tmp,
+                "continue scaffolding",
+                item=item,
+                store=store,
+                focus_requested=True,
+                inject_todo_spec=False,
+            )
+            self.assertTrue(active)
+            self.assertIsNone(tid)
+            self.assertIn("Spec-focus mode", text)
+            self.assertNotIn("REQ-001", text)
+            self.assertTrue(text.endswith("continue scaffolding"))
+
+    def test_full_inject_when_inject_todo_spec_true(self):
         with tempfile.TemporaryDirectory() as tmp:
             item = _item(requirements="### REQ-001\n**WHEN** open **THE** UI **SHALL** show revert")
             store = TodoStore(version=1, active_id=item.id, todos=[item])
@@ -105,13 +123,42 @@ class TestSpecFocusGating(unittest.TestCase):
                 item=item,
                 store=store,
                 focus_requested=True,
-                inject_todo_spec=False,
+                inject_todo_spec=True,
             )
             self.assertTrue(active)
-            self.assertEqual(tid, item.id)
-            self.assertIn("Spec-focus mode", text)
             self.assertIn("REQ-001", text)
-            self.assertTrue(text.endswith("Implement REQ-001"))
+
+    def test_implement_inject_uses_lean_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            req = "### REQ-001: Auth\n**WHEN** x **THE** system **SHALL** y\n" + ("detail " * 400)
+            design = "Overview\n" + ("architecture " * 500)
+            tasks = "- [ ] 1. Scaffold lib/ (depends: none)"
+            item = _item(requirements=req, design=design, tasks_md=tasks)
+            store = TodoStore(version=1, active_id=item.id, todos=[item])
+            text, _, _ = build_user_message_with_spec_context(
+                tmp,
+                "Implement the active task per the injected requirements, design, and implementation tasks.",
+                item=item,
+                store=store,
+                focus_requested=True,
+                inject_todo_spec=True,
+            )
+            self.assertIn("Requirements (summary)", text)
+            self.assertIn("### REQ-001", text)
+            self.assertNotIn("detail detail detail", text)
+            self.assertIn("Implementation tasks", text)
+            self.assertIn("Scaffold lib/", text)
+            self.assertIn("Implementation turn (tools)", text)
+            self.assertIn("EditText", text)
+
+    def test_implement_turn_detects_agent_prefix(self):
+        from bright_vision_core.spec_focus import is_implement_turn_message
+
+        self.assertTrue(
+            is_implement_turn_message(
+                "/agent Implement only implementation task 1: Scaffold lib/."
+            )
+        )
 
     def test_inject_without_preamble_when_layers_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
