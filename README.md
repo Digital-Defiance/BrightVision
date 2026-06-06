@@ -37,7 +37,6 @@ flowchart LR
 | **Vision API** | Sessions, todos, git superproject, SSE → `src/ipc/events.ts` |
 | **Cecli** | Models, coders, tools, slash commands, agents, MCP |
 | **Local LLM** | Rust panel starts Ollama; turns run in Python core |
->>>>>>> Stashed changes
 
 ## What BrightVision does
 
@@ -105,8 +104,11 @@ Full catalog: **[docs/FEATURES.md](docs/FEATURES.md)** · backlog: **[docs/ROADM
 
 ```bash
 brew tap digital-defiance/tap
-brew install brightvision
+brew trust --cask digital-defiance/tap/brightvision
+brew install --cask brightvision
 ```
+
+Homebrew 4.6+ requires **trusting the cask** once before install (unsigned tap cask). If `brew install brightvision` fails with a trust error, run the `brew trust` line above and retry.
 
 ### From source
 
