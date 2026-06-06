@@ -1,6 +1,6 @@
 {
   "name": "bright-vision",
-  "version": "0.2.1-bright5",
+  "version": "0.2.1-bright6",
   "private": true,
   "type": "module",
   "workspaces": [

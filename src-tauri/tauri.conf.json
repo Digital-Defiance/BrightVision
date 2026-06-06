@@ -1,7 +1,7 @@
 {
   "productName": "BrightVision",
   "mainBinaryName": "BrightVision",
-  "version": "0.2.1-bright5",
+  "version": "0.2.1-bright6",
   "identifier": "com.digitaldefiance.bright-vision",
   "build": {
     "frontendDist": "../dist",
