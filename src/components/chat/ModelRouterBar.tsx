@@ -1,27 +1,25 @@
+import PsychologyIcon from '@mui/icons-material/Psychology'
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch'
 import SpeedIcon from '@mui/icons-material/Speed'
-import { Alert, Box, Button, Chip, Stack, Typography } from '@mui/material'
-import type { ModelRouteSnapshot } from '../../ipc/modelRouterLlm'
-import { formatModelRouteEvent } from '../../theme/modelRouterPrefs'
+import { Alert, Box, Button, Stack, Typography } from '@mui/material'
 
 export interface RouterEscalateOffer {
   message: string
+  target?: 'code' | 'think'
 }
 
 interface ModelRouterBarProps {
   enabled: boolean
-  lastRoute: ModelRouteSnapshot | null
   escalateOffer: RouterEscalateOffer | null
   isRunning: boolean
   isBusy: boolean
   onEscalate: () => void
-  onForceTier: (tier: 'fast' | 'heavy') => void
+  onForceTier: (tier: 'fast' | 'code' | 'think') => void
   onDismissEscalate?: () => void
 }
 
 export function ModelRouterBar({
   enabled,
-  lastRoute,
   escalateOffer,
   isRunning,
   isBusy,
@@ -34,17 +32,8 @@ export function ModelRouterBar({
   return (
     <Box sx={{ px: 1, pt: 0.5 }} data-testid="model-router-bar">
       <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center" useFlexGap>
-        {lastRoute && (
-          <Chip
-            size="small"
-            variant="outlined"
-            color={lastRoute.tier === 'fast' ? 'success' : 'warning'}
-            label={formatModelRouteEvent(lastRoute)}
-            data-testid="model-router-chip"
-          />
-        )}
         <Typography variant="caption" color="text.secondary">
-          Force:
+          Force tier:
         </Typography>
         <Button
           size="small"
@@ -61,11 +50,24 @@ export function ModelRouterBar({
           variant="text"
           disabled={!isRunning || isBusy}
           startIcon={<RocketLaunchIcon fontSize="small" />}
-          onClick={() => onForceTier('heavy')}
-          data-testid="model-router-force-heavy"
+          onClick={() => onForceTier('code')}
+          data-testid="model-router-force-code"
         >
-          Heavy
+          Code
         </Button>
+        <Button
+          size="small"
+          variant="text"
+          disabled={!isRunning || isBusy}
+          startIcon={<PsychologyIcon fontSize="small" />}
+          onClick={() => onForceTier('think')}
+          data-testid="model-router-force-think"
+        >
+          Think
+        </Button>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+          Chat reply edge = tier color · hover for model
+        </Typography>
       </Stack>
       {escalateOffer && (
         <Alert
@@ -75,7 +77,9 @@ export function ModelRouterBar({
           data-testid="model-router-escalate-offer"
         >
           <Typography variant="body2" sx={{ mb: 0.5 }}>
-            The fast model did not apply edits. Escalate the same prompt to your heavy model?
+            {escalateOffer.target === 'think'
+              ? 'The code model did not finish the reasoning step. Escalate to your think model?'
+              : 'The fast model did not apply edits. Escalate the same prompt to your code model?'}
           </Typography>
           <Button
             size="small"
@@ -84,7 +88,7 @@ export function ModelRouterBar({
             onClick={onEscalate}
             data-testid="model-router-escalate-btn"
           >
-            Escalate to heavy
+            {escalateOffer.target === 'think' ? 'Escalate to think' : 'Escalate to code'}
           </Button>
         </Alert>
       )}

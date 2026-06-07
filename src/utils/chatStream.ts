@@ -133,6 +133,44 @@ export function appendStreamingToken(existing: string, chunk: string): string {
   return existing + chunk
 }
 
+/**
+ * Content for a new assistant bubble after a tool break within the same turn.
+ * When the provider resends a cumulative snapshot, only the suffix not already
+ * shown in prior bubbles is returned.
+ */
+export function initialAssistantBubbleChunk(priorStream: string, chunk: string): string {
+  if (!chunk) return ''
+  if (!priorStream) return chunk
+  const merged = appendStreamingToken(priorStream, chunk)
+  if (merged.length <= priorStream.length) return ''
+  return merged.slice(priorStream.length)
+}
+
+export interface ModelRouteCarrier {
+  modelRoute?: unknown
+}
+
+/** Carry the last explicit model route forward until the next user message. */
+export function withInheritedModelRoutes<T extends ModelRouteCarrier & { role: string }>(
+  messages: readonly T[]
+): T[] {
+  let route: T['modelRoute'] | undefined
+  return messages.map((m) => {
+    if (m.role === 'user') {
+      route = undefined
+      return m
+    }
+    if (m.role === 'assistant') {
+      if (m.modelRoute) {
+        route = m.modelRoute
+        return m
+      }
+      if (route) return { ...m, modelRoute: route }
+    }
+    return m
+  })
+}
+
 export type TimelineSortable = { id: number }
 
 /** Merge chat messages and tool events in SSE arrival order (by monotonic id). */

@@ -14,4 +14,12 @@ test.describe('Model router (#39)', () => {
     await page.getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Settings saved')).toBeVisible()
   })
+
+  test('hopper supports code and think roles', async ({ page }) => {
+    await page.getByTestId('pref-model-router-enabled').click()
+    await page.getByRole('button', { name: 'Add think slot' }).click()
+    const rows = page.locator('[data-testid^="model-hopper-row-"]')
+    await expect(rows).toHaveCount(4)
+    await expect(page.getByText('Active route:')).toBeVisible()
+  })
 })

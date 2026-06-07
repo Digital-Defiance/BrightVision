@@ -47,6 +47,7 @@ import {
 import {
   appendStreamingToken,
   capList,
+  initialAssistantBubbleChunk,
   MAX_CHAT_MESSAGES,
   MAX_TERMINAL_LINES,
   MAX_TOOL_EVENTS,
@@ -232,7 +233,7 @@ import { buildGitStatusByPath } from './utils/editorGitStatus'
 import {
   applyLocalLlmHopperFromEnv,
   DEFAULT_MODEL_ROUTER_PREFS,
-  formatModelRouteEvent,
+  effectiveRouterEnabled,
   loadModelRouterPrefs,
   modelRouterApiPayload,
   saveModelRouterPrefs,
@@ -521,6 +522,9 @@ function AppShell({
   const turnAssistantMessageIdRef = useRef<number | null>(null)
   /** True once this turn streams at least one assistant token (vs. empty queued follow-up). */
   const turnHadAssistantOutputRef = useRef(false)
+  const pendingAssistantRouteRef = useRef<ModelRouteSnapshot | null>(null)
+  /** Last routed model for the in-flight turn; persists across tool breaks until the next user message. */
+  const activeAssistantRouteRef = useRef<ModelRouteSnapshot | null>(null)
   const [turnTokenUsage, setTurnTokenUsage] = useState<{
     tokensSent: number
     tokensReceived: number
@@ -586,12 +590,17 @@ function AppShell({
   const [trackTurnResources, setTrackTurnResources] = useState(false)
   const [lastUserMessageForRetry, setLastUserMessageForRetry] = useState<string | null>(null)
   const lastUserMessageForRetryRef = useRef<string | null>(null)
-  const [lastModelRoute, setLastModelRoute] = useState<ModelRouteSnapshot | null>(null)
   const lastModelRouteRef = useRef<ModelRouteSnapshot | null>(null)
   const [routerEscalateOffer, setRouterEscalateOffer] = useState<RouterEscalateOffer | null>(null)
   const turnHadToolErrorRef = useRef(false)
+  const localLlmRef = useRef<LocalLlmSnapshot | null>(null)
   const isLocalLlmModel = isOllamaVisionModel(savedConfig.model)
-  const modelRouterActive = modelRouterPrefs.enabled && isLocalLlmModel
+  const modelRouterActive =
+    effectiveRouterEnabled(
+      modelRouterPrefs,
+      savedConfig.model,
+      localLlmRef.current?.modelRouter
+    ) && isLocalLlmModel
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
@@ -622,6 +631,7 @@ function AppShell({
         }),
       ])
         .then(([installInfo, localLlm]) => {
+          localLlmRef.current = localLlm
           let next = alignConfigWithInstallRoot(
             {
               ...merged,
@@ -840,6 +850,8 @@ function AppShell({
       case 'user_message': {
         streamingAssistantId.current = null
         lastAssistantStreamRef.current = ''
+        pendingAssistantRouteRef.current = null
+        activeAssistantRouteRef.current = null
         if (!turnTimingActiveRef.current) {
           const wall = turnWallStartMsRef.current ?? Date.now()
           if (turnWallStartMsRef.current == null) turnWallStartMsRef.current = wall
@@ -869,28 +881,43 @@ function AppShell({
       case 'token': {
         const chunk = String(ev.text ?? '')
         if (!chunk) break
-        lastAssistantStreamRef.current = appendStreamingToken(
-          lastAssistantStreamRef.current,
-          chunk
-        )
         const specCap = specTurnCaptureRef.current
         const streamRef = specCap ? specStreamingAssistantId : streamingAssistantId
         const setMsgs = specCap ? setSpecChatMessages : setChatMessages
         let sid = streamRef.current
+        const priorStream = lastAssistantStreamRef.current
+        const mergedStream = appendStreamingToken(priorStream, chunk)
+
         if (sid === null) {
+          const initialContent = initialAssistantBubbleChunk(priorStream, chunk)
+          lastAssistantStreamRef.current = mergedStream
+          if (!initialContent && priorStream.length > 0) break
+
           sid = orderId
           streamRef.current = sid
           turnAssistantMessageIdRef.current = sid
           turnHadAssistantOutputRef.current = true
+          const route =
+            pendingAssistantRouteRef.current ?? activeAssistantRouteRef.current
+          if (pendingAssistantRouteRef.current) pendingAssistantRouteRef.current = null
           setMsgs((prev) => {
             const next = capList(
-              [...prev, { id: sid!, role: 'assistant' as const, content: chunk }],
+              [
+                ...prev,
+                {
+                  id: sid!,
+                  role: 'assistant' as const,
+                  content: initialContent,
+                  ...(route ? { modelRoute: route } : {}),
+                },
+              ],
               MAX_CHAT_MESSAGES
             )
-            if (!specCap) thinkingTimingRef.current.syncContent(chunk)
+            if (!specCap) thinkingTimingRef.current.syncContent(initialContent)
             return next
           })
         } else {
+          lastAssistantStreamRef.current = mergedStream
           const captureSid = sid
           turnHadAssistantOutputRef.current = true
           setMsgs((prev) => {
@@ -911,33 +938,44 @@ function AppShell({
       case 'progress':
         break
       case 'model_route': {
+        const tierRaw = String(ev.tier ?? ev.role ?? 'code')
+        const role =
+          tierRaw === 'think'
+            ? 'think'
+            : tierRaw === 'fast'
+              ? 'fast'
+              : 'code'
         const snapshot: ModelRouteSnapshot = {
-          tier: (ev.tier === 'heavy' ? 'heavy' : 'fast') as 'fast' | 'heavy',
+          tier: role,
+          role,
           model: String(ev.model ?? ''),
           estimated_tokens: ev.estimated_tokens as number | undefined,
           reasons: ev.reasons as string[] | undefined,
           escalated: Boolean(ev.escalated),
+          enable_thinking: ev.enable_thinking as boolean | null | undefined,
         }
+        pendingAssistantRouteRef.current = snapshot
+        activeAssistantRouteRef.current = snapshot
         lastModelRouteRef.current = snapshot
-        setLastModelRoute(snapshot)
-        const routeText = formatModelRouteEvent(snapshot)
         const specCapRoute = specTurnCaptureRef.current
-        const setRouteMsgs = specCapRoute ? setSpecChatMessages : setChatMessages
-        setRouteMsgs((prev) =>
-          capList(
-            [
-              ...prev,
-              {
-                id: orderId,
-                role: 'system' as const,
-                content: `Model router: ${routeText}`,
-              },
-            ],
-            MAX_CHAT_MESSAGES
+        const streamRef = specCapRoute ? specStreamingAssistantId : streamingAssistantId
+        const setMsgs = specCapRoute ? setSpecChatMessages : setChatMessages
+        const attachId = streamRef.current ?? turnAssistantMessageIdRef.current
+        if (attachId !== null) {
+          setMsgs((prev) =>
+            capList(
+              prev.map((m) => (m.id === attachId ? { ...m, modelRoute: snapshot } : m)),
+              MAX_CHAT_MESSAGES
+            )
           )
-        )
-        if (modelRouterPrefs.enabled) {
-          void ensureRoutedOllamaModel(savedConfigRef.current, modelRouterPrefs, snapshot).then(
+        }
+        if (modelRouterActive) {
+          void ensureRoutedOllamaModel(
+            savedConfigRef.current,
+            modelRouterPrefs,
+            snapshot,
+            localLlmRef.current?.modelRouter
+          ).then(
             (result) => {
               if (!result) return
               setTerminalLines((prev) => [
@@ -955,7 +993,15 @@ function AppShell({
                 swapped: result.swapped,
               }
               lastModelRouteRef.current = enriched
-              setLastModelRoute(enriched)
+              activeAssistantRouteRef.current = enriched
+              pendingAssistantRouteRef.current = enriched
+              const aid = turnAssistantMessageIdRef.current
+              if (aid !== null) {
+                const patch = (prev: ChatMessage[]) =>
+                  prev.map((m) => (m.id === aid ? { ...m, modelRoute: enriched } : m))
+                setChatMessages(patch)
+                setSpecChatMessages(patch)
+              }
             }
           )
         }
@@ -1221,16 +1267,16 @@ function AppShell({
             },
           ])
         }
-        if (
-          shouldOfferRouterEscalate(lastModelRouteRef.current, {
-            editedFiles: applied,
-            userMessage: lastUserMessageForRetryRef.current,
-            hadToolError: turnHadToolErrorRef.current,
-            escalateOnFailureEnabled: modelRouterPrefs.escalateOnFailure,
-          })
-        ) {
+        const escalate = shouldOfferRouterEscalate(lastModelRouteRef.current, {
+          editedFiles: applied,
+          userMessage: lastUserMessageForRetryRef.current,
+          hadToolError: turnHadToolErrorRef.current,
+          escalateOnFailureEnabled: modelRouterPrefs.escalateOnFailure,
+        })
+        if (escalate.offer) {
           setRouterEscalateOffer({
             message: lastUserMessageForRetryRef.current ?? '',
+            target: escalate.target,
           })
         } else {
           setRouterEscalateOffer(null)
@@ -1998,7 +2044,7 @@ function AppShell({
         detail: modelTag,
         progress: 0.22,
       })
-      if (modelRouterPrefs.enabled) {
+      if (modelRouterActive) {
         process.apply({
           phase: 'booting_api',
           label: 'Router models',
@@ -2007,7 +2053,8 @@ function AppShell({
         })
         const hopperLogs = await prepareModelRouterForSessionStart(
           savedConfig,
-          modelRouterPrefs
+          modelRouterPrefs,
+          localLlmRef.current?.modelRouter
         )
         if (hopperLogs.length) {
           appendTerminalLog(hopperLogs.map((l) => `[router] ${l}`))
@@ -2034,7 +2081,11 @@ function AppShell({
     }
     try {
       await ensureLocalLlm()
-      const routerPayload = modelRouterApiPayload(modelRouterPrefs, savedConfig.model)
+      const routerPayload = modelRouterApiPayload(
+        modelRouterPrefs,
+        savedConfig.model,
+        localLlmRef.current?.modelRouter
+      )
       const { info, workingDir, transcript = [] } = await start(savedConfig, {
         modelRouter: routerPayload as ModelRouterApiConfig | undefined,
       })
@@ -2469,7 +2520,13 @@ function AppShell({
       : undefined
     try {
       await deliverUserMessage(text, todoOptions, { escalateFromLast: true })
-      setSnackbar({ message: 'Escalating to heavy model…', severity: 'info' })
+      setSnackbar({
+        message:
+          routerEscalateOffer?.target === 'think'
+            ? 'Escalating to think model…'
+            : 'Escalating to code model…',
+        severity: 'info',
+      })
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
       setSnackbar({
@@ -2480,7 +2537,7 @@ function AppShell({
   }, [routerEscalateOffer, isRunning, activeTodo, deliverUserMessage])
 
   const handleForceRouterTier = useCallback(
-    async (tier: 'fast' | 'heavy') => {
+    async (tier: 'fast' | 'code' | 'think') => {
       const text = inputValue.trim() || lastUserMessageForRetryRef.current?.trim()
       if (!text || !isRunning) {
         setSnackbar({
@@ -3388,7 +3445,6 @@ function AppShell({
                 isTauriRuntime() ? (id, seg) => handleApplyProposedEdit(id, seg) : undefined
               }
               modelRouterEnabled={modelRouterActive}
-              lastModelRoute={lastModelRoute}
               routerEscalateOffer={routerEscalateOffer}
               onEscalateRouter={() => void handleEscalateRouter()}
               onForceRouterTier={(tier) => void handleForceRouterTier(tier)}

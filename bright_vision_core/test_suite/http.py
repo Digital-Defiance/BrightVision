@@ -215,7 +215,7 @@ def preflight() -> dict[str, Any]:
     core_port = int(os.environ.get("BV_CORE_PORT", "8741"))
     active = job_store.active_run()
     router_ready, router_detail = router_lane_ready()
-    fast_tag, heavy_tag = resolve_router_tags()
+    fast_tag, code_tag, think_tag = resolve_router_tags()
     return {
         "repoRoot": str(repo_root()),
         "corePortInUse": _port_in_use(core_port),
@@ -228,7 +228,9 @@ def preflight() -> dict[str, Any]:
         "routerLaneReady": router_ready,
         "routerLaneDetail": router_detail,
         "routerFastModel": fast_tag or None,
-        "routerHeavyModel": heavy_tag or None,
+        "routerHeavyModel": code_tag or None,
+        "routerCodeModel": code_tag or None,
+        "routerThinkModel": think_tag or None,
         "activeRunInProgress": bool(
             active and active.status in ("pending", "running")
         ),

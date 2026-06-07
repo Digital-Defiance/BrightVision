@@ -121,6 +121,7 @@ def build_user_message_with_spec_context(
     store: TodoStore | None,
     focus_requested: bool,
     inject_todo_spec: bool,
+    agent_continuation: bool = False,
 ) -> tuple[str, bool, str | None]:
     """
     Prepend task spec + optional spec-focus preamble.
@@ -147,19 +148,27 @@ def build_user_message_with_spec_context(
         user_text = formatter(item, store=store) + message
     preamble = spec_focus_preamble_applies(focus_requested=focus_requested, item=item)
     if preamble:
-        blocks = [build_spec_focus_preamble(workspace)]
+        blocks: list[str] = []
         if implement_turn:
-            blocks.append(IMPLEMENTATION_TOOL_HINTS.strip())
-            if workspace_lib_missing(workspace):
-                blocks.append(SCAFFOLD_MISSING_HINT.strip())
+            if not agent_continuation:
+                blocks.append(build_spec_focus_preamble(workspace))
+                blocks.append(IMPLEMENTATION_TOOL_HINTS.strip())
+                if workspace_lib_missing(workspace):
+                    blocks.append(SCAFFOLD_MISSING_HINT.strip())
             checklist = item.checklist if item is not None else []
             blocks.append(
                 build_implement_workspace_block(
                     workspace,
                     checklist,
                     resume=_is_resume_implement_message(message),
+                    message=message,
+                    active_task_title=item.title if item is not None else None,
+                    agent_continuation=agent_continuation,
+                    todo_item=item,
                 )
             )
+        else:
+            blocks.append(build_spec_focus_preamble(workspace))
         user_text = "\n\n".join(blocks) + "\n\n" + user_text
     return user_text, preamble, turn_todo_id
 

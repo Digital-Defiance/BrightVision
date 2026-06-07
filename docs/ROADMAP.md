@@ -104,7 +104,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | **36** | **Done** | **LLM ping** — Settings **Ping LLM**: Ollama tags + 1-token generate + core `/health`. **Tests:** `local-llm-ping.spec.ts`. See [§ #36](#36-llm-ping) |
 | **37** | **Done** | **Empty LLM response** — rewrite legacy “provider account” copy for Ollama; **Retry** (exact resend) + **Retry with hint** (append nudge); remember last user message in `App.tsx`. `emptyLlmResponse.ts`, `EmptyLlmWarning.tsx`. **Cecli fork:** `base_coder.empty_llm_tool_warning()` for tool_output path. |
 | **38** | **Done** | **Editor** — left-rail tab; file tabs + CM6 + explorer + git badges + open-from-chat; optional language packs (Settings). See [§ #38](#38--editor-rail-tab--file-tabs--explorer) |
-| **39** | **Done** | **Local model router** — hopper, Tauri preload/swap, chat escalate + force tier. **Tests:** `router-llm.spec.ts` (LLM lane), existing unit coverage. See [§ #39](#39--local-model-router) |
+| **39** | **Done** | **Local model router** — fast/code/think hopper, per-route `think` override, turn-context routing (implement→code, spec→think), Tauri preload/swap, chat escalate fast→code→think + force tier. See [§ #39](#39--local-model-router) |
 | **40** | **Done** | **cecli agents in Vision (v1)** — chat agent bar, Settings registry, `GET …/subagents`, slash fallbacks. **Tests:** `agents-bar.spec.ts`. **Open (v2):** `POST …/agents/invoke`, header pill. See [§ #40](#40--cecli-agents-in-vision) |
 | **42** | **Done** | **Mobile alerts (ntfy)** — Settings topic + test ping; Tauri POST on turn `done` and spec generate/refine job complete. **Tests:** `ntfy-alerts.spec.ts` (settings ping, turn-`done`, spec job). See [MOBILE_ALERTS.md](./MOBILE_ALERTS.md) |
 | **43** | **Done** | **LLM fixture packs for e2e** — external curated workspace collection via `E2E_FIXTURE_PACK_ROOT` (submodule-friendly), in-repo fallback, plus `scripts/verify-e2e-fixture-pack.sh` (`yarn test:e2e:fixtures`) for structure + optional pin-status preflight. |
@@ -129,7 +129,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | # | Status | Item |
 |---|--------|------|
 | 18a–18e | **Done** | Core/UI todos API, generate/refine, steered steps, reload spec from disk; **auto-import** spec from disk when layers empty (`maybe_import_spec_from_disk`, short spec folder ids); **light task inject** (checklist-only, no placeholder spec sections); **/agent → heavy** routing before preproc |
-| **53** | **Partial** | **Implement workspace grounding (2026-06)** — inject on-disk `lib/`/`test/` snapshot + **Next action** on Start/Resume implement (no ls); end-of-turn **`flutter test`** when checklist is test-focused; repetition/ls abort. **Tests:** `test_implement_workspace.py`. **Open:** auto-checklist on pass; pubspec dep repair |
+| **53** | **Partial** | **Implement workspace grounding (2026-06)** — snapshot + **Next action** from checklist **or agent todo.txt** when checklist stale/all-done; flutter verify; sanitize premature done; trimmed continue. **Tests:** `test_implement_workspace.py`, `test_agent_todos.py`. **Open:** auto-checklist on pass; pubspec dep repair |
 
 ### Kiro / spec parity (from [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md))
 
@@ -372,26 +372,27 @@ Prefer **permissive licenses** and **small bundle** ([AGENTS.md](../AGENTS.md)).
 
 ## #39 — Local model router
 
-**Problem:** A 27B local model on a “rename this button” prompt can burn 15–20 minutes of inference; swapping to a 7B coder for ~30s plus a ~30s model load is a large net win on unified memory Macs.
+**Problem:** A 27B local model on a “rename this button” prompt can burn 15–20 minutes of inference; swapping to a 7B coder for ~30s plus a ~30s model load is a large net win on unified memory Macs. Reasoning models (R1) and coding models (Qwen) need different routes *and* different LiteLLM `think` params.
 
-**Goal:** Pre-flight each user turn and pick **fast** (fighter pilot) vs **heavy** (engineer) Ollama models.
+**Goal:** Pre-flight each user turn and pick **fast** (fighter pilot) vs **code** (engineer) vs **think** (architect) Ollama models.
 
 | Signal | Route |
 |--------|--------|
-| Live session context + reserve &gt; fast model `max_input_tokens` | Heavy |
-| Message tokens ≥ `token_heavy_min` (default 12k) | Heavy |
-| Keywords: refactor, race condition, architecture, … | Heavy |
-| Keywords: rename, color, typo, … and context &lt; heavy min | Fast |
-| Context &lt; `token_fast_max` (4k) and no heavy keywords | Fast (if not a code-task verb) |
-| Fast tier, no edits, code-task verbs | Auto-escalate heavy (one retry) |
+| Implement turn, `/agent`, code-task verbs | **Code** |
+| Spec inject, spec-gen, architect/debug keywords | **Think** (falls back to code if no `THINK_MODEL`) |
+| Live session context + reserve &gt; fast model `max_input_tokens` | **Code** |
+| Message tokens ≥ `token_heavy_min` without code-task verbs | **Think** |
+| Keywords: rename, color, typo, … | **Fast** |
+| Context &lt; `token_fast_max` (4k) and no think/code signals | **Fast** |
+| Fast tier, no edits, code-task verbs | Auto-escalate **code** (then **think** if configured) |
 
-**Done:** Classify prompts (tokens + keywords); route **heavy** when live context exceeds fast model window (Cecli metadata); **model hopper** in Settings; Tauri `local_llm_prepare_hopper` + `ollama_ensure_model_loaded` (swap unload/load, `load_ms` in UI); auto-escalate + manual **Escalate to heavy**; **Force fast/heavy** in chat; `model_pool` on session create. **May 2026:** route on message tokens (not file-in-chat bump), middle-band `default_fast`, UI fast keywords; long Ollama wait stall hints; silent failed auto-load (`io.drain_events`).
+**Done:** Three-role hopper; per-hopper **Think** toggle + **LiteLLM params JSON**; router **default-on** for Ollama when fast tier enabled (`MODEL_ROUTER=0` opt-out); `THINK_MODEL` / `CODE_MODEL` in `local-llm.env`; per-turn kwargs on routed model; turn-context routing in `classify_prompt`; spec-gen forces think tier; UI force fast/code/think; escalate chain. Prior: hopper, Tauri swap, `model_pool` on session create.
 
 **Longer-term:** 1B classifier model; route timing history in Settings stats.
 
-**Env (desktop):** `local-llm.env` — `MODEL_ROUTER=1`, `FAST_MODEL` / `HEAVY_MODEL` (Ollama tags), synced via Settings → **Sync from env files**; see [LOCAL_LLM.md](./LOCAL_LLM.md#dynamic-model-tiering-39).
+**Env (desktop):** `local-llm.env` — `MODEL_ROUTER=1`, `FAST_MODEL`, `CODE_MODEL`, `THINK_MODEL` (legacy `HEAVY_MODEL` = code); see [LOCAL_LLM.md](./LOCAL_LLM.md#dynamic-model-tiering-39).
 
-**Env (headless):** `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_HEAVY_MODEL`.
+**Env (headless):** `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL`, optional `BRIGHT_VISION_CODE_MODEL` / `BRIGHT_VISION_THINK_MODEL` (legacy `BRIGHT_VISION_HEAVY_MODEL`).
 
 ---
 

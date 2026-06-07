@@ -166,6 +166,25 @@ class TestSpecFocusGating(unittest.TestCase):
             )
         )
 
+    def test_agent_continuation_skips_full_spec_preamble(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            req = "### REQ-001: Auth\n**WHEN** x **THE** system **SHALL** y\n"
+            item = _item(requirements=req, design="Overview", tasks_md="- [ ] 1. Scaffold")
+            store = TodoStore(version=1, active_id=item.id, todos=[item])
+            text, _, _ = build_user_message_with_spec_context(
+                tmp,
+                "/agent Continue the active task from where you stopped.",
+                item=item,
+                store=store,
+                focus_requested=True,
+                inject_todo_spec=False,
+                agent_continuation=True,
+            )
+            self.assertIn("Workspace snapshot", text)
+            self.assertIn("Continue (trimmed", text)
+            self.assertNotIn("Spec-focus mode (BrightVision)", text)
+            self.assertNotIn("Implementation turn (tools)", text)
+
     def test_inject_without_preamble_when_layers_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             item = _item()

@@ -1,4 +1,4 @@
-"""Router e2e lane requires explicit fast + heavy Ollama tags (not 3b-only fallback)."""
+"""Router e2e lane requires explicit fast + code Ollama tags (think optional)."""
 
 from __future__ import annotations
 
@@ -39,39 +39,54 @@ def _normalize_tag(raw: str) -> str:
     return v
 
 
-def resolve_router_tags() -> tuple[str, str]:
+def _resolve_code_tag(file_env: dict[str, str]) -> str:
+    return _normalize_tag(
+        os.environ.get("E2E_CODE_MODEL", "")
+        or os.environ.get("CODE_MODEL", "")
+        or file_env.get("CODE_MODEL", "")
+        or os.environ.get("E2E_HEAVY_MODEL", "")
+        or os.environ.get("HEAVY_MODEL", "")
+        or file_env.get("HEAVY_MODEL", "")
+    )
+
+
+def resolve_router_tags() -> tuple[str, str, str]:
     file_env = _load_local_llm_env()
     fast = _normalize_tag(
         os.environ.get("E2E_FAST_MODEL", "")
         or os.environ.get("FAST_MODEL", "")
         or file_env.get("FAST_MODEL", "")
     )
-    heavy = _normalize_tag(
-        os.environ.get("E2E_HEAVY_MODEL", "")
-        or os.environ.get("HEAVY_MODEL", "")
-        or file_env.get("HEAVY_MODEL", "")
+    code = _resolve_code_tag(file_env)
+    think = _normalize_tag(
+        os.environ.get("E2E_THINK_MODEL", "")
+        or os.environ.get("THINK_MODEL", "")
+        or file_env.get("THINK_MODEL", "")
     )
-    return fast, heavy
+    return fast, code, think
 
 
 def router_lane_ready() -> tuple[bool, str]:
-    """Suite bar: distinct fast and heavy tags (see docs/TESTING.md)."""
-    fast, heavy = resolve_router_tags()
+    """Suite bar: distinct fast and code tags (see docs/TESTING.md). Think is optional."""
+    fast, code, think = resolve_router_tags()
     if not fast:
         return (
             False,
             "Router e2e requires FAST_MODEL (or E2E_FAST_MODEL) in local-llm.env — "
             "e.g. qwen2.5-coder:7b. Falling back to llama3.2:3b alone is not a router test.",
         )
-    if not heavy:
+    if not code:
         return (
             False,
-            "Router e2e requires HEAVY_MODEL (or E2E_HEAVY_MODEL) in local-llm.env — "
-            "e.g. qwen3.6:27b-q4_K_M. Do not rely on E2E_OLLAMA_MODEL for the heavy tier.",
+            "Router e2e requires CODE_MODEL or HEAVY_MODEL (or E2E_* variants) in local-llm.env — "
+            "e.g. qwen3.6:27b-q4_K_M. Do not rely on E2E_OLLAMA_MODEL for the code tier.",
         )
-    if fast == heavy:
+    if fast == code:
         return (
             False,
-            f"Router e2e requires different fast and heavy models (both are {fast!r}).",
+            f"Router e2e requires different fast and code models (both are {fast!r}).",
         )
-    return True, f"fast={fast} heavy={heavy}"
+    detail = f"fast={fast} code={code}"
+    if think:
+        detail += f" think={think}"
+    return True, detail

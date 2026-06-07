@@ -22,23 +22,29 @@ You only need **Ollama** installed plus a small env file (below). Use the in-app
 
 ### Dynamic model tiering (#39)
 
-**Settings → Local model router** (Ollama sessions only) classifies each prompt and picks from the **model hopper**: enable one or more **fast** and **heavy** models (switches per row), set tier, reorder priority. Empty heavy id uses your main LLM model. Fast tier uses `keep_alive: 5m`; heavy uses `keep_alive: 0`.
+**Settings → Local model router** (Ollama sessions only) classifies each prompt and picks from the **model hopper**: enable **fast**, **code**, and **think** models (toggle per row), set role, reorder priority. Each row has a **Think** toggle for LiteLLM `think` on that model (defaults: on for think tier, off for fast/code). Empty code id uses your main LLM model. Fast tier uses `keep_alive: 5m`; code/think use `keep_alive: -1` (stay loaded during implement/agent loops).
+
+The router **turns on automatically** when your session model is Ollama and at least one **fast** hopper model is enabled. Opt out with **Settings → Local model router** off, or `MODEL_ROUTER=0` in env.
 
 **Configure from disk** (optional) — add to `local-llm.env`:
 
 ```bash
+# MODEL_ROUTER=0   # opt out of auto router
 MODEL_ROUTER=1
 FAST_MODEL=deepseek-coder:6.7b
-HEAVY_MODEL=qwen3.6:27b-q4_K_M
+CODE_MODEL=qwen3.6:27b-q4_K_M
+THINK_MODEL=deepseek-r1:32b
 ```
 
-Tags are bare Ollama names (no `ollama_chat/` prefix). Omit `HEAVY_MODEL` to use `DATA_MODEL` / the session LLM for the heavy tier. Then **Settings → Ollama env files → Sync from env files** (overwrites hopper + router flag) or rely on launch **fill empty** for unset hopper slots.
+Tags are bare Ollama names (no `ollama_chat/` prefix). `HEAVY_MODEL` is a legacy alias for `CODE_MODEL`. Omit `CODE_MODEL` to use `DATA_MODEL` / the session LLM for the code tier. Then **Settings → Ollama env files → Sync from env files** (overwrites hopper + router flag) or rely on launch **fill empty** for unset hopper slots.
 
-On **Terminal → Start** with the router enabled, BrightVision pulls only the resolved fast/heavy tags (not every hopper row) so startup stays fast when `OLLAMA_MAX_LOADED_MODELS=1`.
+On **Terminal → Start** with the router enabled, BrightVision pulls only the resolved fast/code/think tags (not every hopper row) so startup stays fast when `OLLAMA_MAX_LOADED_MODELS=1`.
 
-**Routing rules (Vision):** Tier choice uses **your message size** for intent (UI wording → fast; architect/refactor keywords → heavy). When the session’s **live context** (Cecli `token_count` on current messages) plus a completion reserve would exceed the **fast model’s `max_input_tokens`**, the router picks **heavy** even for short messages — avoids `exceeds the 16,384 token limit` on small fast models. The capped per-file bump in **~tok** display still does not alone force heavy. Middle-band code tasks default **fast** when context fits (escalate to heavy on failure if enabled).
+**Routing rules (Vision):** Turn context drives role choice — implement/`/agent` → **code**; spec inject / architect / debug keywords → **think**; UI wording → **fast**. When live session context plus a completion reserve would exceed the **fast model’s `max_input_tokens`**, the router picks **code** even for short messages. Middle-band code tasks default **code** when context fits (auto-escalate fast→code→think on failure if enabled).
 
-**Headless** (`bright-vision-core-serve` without the desktop UI): use `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_HEAVY_MODEL` — see [ROADMAP.md](./ROADMAP.md#39--local-model-router).
+**Per-model LiteLLM params:** Each hopper row can set **LiteLLM params (JSON)** — e.g. `{"top_p": 0.9}` — applied when that model is routed. The **Think** toggle still owns `think` (overrides any `think` key in the JSON). Global Settings **extraParams** apply to every model as a base; omit `think` there when the router is on.
+
+**Headless** (`bright-vision-core-serve` without the desktop UI): use `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_CODE_MODEL` / `BRIGHT_VISION_THINK_MODEL` (or legacy `BRIGHT_VISION_HEAVY_MODEL`) — see [ROADMAP.md](./ROADMAP.md#39--local-model-router).
 
 ### What **Start session** does (Python)
 
@@ -73,7 +79,8 @@ DATA_MODEL=qwen3.6:27b-q4_K_M
 # Optional — model router (see § Dynamic model tiering)
 # MODEL_ROUTER=1
 # FAST_MODEL=deepseek-coder:6.7b
-# HEAVY_MODEL=qwen3.6:27b-q4_K_M
+# CODE_MODEL=qwen3.6:27b-q4_K_M
+# THINK_MODEL=deepseek-r1:32b
 ```
 
 | Variable | BrightVision setting |
@@ -81,10 +88,16 @@ DATA_MODEL=qwen3.6:27b-q4_K_M
 | `OLLAMA_HOST` | **Ollama API base** → injected as `OLLAMA_API_BASE` when spawning the core |
 | `DATA_MODEL` / `LLM_MODEL` / `CHAT_MODEL` | **LLM model** as `ollama_chat/<tag>` |
 | `FAST_MODEL` | **Model router** — fast-tier Ollama tag (hopper) |
-| `HEAVY_MODEL` | **Model router** — heavy-tier tag; omit to use session / `DATA_MODEL` for heavy |
-| `MODEL_ROUTER` | `1` / `true` — enable **Settings → Local model router** on sync |
+| `CODE_MODEL` | **Model router** — code/implement tier tag |
+| `HEAVY_MODEL` | Legacy alias for `CODE_MODEL` |
+| `THINK_MODEL` | **Model router** — reasoning tier tag (optional) |
+| `MODEL_ROUTER` | `0` / `false` — opt out of auto router; `1` / `true` — force on when syncing env |
+| `FAST_THINK` | Optional `0` / `1` — LiteLLM `think` for **fast** hopper row (default off by tier) |
+| `CODE_THINK` | Optional `0` / `1` — LiteLLM `think` for **code** hopper row (default off by tier) |
 
-On launch, Vision **fills empty** fields from those files (including hopper fast/heavy when router slots are empty). Use **Settings → Ollama env files → Sync from env files** to overwrite model, Ollama base, and router hopper from disk, then **Start Local LLM** and **Ping stack** in the same section (same as **Terminal → Local LLM**). **Save** (persists Settings), then **Terminal → Start** (session).
+**Think tier** (`THINK_MODEL`) defaults to thinking **on** — there is no `THINK_THINK` env var. Override in Settings hopper (Think toggle or JSON) if needed.
+
+On launch, Vision **fills empty** fields from those files (including hopper fast/code/think when router slots are empty). Use **Settings → Ollama env files → Sync from env files** to overwrite model, Ollama base, and router hopper from disk, then **Start Local LLM** and **Ping stack** in the same section (same as **Terminal → Local LLM**). **Save** (persists Settings), then **Terminal → Start** (session).
 
 ## Quick path (macOS)
 

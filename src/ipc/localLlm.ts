@@ -92,10 +92,18 @@ export interface LocalLlmSnapshot {
   llmMode: string | null
   /** Ollama tag for router fast tier (`FAST_MODEL`). */
   fastModel?: string | null
-  /** Ollama tag for router heavy tier (`HEAVY_MODEL`; omit to use session LLM). */
+  /** Ollama tag for router code tier (`CODE_MODEL` or legacy `HEAVY_MODEL`). */
+  codeModel?: string | null
+  /** @deprecated Use `codeModel`. */
   heavyModel?: string | null
+  /** Ollama tag for router think/reasoning tier (`THINK_MODEL`). */
+  thinkModel?: string | null
   /** `MODEL_ROUTER=1` enables local model router when syncing env. */
   modelRouter?: boolean | null
+  /** `FAST_THINK=0|1` → hopper fast tier LiteLLM think (optional). */
+  fastThink?: boolean | null
+  /** `CODE_THINK=0|1` → hopper code tier LiteLLM think (optional). */
+  codeThink?: boolean | null
   /** App path when `local-llm.env` exists at repo root or under `local-llm/`. */
   repoLocalLlmRoot?: string | null
 }
@@ -185,8 +193,12 @@ export function formatLocalLlmEnvPanel(snap: LocalLlmSnapshot): string {
   if (snap.dataModel?.trim()) effective.push(`DATA_MODEL=${snap.dataModel.trim()}`)
   if (snap.ollamaHost?.trim()) effective.push(`OLLAMA_HOST=${snap.ollamaHost.trim()}`)
   if (snap.fastModel?.trim()) effective.push(`FAST_MODEL=${snap.fastModel.trim()}`)
-  if (snap.heavyModel?.trim()) effective.push(`HEAVY_MODEL=${snap.heavyModel.trim()}`)
+  const codeTag = snap.codeModel?.trim() || snap.heavyModel?.trim()
+  if (codeTag) effective.push(`CODE_MODEL=${codeTag}`)
+  if (snap.thinkModel?.trim()) effective.push(`THINK_MODEL=${snap.thinkModel.trim()}`)
   if (snap.modelRouter != null) effective.push(`MODEL_ROUTER=${snap.modelRouter ? '1' : '0'}`)
+  if (snap.fastThink != null) effective.push(`FAST_THINK=${snap.fastThink ? '1' : '0'}`)
+  if (snap.codeThink != null) effective.push(`CODE_THINK=${snap.codeThink ? '1' : '0'}`)
   const parts = [
     'Read order — later files override earlier:',
     ...lines,

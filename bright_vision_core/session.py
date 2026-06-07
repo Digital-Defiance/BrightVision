@@ -58,9 +58,13 @@ from bright_vision_core.workspace_paths import attachments_dir, attachments_pref
 from bright_vision_core.model_router import (
     ModelRouterConfig,
     RouteDecision,
+    RouteTurnContext,
     classify_prompt,
+    escalation_target,
     estimate_message_tokens,
     estimate_prompt_tokens,
+    normalize_route_role,
+    should_escalate_code_turn,
     should_escalate_fast_turn,
 )
 from bright_vision_core.model_router_apply import apply_route_to_coder
@@ -208,16 +212,29 @@ class Session:
         rebind_coder_loop_primitives(self.coder)
         self.coder.interrupt_event.set()
 
-    def sync_agent_todos_with_workspace(self) -> None:
+    def sync_agent_todos_with_workspace(
+        self,
+        *,
+        sanitize: "AgentTodoSanitizeContext | None" = None,
+        prior_done_texts: frozenset[str] | None = None,
+    ) -> list[str]:
         """Pull Cecli agent todo.txt into workspace Tasks before turn end."""
         try:
             from bright_vision_core.agent_todos import sync_session_agent_todos
 
-            sync_session_agent_todos(self, pull=True, push_active=True)
+            _store, warnings = sync_session_agent_todos(
+                self,
+                pull=True,
+                push_active=True,
+                sanitize=sanitize,
+                prior_done_texts=prior_done_texts,
+            )
+            return warnings
         except Exception:
             import logging
 
             logging.getLogger(__name__).debug("agent todo sync skipped", exc_info=True)
+            return []
 
     @classmethod
     def create(
@@ -258,6 +275,19 @@ class Session:
 
         configure_vision_runtime()
         purge_legacy_tag_caches(workspace)
+
+        from bright_vision_core.litellm_extra_params import register_litellm_extra_params
+
+        router_cfg_early = (
+            ModelRouterConfig.from_payload(model_router)
+            if isinstance(model_router, dict)
+            else model_router
+        )
+        if router_cfg_early is None:
+            router_cfg_early = ModelRouterConfig.from_env()
+        register_litellm_extra_params(
+            exclude_think=bool(router_cfg_early and router_cfg_early.enabled)
+        )
 
         prev_cwd = os.getcwd()
         os.chdir(workspace)
@@ -384,10 +414,12 @@ class Session:
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "tier": decision.tier,
+            "role": decision.role,
             "model": decision.model_name,
             "estimated_tokens": decision.estimated_tokens,
             "reasons": decision.reasons,
             "escalated": escalated,
+            "enable_thinking": decision.enable_thinking,
         }
         if load_ms is not None:
             payload["load_ms"] = load_ms
@@ -411,21 +443,23 @@ class Session:
         *,
         intent_message: str | None = None,
         force_tier: str | None = None,
+        turn: RouteTurnContext | None = None,
     ) -> RouteDecision | None:
         router = self._model_router
         if not router or not router.enabled:
             return None
-        heavy = router.heavy_model or self._router_heavy_model_name
+        code = router.resolved_code_model or self._router_heavy_model_name
         routing_text = (intent_message if intent_message is not None else user_message).strip()
         message_tokens = estimate_message_tokens(routing_text)
         context_tokens = self._estimate_turn_tokens(user_message)
-        tier_force = force_tier if force_tier in ("fast", "heavy") else None
+        tier_force = normalize_route_role(force_tier)
         decision = classify_prompt(
             routing_text,
             message_tokens=message_tokens,
             context_tokens=context_tokens,
             router=router,
-            heavy_model_name=heavy,
+            code_model_name=code,
+            turn=turn,
             force_tier=tier_force,
         )
         apply_route_to_coder(self.coder, decision, router)
@@ -464,10 +498,21 @@ class Session:
                     item = todos_api.maybe_import_spec_from_disk(item)
                 except ValueError:
                     pass
+        from bright_vision_core.spec_focus import is_implement_turn_message
+
         agent_cmd = resolve_slash_command_name(message, self.coder.commands) == "agent"
+        implement_turn = is_implement_turn_message(message)
         effective_force_tier = force_tier
-        if agent_cmd and effective_force_tier not in ("fast", "heavy"):
-            effective_force_tier = "heavy"
+        if agent_cmd and normalize_route_role(effective_force_tier) is None:
+            effective_force_tier = "code"
+
+        def _route_turn_context() -> RouteTurnContext:
+            return RouteTurnContext(
+                agent_cmd=agent_cmd,
+                implement_turn=implement_turn,
+                inject_todo_spec=inject_todo_spec,
+                exploration_aborted=bool(turn_context_state.get("exploration_aborted")),
+            )
         if hasattr(self.io, "set_chat_rel_files"):
             self.io.set_chat_rel_files(self.coder.get_inchat_relative_files())
         user_text, _spec_active, turn_todo_id = build_user_message_with_spec_context(
@@ -477,6 +522,7 @@ class Session:
             store=store,
             focus_requested=focus_requested,
             inject_todo_spec=inject_todo_spec,
+            agent_continuation=agent_continuation,
         )
 
         self.io.emit("user_message", text=user_text)
@@ -493,7 +539,29 @@ class Session:
             "readrange_errors": 0,
             "ls_calls": 0,
             "exploration_aborted": False,
+            "flutter_test_ok": None,
+            "focus_step": None,
         }
+        if item is not None:
+            from bright_vision_core.spec_focus import is_implement_turn_message
+
+            if is_implement_turn_message(message):
+                from bright_vision_core.agent_todos import load_agent_todo_rows
+                from bright_vision_core.implement_workspace import (
+                    checklist_step_prefix,
+                    resolve_implement_focus,
+                )
+
+                checklist = item.checklist or []
+                agent_rows = load_agent_todo_rows(self.coder.root, item)
+                focus, _from_agent = resolve_implement_focus(
+                    checklist,
+                    message=message,
+                    active_task_title=item.title,
+                    agent_todo_rows=agent_rows,
+                )
+                if focus is not None:
+                    turn_context_state["focus_step"] = checklist_step_prefix(focus.text)
 
         def _track_tool_activity(event: dict[str, Any]) -> None:
             nonlocal turn_had_tool_activity, turn_had_tool_call
@@ -676,10 +744,12 @@ class Session:
             )
 
         def _maybe_verify_implement_tests() -> Iterator[dict[str, Any]]:
+            from bright_vision_core.agent_todos import load_agent_todo_rows
             from bright_vision_core.implement_workspace import (
+                dart_test_paths_for_focus,
                 edited_dart_test_files,
-                first_open_checklist_item,
-                list_workspace_test_files,
+                is_test_related_checklist_text,
+                resolve_implement_focus,
                 run_flutter_tests,
             )
             from bright_vision_core.spec_focus import is_implement_turn_message
@@ -688,17 +758,21 @@ class Session:
                 return
             edited = _edited_files(self.coder)
             tests = edited_dart_test_files(edited)
-            if not tests and item is not None and item.checklist:
-                focus = first_open_checklist_item(item.checklist)
-                if focus and "test" in focus.text.lower():
-                    tests = [
-                        f
-                        for f in list_workspace_test_files(self.coder.root)
-                        if f.endswith("_test.dart")
-                    ][:4]
+            focus = None
+            if item is not None:
+                agent_rows = load_agent_todo_rows(self.coder.root, item)
+                focus, _from_agent = resolve_implement_focus(
+                    item.checklist or [],
+                    message=message,
+                    active_task_title=item.title,
+                    agent_todo_rows=agent_rows,
+                )
+            if not tests and focus is not None and is_test_related_checklist_text(focus.text):
+                tests = dart_test_paths_for_focus(self.coder.root, focus)
             if not tests:
                 return
             ok, output = run_flutter_tests(self.coder.root, tests)
+            turn_context_state["flutter_test_ok"] = ok
             header = "✅ flutter test passed" if ok else "❌ flutter test failed"
             yield self.io.tool_output(f"{header} ({', '.join(tests)}):\n{output}")
             if ok:
@@ -707,7 +781,8 @@ class Session:
                 )
             else:
                 yield self.io.tool_warning(
-                    "Fix failing tests with **ReadRange** + **EditText** on one file — do not ls or resume."
+                    "Fix failing tests with **ReadRange** + **EditText** on one file — "
+                    "do not ls, resume, or mark test tasks done in UpdateTodoList."
                 )
 
         def _maybe_warn_agent_shell_stop() -> Iterator[dict[str, Any]]:
@@ -904,12 +979,40 @@ class Session:
             yield from _maybe_warn_agent_shell_stop()
             yield from _maybe_verify_implement_tests()
             ring = list(getattr(self.io, "debug_event_ring", []) or [])
-            from bright_vision_core.agent_turn import edit_failure_turn_warning
+            from bright_vision_core.agent_turn import (
+                agent_ran_flutter_via_shell,
+                edit_failure_turn_warning,
+                flutter_test_shell_blocked_warning,
+            )
+            from bright_vision_core.spec_focus import is_implement_turn_message
+
+            if is_implement_turn_message(message) and agent_ran_flutter_via_shell(ring):
+                yield self.io.tool_warning(flutter_test_shell_blocked_warning())
 
             msg = edit_failure_turn_warning(events=ring, edited_files=_edited_files(self.coder))
             if msg:
                 yield self.io.tool_warning(msg)
-            self.sync_agent_todos_with_workspace()
+
+            from bright_vision_core.agent_todos import AgentTodoSanitizeContext
+
+            prior_done = (
+                frozenset(entry.text for entry in item.checklist if entry.done)
+                if item is not None and item.checklist
+                else frozenset()
+            )
+            sanitize = None
+            if is_implement_turn_message(message) and (
+                turn_context_state.get("focus_step") or turn_context_state.get("flutter_test_ok") is not None
+            ):
+                sanitize = AgentTodoSanitizeContext(
+                    focus_step=turn_context_state.get("focus_step"),
+                    flutter_test_ok=turn_context_state.get("flutter_test_ok"),
+                )
+            for warning in self.sync_agent_todos_with_workspace(
+                sanitize=sanitize,
+                prior_done_texts=prior_done,
+            ):
+                yield self.io.tool_warning(warning)
             yield self.io.emit(
                 "done",
                 **_attach_turn_capture({"assistant_text": "".join(assistant_text) or _assistant_text_blob()}),
@@ -933,14 +1036,14 @@ class Session:
                 emit_progress(self.io, label="Vision", message="Preparing workspace…")
                 yield from _drain_io_events(self.io)
 
-                for item in _run_blocking_with_sse_pulses(
+                for pulse_event in _run_blocking_with_sse_pulses(
                     self.io,
                     self.coder.init_before_message,
                     label="Vision",
                     message="Preparing workspace",
                 ):
-                    if isinstance(item, dict):
-                        yield item
+                    if isinstance(pulse_event, dict):
+                        yield pulse_event
             self.io.user_input(user_text)
 
             user_msg = user_text
@@ -959,10 +1062,13 @@ class Session:
                     agent_cmd
                     and self._model_router
                     and self._model_router.enabled
-                    and effective_force_tier != "fast"
+                    and normalize_route_role(effective_force_tier) != "fast"
                 ):
                     pre_route = self._route_and_apply(
-                        message, intent_message=message, force_tier="heavy"
+                        message,
+                        intent_message=message,
+                        force_tier="code",
+                        turn=_route_turn_context(),
                     )
                     if pre_route:
                         yield from self._yield_model_route(pre_route)
@@ -999,7 +1105,7 @@ class Session:
                 try:
                     confirm_ctx = agent_confirm() if agent_cmd and agent_confirm else nullcontext()
                     with confirm_ctx:
-                        for item in _run_blocking_with_sse_pulses(
+                        for preproc_result in _run_blocking_with_sse_pulses(
                             self.io,
                             _preproc,
                             label="Vision",
@@ -1010,12 +1116,12 @@ class Session:
                             on_timeout=self.interrupt_turn if preproc_timeout else None,
                             on_event=_track_tool_activity,
                         ):
-                            if isinstance(item, dict):
-                                yield item
+                            if isinstance(preproc_result, dict):
+                                yield preproc_result
                                 if turn_context_state["aborted"]:
                                     break
                             else:
-                                user_msg = item
+                                user_msg = preproc_result
                 except TimeoutError as err:
                     _restore_agent_preproc_io()
                     yield from _drain_io_events(
@@ -1097,14 +1203,21 @@ class Session:
 
             route_decision: RouteDecision | None = None
             if escalate_from_last and self._model_router and self._model_router.enabled:
+                escalate_tier = escalation_target(self._last_route)
                 route_decision = self._route_and_apply(
-                    user_msg, intent_message=message, force_tier="heavy"
+                    user_msg,
+                    intent_message=message,
+                    force_tier=escalate_tier,
+                    turn=_route_turn_context(),
                 )
                 if route_decision:
                     yield from self._yield_model_route(route_decision, escalated=True)
             elif self._model_router and self._model_router.enabled:
                 route_decision = self._route_and_apply(
-                    user_msg, intent_message=message, force_tier=effective_force_tier
+                    user_msg,
+                    intent_message=message,
+                    force_tier=effective_force_tier,
+                    turn=_route_turn_context(),
                 )
                 if route_decision:
                     yield from self._yield_model_route(route_decision)
@@ -1115,7 +1228,11 @@ class Session:
             total_edit_failures = 0
             total_readrange_failures = 0
             edit_failure_aborted = False
-            max_attempts = 2 if self._model_router and self._model_router.escalate_on_failure else 1
+            max_attempts = 1
+            if self._model_router and self._model_router.escalate_on_failure:
+                max_attempts = 2
+                if self._model_router.resolved_think_model:
+                    max_attempts = 3
 
             def _yield_turn_event(event: dict[str, Any]) -> Iterator[dict[str, Any]]:
                 nonlocal turn_had_tool_error, turn_tool_error_text
@@ -1173,7 +1290,10 @@ class Session:
             for attempt in range(max_attempts):
                 if attempt > 0 and route_decision:
                     route_decision = self._route_and_apply(
-                        user_msg, intent_message=message, force_tier="heavy"
+                        user_msg,
+                        intent_message=message,
+                        force_tier=escalation_target(route_decision),
+                        turn=_route_turn_context(),
                     )
                     yield from self._yield_model_route(route_decision, escalated=True)
 
@@ -1224,6 +1344,21 @@ class Session:
                         assistant_text="".join(attempt_text),
                         had_tool_error=turn_had_tool_error,
                         tool_error_text=turn_tool_error_text,
+                    )
+                ):
+                    assistant_text.clear()
+                    continue
+                if (
+                    attempt == 0
+                    and route_decision
+                    and self._model_router
+                    and should_escalate_code_turn(
+                        route_decision,
+                        router=self._model_router,
+                        user_message=message,
+                        edited_files=edited,
+                        assistant_text="".join(attempt_text),
+                        had_tool_error=turn_had_tool_error,
                     )
                 ):
                     assistant_text.clear()

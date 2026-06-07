@@ -197,8 +197,9 @@ E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:llm:core
 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:e2e:llm
 # Example bigger model:
 E2E_OLLAMA_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_LLM=1 yarn test:e2e:llm
-# Router lane with explicit fast/heavy tags:
-E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_HEAVY_MODEL=ollama_chat/qwen3.6:27b-q4_K_M yarn test:e2e:llm:router
+# Router lane with explicit fast/code tags (think optional):
+E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_CODE_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_THINK_MODEL=ollama_chat/deepseek-r1:32b yarn test:e2e:llm:router
+# Mocked role chips (no Ollama): yarn playwright test e2e/model-router-roles.spec.ts
 ```
 
 Optional env:
@@ -208,8 +209,10 @@ Optional env:
 | `E2E_OLLAMA_MODEL` | LiteLLM id or bare Ollama tag (`ollama_chat/…` or `llama3.2:3b`); `openai/…` / `azure/…` pass through unchanged |
 | `E2E_MODEL_ROUTER` | `1` required for `yarn test:e2e:llm:router` (`router-llm.spec.ts`) |
 | `E2E_FAST_MODEL` | Router fast tier model tag/id (falls back to `FAST_MODEL`) |
-| `E2E_HEAVY_MODEL` | Router heavy tier model tag/id (falls back to `HEAVY_MODEL`) |
-| Router lane (Test Lab / suite) | Requires **both** `FAST_MODEL` and `HEAVY_MODEL` in `local-llm.env` (distinct tags). Using only `llama3.2:3b` for both is rejected — not a real router test. `router-llm.spec.ts` asserts chip + reply, then allows **post-answer settle** (60s grace) when SSE `done` lags after the answer is visible. |
+| `E2E_CODE_MODEL` | Router code/implement tier (falls back to `CODE_MODEL`, then `HEAVY_MODEL`) |
+| `E2E_THINK_MODEL` | Router think/reasoning tier (falls back to `THINK_MODEL`; think-tier LLM test skips when unset) |
+| `E2E_HEAVY_MODEL` | Legacy alias for code tier |
+| Router lane (Test Lab / suite) | Requires **distinct** `FAST_MODEL` and `CODE_MODEL`/`HEAVY_MODEL` in `local-llm.env`. `THINK_MODEL` optional (enables Architect chip LLM test). `router-llm.spec.ts`: fast→Fighter pilot, implement→Engineer, architect→Architect+`think:on`. `model-router-roles.spec.ts`: mocked SSE for all three roles without GPU. |
 | `BV_SUITE_STRICT_PHASED_PYTEST` | `1` on `llm:core`: phased pytest fails on EARS gate instead of skip. With `BV_COMPACT_SPEC_GEN=1`, deterministic repair adds SHALL to any parsed EARS clause missing normative text (bullets, WHEN/IF/WHERE/WHILE prose) before the gate runs. |
 | `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar) |
 | `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |

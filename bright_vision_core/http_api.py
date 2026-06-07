@@ -106,7 +106,7 @@ _sessions: dict[str, Session] = {}
 
 class ModelPoolEntryModel(BaseModel):
     model: str = ""
-    tier: str = Field(description="fast | heavy")
+    tier: str = Field(description="fast | code | think (heavy → code)")
     enabled: bool = True
     label: str = ""
 
@@ -116,7 +116,15 @@ class ModelRouterRequest(BaseModel):
     fast_model: str = Field(default="", description="Resolved fast tier (from hopper)")
     heavy_model: str | None = Field(
         default=None,
-        description="Resolved heavy tier; defaults to session model",
+        description="Resolved code tier (legacy name; same as code_model)",
+    )
+    code_model: str | None = Field(
+        default=None,
+        description="Resolved code tier; defaults to session model",
+    )
+    think_model: str | None = Field(
+        default=None,
+        description="Resolved think/reasoning tier (optional)",
     )
     model_pool: list[ModelPoolEntryModel] = Field(
         default_factory=list,
@@ -219,11 +227,11 @@ class MessageRequest(BaseModel):
     )
     force_tier: str | None = Field(
         default=None,
-        description="Override router: fast | heavy",
+        description="Override router: fast | code | think (heavy → code)",
     )
     escalate_from_last: bool = Field(
         default=False,
-        description="Force heavy tier (e.g. user clicked Escalate after a fast attempt)",
+        description="Escalate to next tier (fast→code→think) after a stalled attempt",
     )
 
 
@@ -959,7 +967,7 @@ def import_workspace_agent_todo_plan(workspace: str):
 def import_session_agent_todo_plan(session_id: str):
     """Sync this session's agent todo.txt ↔ workspace Tasks."""
     session = _get_session(session_id)
-    store = sync_session_agent_todos(session, pull=True, push_active=True)
+    store, _warnings = sync_session_agent_todos(session, pull=True, push_active=True)
     return _todo_list_response(store)
 
 

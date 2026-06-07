@@ -98,7 +98,13 @@ function normalizeOllamaTag(raw: string): string {
   return v
 }
 
-export function resolveRouterModelTags(): { fastTag: string; heavyTag: string } {
+export function resolveRouterModelTags(): {
+  fastTag: string
+  codeTag: string
+  thinkTag: string
+  /** @deprecated Use `codeTag`. */
+  heavyTag: string
+} {
   const envFile = loadLocalLlmEnv()
   const fastTag = normalizeOllamaTag(
     process.env.E2E_FAST_MODEL?.trim() ||
@@ -106,20 +112,35 @@ export function resolveRouterModelTags(): { fastTag: string; heavyTag: string } 
       envFile.FAST_MODEL?.trim() ||
       ''
   )
-  const heavyTag = normalizeOllamaTag(
-    process.env.E2E_HEAVY_MODEL?.trim() ||
+  const codeTag = normalizeOllamaTag(
+    process.env.E2E_CODE_MODEL?.trim() ||
+      process.env.CODE_MODEL?.trim() ||
+      envFile.CODE_MODEL?.trim() ||
+      process.env.E2E_HEAVY_MODEL?.trim() ||
       process.env.HEAVY_MODEL?.trim() ||
       envFile.HEAVY_MODEL?.trim() ||
       process.env.E2E_OLLAMA_MODEL?.trim() ||
       resolveOllamaTag()
   )
-  return { fastTag, heavyTag }
+  const thinkTag = normalizeOllamaTag(
+    process.env.E2E_THINK_MODEL?.trim() ||
+      process.env.THINK_MODEL?.trim() ||
+      envFile.THINK_MODEL?.trim() ||
+      ''
+  )
+  return { fastTag, codeTag, thinkTag, heavyTag: codeTag }
 }
 
 export function buildRouterPrefsForStorage():
   | {
       enabled: true
-      models: { tier: 'fast' | 'heavy'; model: string; enabled: boolean; label: string }[]
+      models: {
+        id?: string
+        tier: 'fast' | 'code' | 'think' | 'heavy'
+        model: string
+        enabled: boolean
+        label: string
+      }[]
       tokenFastMax: number
       tokenHeavyMin: number
       keepAliveFastSec: number
@@ -128,24 +149,42 @@ export function buildRouterPrefsForStorage():
     }
   | null {
   if (!isRouterLlmE2eEnabled()) return null
-  const { fastTag, heavyTag } = resolveRouterModelTags()
+  const { fastTag, codeTag, thinkTag } = resolveRouterModelTags()
   if (!fastTag) return null
+  const models: {
+    id?: string
+    tier: 'fast' | 'code' | 'think' | 'heavy'
+    model: string
+    enabled: boolean
+    label: string
+  }[] = [
+    {
+      id: 'e2e-fast',
+      tier: 'fast',
+      model: visionModelFromTag(fastTag),
+      enabled: true,
+      label: `E2E FAST_MODEL: ${fastTag}`,
+    },
+    {
+      id: 'e2e-code',
+      tier: 'code',
+      model: visionModelFromTag(codeTag || fastTag),
+      enabled: true,
+      label: `E2E CODE_MODEL: ${codeTag || fastTag}`,
+    },
+  ]
+  if (thinkTag) {
+    models.push({
+      id: 'e2e-think',
+      tier: 'think',
+      model: visionModelFromTag(thinkTag),
+      enabled: true,
+      label: `E2E THINK_MODEL: ${thinkTag}`,
+    })
+  }
   return {
     enabled: true,
-    models: [
-      {
-        tier: 'fast',
-        model: visionModelFromTag(fastTag),
-        enabled: true,
-        label: `E2E FAST_MODEL: ${fastTag}`,
-      },
-      {
-        tier: 'heavy',
-        model: visionModelFromTag(heavyTag || fastTag),
-        enabled: true,
-        label: `E2E HEAVY_MODEL: ${heavyTag || fastTag}`,
-      },
-    ],
+    models,
     tokenFastMax: Number(process.env.E2E_ROUTER_TOKEN_FAST_MAX || 4096),
     tokenHeavyMin: Number(process.env.E2E_ROUTER_TOKEN_HEAVY_MIN || 12000),
     keepAliveFastSec: 300,

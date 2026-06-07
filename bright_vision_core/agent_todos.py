@@ -32,8 +32,86 @@ class AgentTodoRow:
     current: bool
 
 
+@dataclass(frozen=True)
+class AgentTodoSanitizeContext:
+    """Optional guards applied when pulling agent todo.txt into workspace Tasks."""
+
+    focus_step: str | None = None
+    flutter_test_ok: bool | None = None
+
+
+def sanitize_agent_todo_rows(
+    rows: list[AgentTodoRow],
+    *,
+    ctx: AgentTodoSanitizeContext,
+    prior_done_texts: frozenset[str],
+) -> tuple[list[AgentTodoRow], list[str]]:
+    """Revert premature done marks from agent UpdateTodoList during implement turns."""
+    from bright_vision_core.implement_workspace import (
+        checklist_step_prefix,
+        is_step_after,
+        is_test_related_checklist_text,
+    )
+
+    warnings: list[str] = []
+    sanitized: list[AgentTodoRow] = []
+    for row in rows:
+        keep = row
+        step = checklist_step_prefix(row.text)
+        newly_done = row.done and row.text not in prior_done_texts
+
+        if newly_done and ctx.focus_step and step and is_step_after(step, ctx.focus_step):
+            keep = AgentTodoRow(text=row.text, done=False, current=row.current)
+            warnings.append(
+                f"Reverted premature done on **{row.text[:72]}** "
+                f"(beyond current focus **{ctx.focus_step}**)."
+            )
+        elif (
+            newly_done
+            and ctx.flutter_test_ok is False
+            and is_test_related_checklist_text(row.text)
+        ):
+            keep = AgentTodoRow(text=row.text, done=False, current=row.current)
+            warnings.append(
+                f"Reverted done on **{row.text[:72]}** — BrightVision flutter test did not pass."
+            )
+
+        sanitized.append(keep)
+    return sanitized, warnings
+
+
 def agent_todo_link_for(relpath: str) -> str:
     return f"{AGENT_TODO_LINK_PREFIX}{relpath.replace(chr(92), '/')}"
+
+
+def current_agent_todo_row(rows: list[AgentTodoRow]) -> AgentTodoRow | None:
+    """First ``→`` (current) open row, else first remaining open row."""
+    for row in rows:
+        if row.current and not row.done:
+            return row
+    for row in rows:
+        if not row.done:
+            return row
+    return None
+
+
+def load_agent_todo_rows(workspace: str | Path, item: TodoItem | None = None) -> list[AgentTodoRow]:
+    """Read Cecli agent ``todo.txt`` for implement-turn grounding."""
+    root = Path(workspace).resolve()
+    relpath = parse_agent_todo_link(item.links) if item else None
+    if not relpath and item and AGENT_PLAN_LINK in item.links:
+        latest = find_latest_agent_todo_txt(root)
+        if latest:
+            relpath = str(latest.relative_to(root)).replace("\\", "/")
+    if not relpath:
+        latest = find_latest_agent_todo_txt(root)
+        if latest:
+            relpath = str(latest.relative_to(root)).replace("\\", "/")
+    path = resolve_agent_todo_path(root, relpath)
+    if not path:
+        return []
+    rows = parse_agent_todo_txt(path.read_text(encoding="utf-8"))
+    return _recover_char_split_agent_rows(rows)
 
 
 def parse_agent_todo_link(links: list[str]) -> str | None:
@@ -409,20 +487,38 @@ def try_import_agent_plan_for_workspace(
         return None
 
 
-def sync_session_agent_todos(session: Session, *, pull: bool = True, push_active: bool = True) -> TodoStore:
+def sync_session_agent_todos(
+    session: Session,
+    *,
+    pull: bool = True,
+    push_active: bool = True,
+    sanitize: AgentTodoSanitizeContext | None = None,
+    prior_done_texts: frozenset[str] | None = None,
+) -> tuple[TodoStore, list[str]]:
     """
     Two-way link for the current chat session:
     - pull: agent todo.txt → workspace (active task, or agent-plan task)
     - push: active workspace task → this session's todo.txt
+
+    Returns ``(store, sanitize_warnings)``.
     """
     api = WorkspaceTodos(session.coder.root)
     relpath = session_agent_todo_relpath(session)
     store = api.load()
+    warnings: list[str] = []
 
     if pull:
         path = api.root / relpath
         if path.is_file():
             rows = parse_agent_todo_txt(path.read_text(encoding="utf-8"))
+            if rows and sanitize is not None:
+                rows, warnings = sanitize_agent_todo_rows(
+                    rows,
+                    ctx=sanitize,
+                    prior_done_texts=prior_done_texts or frozenset(),
+                )
+                if warnings:
+                    path.write_text(format_agent_todo_txt(rows) + "\n", encoding="utf-8")
             if rows:
                 store = import_agent_plan_store(
                     store,
@@ -443,7 +539,7 @@ def sync_session_agent_todos(session: Session, *, pull: bool = True, push_active
         active = api.find(store, store.active_id)
         if active:
             api.sync_spec_files(active)
-    return store
+    return store, warnings
 
 
 def maybe_export_task_to_agent(workspace_dir: str | Path, item: TodoItem) -> None:

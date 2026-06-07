@@ -333,7 +333,7 @@ export function SettingsPanel({
             value={config.extraParams}
             onChange={(e) => onChange({ ...config, extraParams: e.target.value })}
             slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
-            helperText="Passed as LITELLM_EXTRA_PARAMS when spawning the API on desktop."
+            helperText="LiteLLM defaults for every model (desktop → LITELLM_EXTRA_PARAMS). With the model router on, set per-hopper params in the hopper editor; omit think here."
           />
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             The git project you edit is chosen when {DISPLAY_VISION} opens (or via the project name in
@@ -500,6 +500,7 @@ export function SettingsPanel({
         prefs={modelRouterPrefs}
         sessionModel={sessionModel}
         ollamaSnapshot={ollamaTagsSnap}
+        modelRouterEnv={localLlmSnap?.modelRouter}
         onChange={onModelRouterPrefsChange}
       />
 

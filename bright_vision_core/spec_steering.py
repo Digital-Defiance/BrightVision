@@ -35,7 +35,8 @@ IMPLEMENTATION_TOOL_HINTS = """\
 - **Before EditText:** always **`ReadRange`** the target file in the same turn (required for new files and after ContextManager create).
 - **Scaffolding:** prefer `ContextManager` + `EditText` over repeated `ls` / `Grep` on known paths.
 - After a successful read, edit — do not loop on exploration.
-- **UpdateTodoList:** mark a task `done: true` only after **EditText** succeeded for that task's deliverable — never on failed edits.
+- **UpdateTodoList:** mark **only the current** checklist item `done: true` after **EditText** succeeded (and BrightVision **flutter test** passed when applicable) — never on failed edits or skipped verification.
+- **Do not** run `flutter test` via Command — BrightVision runs it at end of implement turns.
 - When EditText errors, read the error, **ReadRange**, retry one file; do not assume success from assistant prose alone.
 """
 

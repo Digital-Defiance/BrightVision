@@ -713,6 +713,25 @@ def agent_stall_recovery_warning(*, auto_continue_attempted: bool) -> str:
     )
 
 
+def agent_ran_flutter_via_shell(events: list[dict] | tuple) -> bool:
+    for event in events:
+        if event.get("type") != "tool_output":
+            continue
+        text = str(event.get("text") or "").lower()
+        if "command not found: flutter" in text:
+            return True
+        if "shell command completed" in text and "flutter test" in text:
+            return True
+    return False
+
+
+def flutter_test_shell_blocked_warning() -> str:
+    return (
+        "Do not run `flutter test` via Command — BrightVision runs flutter test at the "
+        "end of implement turns. Wait for the ✅/❌ flutter test line before marking test tasks done."
+    )
+
+
 def agent_continue_after_token_limit_message() -> str:
     return (
         "/agent Continue the active task from where you stopped. "

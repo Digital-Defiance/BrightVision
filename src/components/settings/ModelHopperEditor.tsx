@@ -21,11 +21,19 @@ import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
 import { ollamaChatModelFromTag } from '../../ipc/localLlm'
 import {
   createHopperEntry,
+  hopperExtraParamsError,
   moveHopperEntry,
+  normalizeHopperTier,
   removeHopperEntry,
+  resolveHopperEnableThinking,
   updateHopperEntry,
   type ModelHopperEntry,
+  type ModelHopperTier,
 } from '../../theme/modelHopper'
+import {
+  ModelRouteTierSelectLabel,
+  modelRouteTierBorderSx,
+} from './ModelRouteTierIndicator'
 
 interface ModelHopperEditorProps {
   models: ModelHopperEntry[]
@@ -48,7 +56,9 @@ export function ModelHopperEditor({
     <Stack spacing={1} data-testid="model-hopper-editor">
       <Typography variant="body2" color="text.secondary">
         Enable models in the hopper for the router to choose from. Order is priority (top first).
-        Heavy rows with an empty id use{' '}
+        Per-hopper <strong>Think</strong> sets LiteLLM <code>think</code>; optional{' '}
+        <strong>LiteLLM params</strong> JSON sets other kwargs when routed. Code rows with an empty
+        id use{' '}
         <Typography component="span" fontFamily="monospace" fontSize="0.8rem">
           {sessionModel}
         </Typography>
@@ -57,19 +67,22 @@ export function ModelHopperEditor({
       {models.map((entry, index) => (
         <Box
           key={entry.id}
-          sx={{
+          sx={(theme) => ({
             display: 'flex',
-            flexWrap: 'wrap',
+            flexDirection: 'column',
             gap: 1,
-            alignItems: 'flex-start',
             p: 1,
+            pl: 1.25,
             borderRadius: 1,
             border: 1,
             borderColor: entry.enabled ? 'primary.dark' : 'divider',
             bgcolor: entry.enabled ? 'action.selected' : 'transparent',
-          }}
+            ...modelRouteTierBorderSx(theme, entry.tier),
+          })}
           data-testid={`model-hopper-row-${entry.id}`}
+          data-hopper-tier={normalizeHopperTier(entry.tier)}
         >
+          <Stack direction="row" flexWrap="wrap" gap={1} alignItems="flex-start" sx={{ width: '100%' }}>
           <FormControlLabel
             sx={{ m: 0, minWidth: 56 }}
             control={
@@ -89,21 +102,31 @@ export function ModelHopperEditor({
             label=""
           />
           <FormControl size="small" sx={{ minWidth: 100 }} disabled={disabled}>
-            <InputLabel id={`tier-${entry.id}`}>Tier</InputLabel>
+            <InputLabel id={`tier-${entry.id}`}>Role</InputLabel>
             <Select
               labelId={`tier-${entry.id}`}
-              label="Tier"
-              value={entry.tier}
+              label="Role"
+              value={normalizeHopperTier(entry.tier)}
+              renderValue={(value) => (
+                <ModelRouteTierSelectLabel tier={value as ModelHopperTier} />
+              )}
               onChange={(e) =>
                 onChange(
                   updateHopperEntry(models, entry.id, {
-                    tier: e.target.value === 'heavy' ? 'heavy' : 'fast',
+                    tier: e.target.value as ModelHopperTier,
                   })
                 )
               }
             >
-              <MenuItem value="fast">Fast</MenuItem>
-              <MenuItem value="heavy">Heavy</MenuItem>
+              <MenuItem value="fast">
+                <ModelRouteTierSelectLabel tier="fast" />
+              </MenuItem>
+              <MenuItem value="code">
+                <ModelRouteTierSelectLabel tier="code" />
+              </MenuItem>
+              <MenuItem value="think">
+                <ModelRouteTierSelectLabel tier="think" />
+              </MenuItem>
             </Select>
           </FormControl>
           <TextField
@@ -119,9 +142,14 @@ export function ModelHopperEditor({
           <TextField
             size="small"
             label="Model id"
-            disabled={disabled || (entry.tier === 'heavy' && !entry.model)}
+            disabled={
+              disabled ||
+              ((entry.tier === 'code' || entry.tier === 'heavy') && !entry.model)
+            }
             placeholder={
-              entry.tier === 'heavy' ? '(session model)' : 'ollama_chat/…'
+              entry.tier === 'code' || entry.tier === 'heavy'
+                ? '(session model)'
+                : 'ollama_chat/…'
             }
             value={entry.model}
             onChange={(e) =>
@@ -130,6 +158,32 @@ export function ModelHopperEditor({
             sx={{ flex: '2 1 200px', minWidth: 180 }}
             slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
           />
+          <Tooltip
+            title={
+              entry.enableThinking == null
+                ? `Tier default (${resolveHopperEnableThinking(entry) ? 'on' : 'off'})`
+                : 'Explicit override'
+            }
+          >
+            <FormControlLabel
+              sx={{ m: 0, minWidth: 88 }}
+              control={
+                <Switch
+                  size="small"
+                  checked={resolveHopperEnableThinking(entry)}
+                  disabled={disabled || !entry.enabled}
+                  onChange={(_, checked) =>
+                    onChange(
+                      updateHopperEntry(models, entry.id, { enableThinking: checked })
+                    )
+                  }
+                  inputProps={{ 'aria-label': `Enable thinking for ${entry.label ?? entry.model}` }}
+                  data-testid={`model-hopper-thinking-${entry.id}`}
+                />
+              }
+              label="Think"
+            />
+          </Tooltip>
           <Stack direction="row" spacing={0.25}>
             <Tooltip title="Higher priority">
               <span>
@@ -168,6 +222,28 @@ export function ModelHopperEditor({
               </span>
             </Tooltip>
           </Stack>
+          </Stack>
+          <TextField
+            size="small"
+            label="LiteLLM params (JSON)"
+            placeholder='{"top_p": 0.9}'
+            disabled={disabled || !entry.enabled}
+            value={entry.extraParams ?? ''}
+            onChange={(e) =>
+              onChange(updateHopperEntry(models, entry.id, { extraParams: e.target.value }))
+            }
+            error={Boolean(hopperExtraParamsError(entry.extraParams))}
+            helperText={
+              hopperExtraParamsError(entry.extraParams) ??
+              'Optional per-model kwargs when routed; Think toggle overrides think'
+            }
+            fullWidth
+            multiline
+            minRows={1}
+            maxRows={4}
+            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.8rem' } } }}
+            data-testid={`model-hopper-extra-${entry.id}`}
+          />
         </Box>
       ))}
       <Stack direction="row" flexWrap="wrap" gap={1}>
@@ -194,15 +270,33 @@ export function ModelHopperEditor({
             onChange([
               ...models,
               createHopperEntry({
-                tier: 'heavy',
+                tier: 'code',
                 model: '',
-                label: 'Session model',
+                label: 'Session model (code)',
                 enabled: false,
               }),
             ])
           }
         >
-          Add heavy slot
+          Add code slot
+        </Button>
+        <Button
+          size="small"
+          variant="text"
+          disabled={disabled}
+          onClick={() =>
+            onChange([
+              ...models,
+              createHopperEntry({
+                tier: 'think',
+                model: 'ollama_chat/deepseek-r1:32b',
+                label: 'Think model',
+                enabled: false,
+              }),
+            ])
+          }
+        >
+          Add think slot
         </Button>
         {ollamaTags.length > 0 && (
           <FormControl size="small" sx={{ minWidth: 200 }} disabled={disabled}>

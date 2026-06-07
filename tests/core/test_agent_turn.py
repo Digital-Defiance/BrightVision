@@ -488,3 +488,15 @@ def test_edit_success_resets_consecutive_counter_logic():
     assert is_read_range_success_event(
         {"type": "tool_output", "text": "✅ Retrieved context for 1 operation(s)"}
     )
+
+
+def test_agent_ran_flutter_via_shell_detects_missing_binary():
+    from bright_vision_core.agent_turn import agent_ran_flutter_via_shell
+
+    events = [
+        {
+            "type": "tool_output",
+            "text": "Shell command completed within 45s timeout with exit code 127. Output:\nbsh:1: command not found: flutter\n",
+        }
+    ]
+    assert agent_ran_flutter_via_shell(events)

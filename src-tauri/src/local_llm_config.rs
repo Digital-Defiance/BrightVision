@@ -14,7 +14,11 @@ const KEYS: &[&str] = &[
     "OLLAMA_HOST",
     "FAST_MODEL",
     "HEAVY_MODEL",
+    "CODE_MODEL",
+    "THINK_MODEL",
     "MODEL_ROUTER",
+    "FAST_THINK",
+    "CODE_THINK",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -26,10 +30,18 @@ pub struct LocalLlmSnapshot {
     pub llm_mode: Option<String>,
     /// Ollama tag for router fast tier (`FAST_MODEL` in env).
     pub fast_model: Option<String>,
-    /// Ollama tag for router heavy tier (`HEAVY_MODEL`; empty = use session LLM).
+    /// Ollama tag for router code tier (`CODE_MODEL` or legacy `HEAVY_MODEL`).
+    pub code_model: Option<String>,
+    /// Legacy alias for code tier (`HEAVY_MODEL` in env).
     pub heavy_model: Option<String>,
+    /// Ollama tag for router think/reasoning tier (`THINK_MODEL` in env).
+    pub think_model: Option<String>,
     /// When set, enables Settings → Local model router on sync / startup fill.
     pub model_router: Option<bool>,
+    /// LiteLLM ``think`` for fast tier hopper row (`FAST_THINK=0|1`).
+    pub fast_think: Option<bool>,
+    /// LiteLLM ``think`` for code tier hopper row (`CODE_THINK=0|1`).
+    pub code_think: Option<bool>,
     /// App path when `local-llm.env` or `local-llm/local-llm.env` exists under the install root.
     pub repo_local_llm_root: Option<String>,
 }
@@ -171,14 +183,25 @@ pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {
     let model_router = vars
         .get("MODEL_ROUTER")
         .and_then(|v| parse_bool_env(v));
+    let fast_think = vars.get("FAST_THINK").and_then(|v| parse_bool_env(v));
+    let code_think = vars.get("CODE_THINK").and_then(|v| parse_bool_env(v));
+
+    let code_model = resolve_router_tag(&vars, "CODE_MODEL")
+        .or_else(|| resolve_router_tag(&vars, "HEAVY_MODEL"));
+    let heavy_model = resolve_router_tag(&vars, "HEAVY_MODEL");
+    let think_model = resolve_router_tag(&vars, "THINK_MODEL");
 
     LocalLlmSnapshot {
         ollama_host: vars.get("OLLAMA_HOST").cloned(),
         data_model: resolve_chat_model(&vars),
         llm_mode: vars.get("LLM_MODE").cloned(),
         fast_model: resolve_router_tag(&vars, "FAST_MODEL"),
-        heavy_model: resolve_router_tag(&vars, "HEAVY_MODEL"),
+        code_model: code_model.clone(),
+        heavy_model,
+        think_model,
         model_router,
+        fast_think,
+        code_think,
         repo_local_llm_root: repo_local_llm_root(),
         sources,
     }

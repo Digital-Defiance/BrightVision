@@ -159,14 +159,32 @@ def test_router_lane_ready_requires_distinct_tags(monkeypatch, tmp_path):
     from bright_vision_core.test_suite import router_preflight as rp
 
     env_file = tmp_path / "local-llm.env"
-    env_file.write_text("FAST_MODEL=qwen2.5-coder:7b\nHEAVY_MODEL=llama3.2:3b\n", encoding="utf-8")
+    env_file.write_text(
+        "FAST_MODEL=qwen2.5-coder:7b\nCODE_MODEL=llama3.2:3b\nTHINK_MODEL=deepseek-r1:32b\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
     monkeypatch.delenv("E2E_FAST_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
     monkeypatch.delenv("E2E_HEAVY_MODEL", raising=False)
     monkeypatch.delenv("FAST_MODEL", raising=False)
+    monkeypatch.delenv("CODE_MODEL", raising=False)
     monkeypatch.delenv("HEAVY_MODEL", raising=False)
-    ok, _ = rp.router_lane_ready()
+    ok, detail = rp.router_lane_ready()
     assert ok is True
+    assert "think=deepseek-r1:32b" in detail
+
+
+def test_resolve_router_tags_code_from_heavy_alias(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import router_preflight as rp
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text("FAST_MODEL=fast\nHEAVY_MODEL=code\n", encoding="utf-8")
+    monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
+    fast, code, think = rp.resolve_router_tags()
+    assert fast == "fast"
+    assert code == "code"
+    assert think == ""
 
 
 def test_router_lane_ready_rejects_missing_fast(monkeypatch, tmp_path):

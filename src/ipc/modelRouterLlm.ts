@@ -3,8 +3,8 @@ import type { VisionConfig } from './config'
 import { isOllamaVisionModel, ollamaTagFromVisionModel, resolveLocalLlmForConfig } from './localLlm'
 import { isTauriRuntime } from './isTauri'
 import type { ModelRouterPrefs } from '../theme/modelRouterPrefs'
-import { normalizeKeepAliveHeavySec } from '../theme/modelRouterPrefs'
-import { resolveHopperModels } from '../theme/modelHopper'
+import { effectiveRouterEnabled, normalizeKeepAliveHeavySec, normalizeModelRouteRole } from '../theme/modelRouterPrefs'
+import { normalizeHopperTier, resolveHopperModels } from '../theme/modelHopper'
 
 export interface HopperPrepareEntry {
   model_tag: string
@@ -18,34 +18,47 @@ export interface OllamaEnsureModelResult {
   swapped: boolean
 }
 
+export type ModelRouteRole = 'fast' | 'code' | 'think'
+
 export interface ModelRouteSnapshot {
-  tier: 'fast' | 'heavy'
+  tier: ModelRouteRole | 'heavy'
+  role?: ModelRouteRole
   model: string
   estimated_tokens?: number
   reasons?: string[]
   escalated?: boolean
   load_ms?: number
   swapped?: boolean
+  enable_thinking?: boolean | null
 }
 
 function ollamaHostForConfig(config: VisionConfig): string {
   return config.ollamaApiBase.trim() || resolveLocalLlmForConfig(config).ollamaHost
 }
 
+function keepAliveForRole(
+  role: ModelRouteRole,
+  prefs: ModelRouterPrefs
+): number {
+  if (role === 'fast') return prefs.keepAliveFastSec
+  return normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec)
+}
+
 /**
- * Session start: only ensure the resolved fast/heavy route tags exist on disk.
+ * Session start: ensure resolved fast/code/think route tags exist on disk.
  * No RAM preload (avoids fighting the session model load and 10% UI stalls).
  */
 export function buildRouterRoutePullEntries(
   prefs: ModelRouterPrefs,
   sessionModel: string
 ): HopperPrepareEntry[] {
-  const { fast, heavy } = resolveHopperModels(prefs.models, sessionModel)
+  const { fast, code, think } = resolveHopperModels(prefs.models, sessionModel)
   const entries: HopperPrepareEntry[] = []
   const seen = new Set<string>()
   for (const spec of [
-    { tier: 'fast' as const, model: fast },
-    { tier: 'heavy' as const, model: heavy },
+    { role: 'fast' as const, model: fast },
+    { role: 'code' as const, model: code },
+    { role: 'think' as const, model: think },
   ]) {
     if (!spec.model) continue
     const tag = ollamaTagFromVisionModel(spec.model)
@@ -53,10 +66,7 @@ export function buildRouterRoutePullEntries(
     seen.add(tag)
     entries.push({
       model_tag: tag,
-      keep_alive_secs:
-        spec.tier === 'fast'
-          ? prefs.keepAliveFastSec
-          : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec),
+      keep_alive_secs: keepAliveForRole(spec.role, prefs),
       preload: false,
     })
   }
@@ -72,15 +82,16 @@ export function buildHopperPrepareEntries(
   let preloadedFast = false
   for (const row of prefs.models) {
     if (!row.enabled) continue
+    const tier = normalizeHopperTier(row.tier)
     const tag = ollamaTagFromVisionModel(
-      row.model.trim() || (row.tier === 'heavy' ? sessionModel : '')
+      row.model.trim() || (tier === 'code' ? sessionModel : '')
     )
     if (!tag) continue
-    const preload = row.tier === 'fast' && !preloadedFast
+    const preload = tier === 'fast' && !preloadedFast
     if (preload) preloadedFast = true
     entries.push({
       model_tag: tag,
-      keep_alive_secs: row.tier === 'fast' ? prefs.keepAliveFastSec : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec),
+      keep_alive_secs: keepAliveForRole(tier === 'heavy' ? 'code' : tier, prefs),
       preload,
     })
   }
@@ -98,12 +109,17 @@ async function invokeHopperPrepare(
   })
 }
 
-/** On Terminal → Start: pull fast/heavy route tags only (no preload). */
+/** On Terminal → Start: pull fast/code/think route tags only (no preload). */
 export async function prepareModelRouterForSessionStart(
   config: VisionConfig,
-  prefs: ModelRouterPrefs
+  prefs: ModelRouterPrefs,
+  modelRouterEnv?: boolean | null
 ): Promise<string[]> {
-  if (!isTauriRuntime() || !prefs.enabled || !isOllamaVisionModel(config.model)) {
+  if (
+    !isTauriRuntime() ||
+    !effectiveRouterEnabled(prefs, config.model, modelRouterEnv) ||
+    !isOllamaVisionModel(config.model)
+  ) {
     return []
   }
   return invokeHopperPrepare(config, buildRouterRoutePullEntries(prefs, config.model))
@@ -112,9 +128,14 @@ export async function prepareModelRouterForSessionStart(
 /** Pull all enabled hopper models + preload first fast (heavy; use from Settings later). */
 export async function prepareModelRouterHopper(
   config: VisionConfig,
-  prefs: ModelRouterPrefs
+  prefs: ModelRouterPrefs,
+  modelRouterEnv?: boolean | null
 ): Promise<string[]> {
-  if (!isTauriRuntime() || !prefs.enabled || !isOllamaVisionModel(config.model)) {
+  if (
+    !isTauriRuntime() ||
+    !effectiveRouterEnabled(prefs, config.model, modelRouterEnv) ||
+    !isOllamaVisionModel(config.model)
+  ) {
     return []
   }
   return invokeHopperPrepare(config, buildHopperPrepareEntries(prefs, config.model))
@@ -123,19 +144,19 @@ export async function prepareModelRouterHopper(
 export async function ensureRoutedOllamaModel(
   config: VisionConfig,
   prefs: ModelRouterPrefs,
-  route: Pick<ModelRouteSnapshot, 'tier' | 'model'>
+  route: Pick<ModelRouteSnapshot, 'tier' | 'role' | 'model'>,
+  modelRouterEnv?: boolean | null
 ): Promise<OllamaEnsureModelResult | null> {
-  if (!isTauriRuntime() || !prefs.enabled) return null
+  if (!isTauriRuntime() || !effectiveRouterEnabled(prefs, config.model, modelRouterEnv)) {
+    return null
+  }
   const tag = ollamaTagFromVisionModel(route.model)
   if (!tag) return null
-  const keepAlive =
-    route.tier === 'fast'
-      ? prefs.keepAliveFastSec
-      : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec)
+  const role = normalizeModelRouteRole(route.role ?? route.tier)
   return invoke<OllamaEnsureModelResult>('ollama_ensure_model_loaded', {
     ollamaHost: ollamaHostForConfig(config),
     modelTag: tag,
-    keepAliveSecs: keepAlive,
+    keepAliveSecs: keepAliveForRole(role, prefs),
   })
 }
 

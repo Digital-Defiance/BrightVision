@@ -15,6 +15,7 @@ import {
 } from '@mui/material'
 import { useMemo, useRef } from 'react'
 import { mergeChatTimelineGrouped } from '../../utils/toolOutputGroups'
+import { withInheritedModelRoutes } from '../../utils/chatStream'
 import { ToolInvocationCard } from './ToolInvocationCard'
 import { useChatFind } from '../../hooks/useChatFind'
 import { DISPLAY_CORE } from '../../brand'
@@ -50,6 +51,12 @@ import { TurnActivityHintOverlay } from './TurnActivityHintOverlay'
 import { UserMessageBody } from './UserMessageBody'
 import { CHAT_FIND_MARK, CHAT_FIND_MARK_ACTIVE } from '../../utils/chatFindHighlight'
 import { TurnsTableMessage } from './TurnsTableMessage'
+import {
+  formatModelRouteTooltip,
+  isLegacyModelRouterSystemMessage,
+  modelRouteAccentColor,
+  modelRouteRoleFromSnapshot,
+} from '../../theme/modelRouteUi'
 import type { AssistantContentSegment } from '../../utils/proposedEdits'
 import type { ThinkingStatsStore } from '../../utils/thinkingStats'
 
@@ -71,6 +78,8 @@ export interface ChatMessage {
     filterModel: string | null
     capturedAt: string
   }
+  /** Model router tier used for this assistant turn. */
+  modelRoute?: ModelRouteSnapshot
 }
 
 export interface ToolEvent {
@@ -134,10 +143,9 @@ interface ChatPanelProps {
     segment: Extract<AssistantContentSegment, { type: 'proposed_edit' }>
   ) => Promise<void>
   modelRouterEnabled?: boolean
-  lastModelRoute?: ModelRouteSnapshot | null
   routerEscalateOffer?: RouterEscalateOffer | null
   onEscalateRouter?: () => void
-  onForceRouterTier?: (tier: 'fast' | 'heavy') => void
+  onForceRouterTier?: (tier: 'fast' | 'code' | 'think') => void
   onDismissRouterEscalate?: () => void
   subagents?: SubAgentInfo[]
   agentModeAvailable?: boolean
@@ -210,7 +218,6 @@ export function ChatPanel({
   canApplyEdits = false,
   onApplyProposedEdit,
   modelRouterEnabled = false,
-  lastModelRoute = null,
   routerEscalateOffer = null,
   onEscalateRouter,
   onForceRouterTier,
@@ -235,9 +242,19 @@ export function ChatPanel({
     (t) => t.type === 'tool_warning' || t.output?.trim() || t.type === 'tool_call'
   )
 
+  const displayMessages = useMemo(
+    () =>
+      withInheritedModelRoutes(
+        messages.filter(
+          (m) => !(m.role === 'system' && isLegacyModelRouterSystemMessage(m.content))
+        )
+      ),
+    [messages]
+  )
+
   const timeline = useMemo(
-    () => mergeChatTimelineGrouped(messages, meaningfulToolEvents),
-    [messages, meaningfulToolEvents]
+    () => mergeChatTimelineGrouped(displayMessages, meaningfulToolEvents),
+    [displayMessages, meaningfulToolEvents]
   )
 
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -353,86 +370,124 @@ export function ChatPanel({
         <Stack spacing={2}>
           {timeline.map((entry) =>
             entry.kind === 'message' ? (
-              <Box
-                key={`msg-${entry.item.id}`}
-                sx={{
-                  display: 'flex',
-                  justifyContent: entry.item.role === 'user' ? 'flex-end' : 'flex-start',
-                }}
-              >
-                <Paper
-                  data-testid={
-                    entry.item.role === 'user'
-                      ? 'chat-message-user'
-                      : entry.item.role === 'assistant'
-                        ? 'chat-message-assistant'
-                        : 'chat-message-system'
-                  }
-                  sx={{
-                    position: 'relative',
-                    px: 2,
-                    py: 1.5,
-                    maxWidth: entry.item.role === 'user' ? '85%' : '95%',
-                    width: entry.item.role === 'assistant' ? '100%' : undefined,
-                    bgcolor:
+              (() => {
+                const route =
+                  entry.item.role === 'assistant' ? entry.item.modelRoute : undefined
+                const routeRole = route ? modelRouteRoleFromSnapshot(route) : null
+                const paper = (
+                  <Paper
+                    data-testid={
                       entry.item.role === 'user'
-                        ? 'primary.dark'
-                        : entry.item.role === 'system'
-                          ? 'warning.dark'
-                          : 'background.paper',
-                    border: entry.item.role === 'assistant' ? 1 : 0,
-                    borderColor: 'divider',
-                  }}
-                >
-                  <IconButton
-                    size="small"
-                    aria-label="Dismiss message"
-                    onClick={() => onDismissMessage(entry.item.id)}
-                    sx={{ position: 'absolute', top: 4, right: 4, opacity: 0.6 }}
+                        ? 'chat-message-user'
+                        : entry.item.role === 'assistant'
+                          ? 'chat-message-assistant'
+                          : 'chat-message-system'
+                    }
+                    data-model-route-tier={routeRole ?? undefined}
+                    sx={(theme) => ({
+                      position: 'relative',
+                      px: 2,
+                      py: 1.5,
+                      maxWidth: entry.item.role === 'user' ? '85%' : '95%',
+                      width: entry.item.role === 'assistant' ? '100%' : undefined,
+                      bgcolor:
+                        entry.item.role === 'user'
+                          ? 'primary.dark'
+                          : entry.item.role === 'system'
+                            ? 'warning.dark'
+                            : 'background.paper',
+                      border: entry.item.role === 'assistant' ? 1 : 0,
+                      borderColor: 'divider',
+                      ...(route && entry.item.role === 'assistant'
+                        ? {
+                            borderLeftWidth: 4,
+                            borderLeftStyle: 'solid',
+                            borderLeftColor: modelRouteAccentColor(theme, routeRole!),
+                          }
+                        : {}),
+                    })}
                   >
-                    <CloseIcon fontSize="inherit" />
-                  </IconButton>
-                  {entry.item.role === 'assistant' && entry.item.ollamaStatus ? (
-                    <OllamaStatusMessage
-                      command={entry.item.ollamaStatus.command}
-                      snapshot={entry.item.ollamaStatus.snapshot}
-                    />
-                  ) : entry.item.role === 'assistant' && entry.item.turnsTable && thinkingStatsStore ? (
-                    <TurnsTableMessage
-                      store={thinkingStatsStore}
-                      filterModel={entry.item.turnsTable.filterModel}
-                      timingPrefs={thinkingTimingPrefs ?? DEFAULT_THINKING_TIMING_PREFS}
-                      capturedAt={entry.item.turnsTable.capturedAt}
-                    />
-                  ) : entry.item.role === 'assistant' ? (
-                    <AssistantMessageBody
-                      content={entry.item.content}
-                      appliedFiles={entry.item.appliedFiles}
-                      onOpenInEditor={onOpenInEditor}
-                      canApplyEdits={canApplyEdits}
-                      onApplyProposedEdit={
-                        onApplyProposedEdit
-                          ? (segment) => onApplyProposedEdit(entry.item.id, segment)
-                          : undefined
-                      }
-                      turnTiming={entry.item.turnTiming}
-                      showSectionDurations={thinkingTimingPrefs?.showSectionDurations ?? true}
-                      showTurnTotal={thinkingTimingPrefs?.showMessageTurnTotal ?? true}
-                      formatDuration={(ms) =>
-                        formatDurationMs(ms, {
-                          brightDate: thinkingTimingPrefs?.brightDateMode,
-                        })
-                      }
-                    />
-                  ) : entry.item.role === 'user' ? (
-                    <UserMessageBody content={entry.item.content} />
-                  ) : (
-                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pr: 3 }}>
-                      {entry.item.content}
-                    </Typography>
-                  )}
-                </Paper>
-              </Box>
+                    <IconButton
+                      size="small"
+                      aria-label="Dismiss message"
+                      onClick={() => onDismissMessage(entry.item.id)}
+                      sx={{ position: 'absolute', top: 4, right: 4, opacity: 0.6 }}
+                    >
+                      <CloseIcon fontSize="inherit" />
+                    </IconButton>
+                    {entry.item.role === 'assistant' && entry.item.ollamaStatus ? (
+                      <OllamaStatusMessage
+                        command={entry.item.ollamaStatus.command}
+                        snapshot={entry.item.ollamaStatus.snapshot}
+                      />
+                    ) : entry.item.role === 'assistant' &&
+                      entry.item.turnsTable &&
+                      thinkingStatsStore ? (
+                      <TurnsTableMessage
+                        store={thinkingStatsStore}
+                        filterModel={entry.item.turnsTable.filterModel}
+                        timingPrefs={thinkingTimingPrefs ?? DEFAULT_THINKING_TIMING_PREFS}
+                        capturedAt={entry.item.turnsTable.capturedAt}
+                      />
+                    ) : entry.item.role === 'assistant' ? (
+                      <AssistantMessageBody
+                        content={entry.item.content}
+                        appliedFiles={entry.item.appliedFiles}
+                        onOpenInEditor={onOpenInEditor}
+                        canApplyEdits={canApplyEdits}
+                        onApplyProposedEdit={
+                          onApplyProposedEdit
+                            ? (segment) => onApplyProposedEdit(entry.item.id, segment)
+                            : undefined
+                        }
+                        turnTiming={entry.item.turnTiming}
+                        showSectionDurations={thinkingTimingPrefs?.showSectionDurations ?? true}
+                        showTurnTotal={thinkingTimingPrefs?.showMessageTurnTotal ?? true}
+                        formatDuration={(ms) =>
+                          formatDurationMs(ms, {
+                            brightDate: thinkingTimingPrefs?.brightDateMode,
+                          })
+                        }
+                      />
+                    ) : entry.item.role === 'user' ? (
+                      <UserMessageBody content={entry.item.content} />
+                    ) : (
+                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pr: 3 }}>
+                        {entry.item.content}
+                      </Typography>
+                    )}
+                  </Paper>
+                )
+                return (
+                  <Box
+                    key={`msg-${entry.item.id}`}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: entry.item.role === 'user' ? 'flex-end' : 'flex-start',
+                    }}
+                  >
+                    {route ? (
+                      <Tooltip
+                        title={formatModelRouteTooltip(route)}
+                        placement="top-start"
+                        arrow
+                        slotProps={{
+                          popper: {
+                            modifiers: [
+                              { name: 'preventOverflow', options: { padding: 8 } },
+                              { name: 'flip', enabled: true },
+                            ],
+                          },
+                        }}
+                      >
+                        {paper}
+                      </Tooltip>
+                    ) : (
+                      paper
+                    )}
+                  </Box>
+                )
+              })()
             ) : entry.kind === 'tool_group' ? (
               <Box key={`tool-group-${entry.item.id}`} sx={{ width: '100%' }}>
                 <ToolInvocationCard
@@ -624,7 +679,6 @@ export function ChatPanel({
       {modelRouterEnabled && onForceRouterTier && onEscalateRouter && (
         <ModelRouterBar
           enabled={modelRouterEnabled}
-          lastRoute={lastModelRoute}
           escalateOffer={routerEscalateOffer}
           isRunning={isRunning}
           isBusy={isBusy}

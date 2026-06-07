@@ -6,6 +6,7 @@ import concurrent.futures
 import os
 from typing import TYPE_CHECKING, Any
 
+from bright_vision_core.model_router import RouteTurnContext
 from bright_vision_core.spec_layers import assess_spec_richness
 from bright_vision_core.spec_steering import build_spec_focus_preamble
 from bright_vision_core.todo_spec_generate import (
@@ -125,7 +126,11 @@ def build_deepen_message_for_workspace(
 def apply_spec_gen_model_route(session: Session, routing_text: str) -> None:
     router = getattr(session, "_model_router", None)
     if router and getattr(router, "enabled", False):
-        session._route_and_apply(routing_text, force_tier="heavy")
+        session._route_and_apply(
+            routing_text,
+            force_tier="think",
+            turn=RouteTurnContext(spec_gen_turn=True),
+        )
 
 
 def _consume_run_message(session: Session, message: str, **kwargs: Any) -> str:
@@ -193,7 +198,7 @@ def run_spec_layer_llm(
                 active_todo_id=todo_id,
                 inject_todo_spec=False,
                 spec_focus=True,
-                force_tier="heavy",
+                force_tier="think",
             ).strip()
         except (TimeoutError, Exception):
             exploration = ""

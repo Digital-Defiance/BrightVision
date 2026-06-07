@@ -94,6 +94,20 @@ class TestSpecGenAgent(unittest.TestCase):
         self.assertIn("REQ-001", raw)
         session.run_one_shot.assert_called_once()
 
+    def test_apply_spec_gen_model_route_forces_think(self):
+        from bright_vision_core.model_router import RouteTurnContext
+        from bright_vision_core.spec_gen_agent import apply_spec_gen_model_route
+
+        session = MagicMock()
+        session._model_router = MagicMock(enabled=True)
+        apply_spec_gen_model_route(session, "Write requirements")
+        session._route_and_apply.assert_called_once()
+        _args, kwargs = session._route_and_apply.call_args
+        self.assertEqual(kwargs.get("force_tier"), "think")
+        turn = kwargs.get("turn")
+        self.assertIsInstance(turn, RouteTurnContext)
+        self.assertTrue(turn.spec_gen_turn)
+
 
 if __name__ == "__main__":
     unittest.main()

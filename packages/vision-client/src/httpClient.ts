@@ -16,7 +16,7 @@ import { visionFetchError } from './networkError'
 
 export interface ModelRouterPoolEntryApi {
   model: string
-  tier: 'fast' | 'heavy'
+  tier: 'fast' | 'heavy' | 'code' | 'think'
   enabled: boolean
   label?: string
 }
@@ -25,6 +25,8 @@ export interface ModelRouterApiConfig {
   enabled: boolean
   fast_model: string
   heavy_model?: string
+  code_model?: string
+  think_model?: string
   model_pool?: ModelRouterPoolEntryApi[]
   token_fast_max?: number
   token_heavy_min?: number
@@ -38,7 +40,7 @@ export interface SendMessageOptions {
   injectTodoSpec?: boolean
   specFocus?: boolean
   preproc?: boolean
-  forceTier?: 'fast' | 'heavy'
+  forceTier?: 'fast' | 'code' | 'think' | 'heavy'
   escalateFromLast?: boolean
 }
 
