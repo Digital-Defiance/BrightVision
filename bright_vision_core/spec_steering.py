@@ -15,12 +15,28 @@ You are in **spec-focus**: work on the active task's requirements, design, and i
 - Do not mark implementation done until requirements pass EARS lint (WHEN/SHALL, no duplicate REQ ids).
 """
 
+SCAFFOLD_MISSING_HINT = """\
+## Workspace state (read before exploring)
+
+`lib/` does **not** exist yet — scaffolding tasks (e.g. **1.1**, **1.2**) are incomplete.
+Do **not** repeat `ls` on `lib/` or `test/`. Use **ContextManager** to create directories/files,
+then **ReadRange** + **EditText**. If the active task is **1.3+**, complete **1.1** first.
+"""
+
+
+def workspace_lib_missing(workspace: str | Path) -> bool:
+    return not (Path(workspace).resolve() / "lib").is_dir()
+
+
 IMPLEMENTATION_TOOL_HINTS = """\
 ## Implementation turn (tools)
 
 - **Empty files:** `ReadRange` once with `@000`/`000@`, then **`EditText`** (replace `@000`–`@000`) or **`ContextManager`** create — do not re-read the same empty file.
+- **Before EditText:** always **`ReadRange`** the target file in the same turn (required for new files and after ContextManager create).
 - **Scaffolding:** prefer `ContextManager` + `EditText` over repeated `ls` / `Grep` on known paths.
 - After a successful read, edit — do not loop on exploration.
+- **UpdateTodoList:** mark a task `done: true` only after **EditText** succeeded for that task's deliverable — never on failed edits.
+- When EditText errors, read the error, **ReadRange**, retry one file; do not assume success from assistant prose alone.
 """
 
 

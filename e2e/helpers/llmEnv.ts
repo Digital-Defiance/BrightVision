@@ -149,7 +149,7 @@ export function buildRouterPrefsForStorage():
     tokenFastMax: Number(process.env.E2E_ROUTER_TOKEN_FAST_MAX || 4096),
     tokenHeavyMin: Number(process.env.E2E_ROUTER_TOKEN_HEAVY_MIN || 12000),
     keepAliveFastSec: 300,
-    keepAliveHeavySec: 0,
+    keepAliveHeavySec: -1,
     escalateOnFailure: true,
   }
 }

@@ -15,6 +15,12 @@ from typing import Any, Literal
 
 RouteTier = Literal["fast", "heavy"]
 
+# Heavy tier keep_alive=0 unloads Ollama after every LLM call — agent loops get empty responses.
+def normalize_keep_alive_for_tier(tier: RouteTier, value: int | str) -> int | str:
+    if tier == "heavy" and value in (0, "0"):
+        return -1
+    return value
+
 # Per-file context bump for *display* only (routing uses message_tokens).
 _FILE_TOKEN_PER_FILE = 500
 _FILE_TOKEN_CAP = 2_000
@@ -94,8 +100,11 @@ class ModelRouterConfig:
     token_fast_max: int = 4_096
     token_heavy_min: int = 12_000
     keep_alive_fast: int | str = 300
-    keep_alive_heavy: int | str = 0
+    keep_alive_heavy: int | str = -1
     escalate_on_failure: bool = True
+
+    def __post_init__(self) -> None:
+        self.keep_alive_heavy = normalize_keep_alive_for_tier("heavy", self.keep_alive_heavy)
 
     @classmethod
     def from_payload(cls, raw: dict[str, Any] | None) -> ModelRouterConfig | None:
@@ -142,7 +151,9 @@ class ModelRouterConfig:
             token_fast_max=int(raw.get("token_fast_max") or 4_096),
             token_heavy_min=int(raw.get("token_heavy_min") or 12_000),
             keep_alive_fast=raw.get("keep_alive_fast", 300),
-            keep_alive_heavy=raw.get("keep_alive_heavy", 0),
+            keep_alive_heavy=normalize_keep_alive_for_tier(
+                "heavy", raw.get("keep_alive_heavy", -1)
+            ),
             escalate_on_failure=bool(raw.get("escalate_on_failure", True)),
         )
 

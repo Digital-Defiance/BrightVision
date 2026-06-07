@@ -39,6 +39,7 @@ export function useVisionSession(
   const sessionRef = useRef<VisionApiSession | null>(null)
   const pendingStartRef = useRef<VisionApiSession | null>(null)
   const inflightRef = useRef(0)
+  const sendGenerationRef = useRef(0)
   const queueRef = useRef<{ content: string; options?: SendMessageOptions }[]>([])
   const drainQueueRef = useRef<() => Promise<void>>(async () => {})
 
@@ -149,6 +150,7 @@ export function useVisionSession(
       ])
       sessionRef.current = null
       setIsRunning(false)
+      sendGenerationRef.current += 1
       inflightRef.current = 0
       setIsBusy(false)
       setSessionInfo(null)
@@ -169,11 +171,30 @@ export function useVisionSession(
     }
   }, [])
 
+  const finishSendGeneration = useCallback(
+    (generation: number) => {
+      if (generation !== sendGenerationRef.current) return
+      inflightRef.current = Math.max(0, inflightRef.current - 1)
+      setBusyFromInflight()
+      void drainQueueRef.current()
+    },
+    [setBusyFromInflight]
+  )
+
+  /** Core emitted ``done``/``error`` — unblock UI before HTTP teardown finishes. */
+  const releaseInflightAfterTurn = useCallback(() => {
+    if (inflightRef.current <= 0) return
+    inflightRef.current = 0
+    setIsBusy(false)
+    void drainQueueRef.current()
+  }, [])
+
   const sendOne = useCallback(
     async (content: string, todoOptions?: SendMessageOptions) => {
       if (!sessionRef.current) throw new Error('Session not started')
       const addPath = parseAddCommandPath(content)
       if (addPath) {
+        const generation = ++sendGenerationRef.current
         inflightRef.current += 1
         setBusyFromInflight()
         process.begin('tool', 'Adding files')
@@ -185,14 +206,13 @@ export function useVisionSession(
           process.fail(message)
           throw err
         } finally {
-          inflightRef.current = Math.max(0, inflightRef.current - 1)
-          setBusyFromInflight()
+          finishSendGeneration(generation)
           if (inflightRef.current === 0) process.idle()
-          void drainQueueRef.current()
         }
         return
       }
       onOutboundMessageRef.current?.(content)
+      const generation = ++sendGenerationRef.current
       inflightRef.current += 1
       setBusyFromInflight()
       process.begin('reasoning', 'Sending')
@@ -212,12 +232,10 @@ export function useVisionSession(
         process.fail(message)
         throw err
       } finally {
-        inflightRef.current = Math.max(0, inflightRef.current - 1)
-        setBusyFromInflight()
-        void drainQueueRef.current()
+        finishSendGeneration(generation)
       }
     },
-    [process, setBusyFromInflight]
+    [process, setBusyFromInflight, finishSendGeneration]
   )
 
   const drainQueue = useCallback(async () => {
@@ -256,7 +274,10 @@ export function useVisionSession(
   }, [])
 
   const cancelSend = useCallback(() => {
+    sendGenerationRef.current += 1
     sessionRef.current?.cancelSend()
+    inflightRef.current = 0
+    setIsBusy(false)
     process.idle()
   }, [process])
 
@@ -314,6 +335,7 @@ export function useVisionSession(
     refreshSessionInfo,
     patchSessionFiles,
     cancelSend,
+    releaseInflightAfterTurn,
     submitConfirm,
     undo,
     defaultConfig: DEFAULT_CONFIG,

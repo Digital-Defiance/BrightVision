@@ -62,7 +62,7 @@ import { useVisionSession } from './hooks/useVisionSession'
 import { useTurnResourcePeak } from './hooks/useTurnResourcePeak'
 import { usePathCompletion } from './hooks/usePathCompletion'
 import { filesToUploadParts } from './utils/imageUpload'
-import { buildImplementStepMessage, buildStartWorkMessage } from './todos/formatContext'
+import { buildImplementStepMessage, buildStartWorkMessage, shouldResumeWork } from './todos/formatContext'
 import type { ImplementationStep } from './todos/tasksMd'
 import type { TodoItem } from './todos/types'
 import { useCommandCatalog } from './hooks/useCommandCatalog'
@@ -807,6 +807,7 @@ function AppShell({
   }, [])
 
   const stallWatchRef = useRef<(type: string, detail?: string) => void>(() => {})
+  const releaseInflightAfterTurnRef = useRef<() => void>(() => {})
 
   const handleCoreEvent = useCallback((ev: CoreEventBase) => {
     if (!isCoreEvent(ev)) return
@@ -829,6 +830,7 @@ function AppShell({
       agentTurnActiveRef.current = false
       setAgentTurnLive(false)
       lastToolSnippetRef.current = ''
+      releaseInflightAfterTurnRef.current()
     }
     process.ingestCoreEvent(ev)
     if (ev.type === 'done') bumpGitRefresh()
@@ -1407,6 +1409,7 @@ function AppShell({
     stop,
     send,
     cancelSend,
+    releaseInflightAfterTurn,
     submitConfirm,
     addFiles,
     uploadFiles,
@@ -1414,6 +1417,7 @@ function AppShell({
     refreshSessionInfo,
     patchSessionFiles,
   } = useVisionSession(wrapHandler(handleCoreEvent), { onOutboundMessage })
+  releaseInflightAfterTurnRef.current = releaseInflightAfterTurn
 
   const isRunningRef = useRef(isRunning)
   isRunningRef.current = isRunning
@@ -2644,8 +2648,12 @@ function AppShell({
       })
       todoInjectedIdRef.current = null
       setActiveTab('chat')
+      const resume = shouldResumeWork(todo)
       setInputValue(buildStartWorkMessage(todo, todoStore?.todos ?? []))
-      setSnackbar({ message: `Active task: ${todo.title}`, severity: 'info' })
+      setSnackbar({
+        message: resume ? `Resuming: ${todo.title}` : `Active task: ${todo.title}`,
+        severity: 'info',
+      })
     },
     [setActiveTodo, updateTodo, todoStore?.todos]
   )

@@ -205,6 +205,7 @@ export function createVisionApiSession(
       sendAbort?.abort()
       sendAbort = new AbortController()
       const signal = sendAbort.signal
+      let turnComplete = false
       try {
         const stream = isTauriRuntime()
           ? desktopVisionSendMessage(
@@ -223,6 +224,10 @@ export function createVisionApiSession(
           } catch (err) {
             console.error('[vision] core event handler failed', err, event)
           }
+          if (event.type === 'done' || event.type === 'error') {
+            turnComplete = true
+            break
+          }
         }
       } catch (err) {
         if (isUserCancellationError(err)) return
@@ -237,6 +242,9 @@ export function createVisionApiSession(
         }
         throw err
       } finally {
+        if (turnComplete && isTauriRuntime()) {
+          void invoke('cancel_vision_message')
+        }
         sendAbort = null
       }
     },

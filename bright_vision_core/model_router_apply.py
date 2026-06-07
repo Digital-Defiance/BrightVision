@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from cecli import models
 
-from bright_vision_core.model_router import ModelRouterConfig, RouteDecision
+from bright_vision_core.model_router import ModelRouterConfig, RouteDecision, normalize_keep_alive_for_tier
 
 
 def apply_route_to_coder(coder, decision: RouteDecision, router: ModelRouterConfig) -> None:
@@ -13,8 +13,9 @@ def apply_route_to_coder(coder, decision: RouteDecision, router: ModelRouterConf
     new_model = models.Model(decision.model_name, from_model=prev)
     if new_model.is_ollama():
         new_model._ensure_extra_params_dict()
-        keep_alive = (
-            router.keep_alive_fast if decision.tier == "fast" else router.keep_alive_heavy
+        keep_alive = normalize_keep_alive_for_tier(
+            decision.tier,
+            router.keep_alive_fast if decision.tier == "fast" else router.keep_alive_heavy,
         )
         new_model.extra_params["keep_alive"] = keep_alive
     coder.main_model = new_model

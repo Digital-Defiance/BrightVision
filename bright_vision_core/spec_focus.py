@@ -7,9 +7,11 @@ from pathlib import Path
 
 from bright_vision_core.spec_steering import (
     IMPLEMENTATION_TOOL_HINTS,
-    SPEC_FOCUS_INSTRUCTIONS,
+    SCAFFOLD_MISSING_HINT,
     build_spec_focus_preamble,
+    workspace_lib_missing,
 )
+from bright_vision_core.implement_workspace import build_implement_workspace_block
 from bright_vision_core.workspace_todos import (
     TodoItem,
     TodoStore,
@@ -63,6 +65,8 @@ def is_implement_turn_message(message: str) -> bool:
         return True
     if lower.startswith("work the active task checklist"):
         return True
+    if lower.startswith("continue the active task"):
+        return True
     return False
 
 
@@ -102,6 +106,13 @@ def spec_focus_preamble_applies(
     return bool(focus_requested and item is not None and todo_has_spec_content(item))
 
 
+def _is_resume_implement_message(message: str) -> bool:
+    trimmed = message.strip().lower()
+    if trimmed.startswith("/agent"):
+        trimmed = trimmed[6:].lstrip()
+    return trimmed.startswith("continue the active task")
+
+
 def build_user_message_with_spec_context(
     workspace: str | Path,
     message: str,
@@ -139,6 +150,16 @@ def build_user_message_with_spec_context(
         blocks = [build_spec_focus_preamble(workspace)]
         if implement_turn:
             blocks.append(IMPLEMENTATION_TOOL_HINTS.strip())
+            if workspace_lib_missing(workspace):
+                blocks.append(SCAFFOLD_MISSING_HINT.strip())
+            checklist = item.checklist if item is not None else []
+            blocks.append(
+                build_implement_workspace_block(
+                    workspace,
+                    checklist,
+                    resume=_is_resume_implement_message(message),
+                )
+            )
         user_text = "\n\n".join(blocks) + "\n\n" + user_text
     return user_text, preamble, turn_todo_id
 

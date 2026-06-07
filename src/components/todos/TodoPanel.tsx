@@ -11,6 +11,7 @@ import FolderSharedIcon from '@mui/icons-material/FolderShared'
 import HubIcon from '@mui/icons-material/Hub'
 import LinkIcon from '@mui/icons-material/Link'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import ReplayIcon from '@mui/icons-material/Replay'
 import { DISPLAY_VISION_API } from '../../brand'
 import {
   Alert,
@@ -45,6 +46,7 @@ import {
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTodoBlocked } from '../../todos/layers'
+import { shouldResumeWork } from '../../todos/formatContext'
 import { parseImplementationSteps, type ImplementationStep } from '../../todos/tasksMd'
 import type { ChecklistItem, TodoItem, TodoStatus } from '../../todos/types'
 import {
@@ -238,6 +240,31 @@ export function TodoPanel({
     () => (selected ? parseImplementationSteps(tasksMd) : []),
     [selected?.id, tasksMd]
   )
+  const workTodoDraft = useMemo(() => {
+    if (!selected) return null
+    return {
+      ...selected,
+      title,
+      requirements,
+      design,
+      tasks_md: tasksMd,
+      depends_on: dependsOn,
+      branch,
+      pr_url: prUrl,
+      checklist,
+    }
+  }, [
+    selected,
+    title,
+    requirements,
+    design,
+    tasksMd,
+    dependsOn,
+    branch,
+    prUrl,
+    checklist,
+  ])
+  const resumeWork = workTodoDraft ? shouldResumeWork(workTodoDraft) : false
 
   const implementBlockedByEars = Boolean(earsLint && !earsLint.ok)
 
@@ -1319,7 +1346,7 @@ export function TodoPanel({
                 <Button
                   variant="contained"
                   size="small"
-                  startIcon={<PlayArrowIcon />}
+                  startIcon={resumeWork ? <ReplayIcon /> : <PlayArrowIcon />}
                   onClick={() => {
                     persistEditor()
                     onStartWork({
@@ -1334,8 +1361,9 @@ export function TodoPanel({
                       checklist,
                     })
                   }}
+                  data-testid={resumeWork ? 'todo-resume-work' : 'todo-start-work'}
                 >
-                  Start work
+                  {resumeWork ? 'Resume work' : 'Start work'}
                 </Button>
                 <Button
                   variant="outlined"

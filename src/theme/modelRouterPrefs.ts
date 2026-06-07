@@ -36,8 +36,18 @@ export const DEFAULT_MODEL_ROUTER_PREFS: ModelRouterPrefs = {
   tokenFastMax: 4096,
   tokenHeavyMin: 12000,
   keepAliveFastSec: 300,
-  keepAliveHeavySec: 0,
+  keepAliveHeavySec: -1,
   escalateOnFailure: true,
+}
+
+export function normalizeKeepAliveHeavySec(sec: number): number {
+  return sec === 0 ? -1 : sec
+}
+
+export function normalizeModelRouterPrefs(prefs: ModelRouterPrefs): ModelRouterPrefs {
+  const keepAliveHeavySec = normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec)
+  if (keepAliveHeavySec === prefs.keepAliveHeavySec) return prefs
+  return { ...prefs, keepAliveHeavySec }
 }
 
 export function loadModelRouterPrefs(): ModelRouterPrefs {
@@ -46,7 +56,7 @@ export function loadModelRouterPrefs(): ModelRouterPrefs {
     if (!raw) return { ...DEFAULT_MODEL_ROUTER_PREFS }
     const parsed = JSON.parse(raw) as Partial<ModelRouterPrefs>
     const models = migrateLegacyRouterModels(parsed)
-    return {
+    const loaded: ModelRouterPrefs = {
       ...DEFAULT_MODEL_ROUTER_PREFS,
       ...parsed,
       models,
@@ -54,16 +64,27 @@ export function loadModelRouterPrefs(): ModelRouterPrefs {
       tokenHeavyMin: Number(parsed.tokenHeavyMin) || DEFAULT_MODEL_ROUTER_PREFS.tokenHeavyMin,
       keepAliveFastSec:
         Number(parsed.keepAliveFastSec) ?? DEFAULT_MODEL_ROUTER_PREFS.keepAliveFastSec,
-      keepAliveHeavySec:
-        Number(parsed.keepAliveHeavySec) ?? DEFAULT_MODEL_ROUTER_PREFS.keepAliveHeavySec,
+      keepAliveHeavySec: Number.isFinite(Number(parsed.keepAliveHeavySec))
+        ? Number(parsed.keepAliveHeavySec)
+        : DEFAULT_MODEL_ROUTER_PREFS.keepAliveHeavySec,
     }
+    const normalized = normalizeModelRouterPrefs(loaded)
+    if (normalized.keepAliveHeavySec !== loaded.keepAliveHeavySec) {
+      try {
+        saveModelRouterPrefs(normalized)
+      } catch {
+        /* ignore quota / private mode */
+      }
+    }
+    return normalized
   } catch {
     return { ...DEFAULT_MODEL_ROUTER_PREFS }
   }
 }
 
 export function saveModelRouterPrefs(prefs: ModelRouterPrefs): void {
-  const { fastModel: _f, heavyModel: _h, ...rest } = prefs
+  const normalized = normalizeModelRouterPrefs(prefs)
+  const { fastModel: _f, heavyModel: _h, ...rest } = normalized
   localStorage.setItem(MODEL_ROUTER_PREFS_STORAGE_KEY, JSON.stringify(rest))
 }
 
@@ -161,7 +182,7 @@ export function modelRouterApiPayload(
     token_fast_max: prefs.tokenFastMax,
     token_heavy_min: prefs.tokenHeavyMin,
     keep_alive_fast: prefs.keepAliveFastSec,
-    keep_alive_heavy: prefs.keepAliveHeavySec,
+    keep_alive_heavy: normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec),
     escalate_on_failure: prefs.escalateOnFailure,
   }
 }
