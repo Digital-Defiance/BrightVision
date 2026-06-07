@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -125,8 +125,15 @@ class ModelRouterRequest(BaseModel):
     token_fast_max: int = 4_096
     token_heavy_min: int = 12_000
     keep_alive_fast: int | str = 300
-    keep_alive_heavy: int | str = 0
+    keep_alive_heavy: int | str = -1
     escalate_on_failure: bool = True
+
+    @field_validator("keep_alive_heavy", mode="before")
+    @classmethod
+    def _normalize_heavy_keep_alive(cls, value: int | str | None) -> int | str:
+        from bright_vision_core.model_router import normalize_keep_alive_for_tier
+
+        return normalize_keep_alive_for_tier("heavy", -1 if value is None else value)
 
 
 class CreateSessionRequest(BaseModel):

@@ -3,6 +3,7 @@ import type { VisionConfig } from './config'
 import { isOllamaVisionModel, ollamaTagFromVisionModel, resolveLocalLlmForConfig } from './localLlm'
 import { isTauriRuntime } from './isTauri'
 import type { ModelRouterPrefs } from '../theme/modelRouterPrefs'
+import { normalizeKeepAliveHeavySec } from '../theme/modelRouterPrefs'
 import { resolveHopperModels } from '../theme/modelHopper'
 
 export interface HopperPrepareEntry {
@@ -53,7 +54,9 @@ export function buildRouterRoutePullEntries(
     entries.push({
       model_tag: tag,
       keep_alive_secs:
-        spec.tier === 'fast' ? prefs.keepAliveFastSec : prefs.keepAliveHeavySec,
+        spec.tier === 'fast'
+          ? prefs.keepAliveFastSec
+          : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec),
       preload: false,
     })
   }
@@ -77,7 +80,7 @@ export function buildHopperPrepareEntries(
     if (preload) preloadedFast = true
     entries.push({
       model_tag: tag,
-      keep_alive_secs: row.tier === 'fast' ? prefs.keepAliveFastSec : prefs.keepAliveHeavySec,
+      keep_alive_secs: row.tier === 'fast' ? prefs.keepAliveFastSec : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec),
       preload,
     })
   }
@@ -126,7 +129,9 @@ export async function ensureRoutedOllamaModel(
   const tag = ollamaTagFromVisionModel(route.model)
   if (!tag) return null
   const keepAlive =
-    route.tier === 'fast' ? prefs.keepAliveFastSec : prefs.keepAliveHeavySec
+    route.tier === 'fast'
+      ? prefs.keepAliveFastSec
+      : normalizeKeepAliveHeavySec(prefs.keepAliveHeavySec)
   return invoke<OllamaEnsureModelResult>('ollama_ensure_model_loaded', {
     ollamaHost: ollamaHostForConfig(config),
     modelTag: tag,

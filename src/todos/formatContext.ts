@@ -1,6 +1,6 @@
 import type { ChecklistItem, TodoItem } from './types'
 import { migrateTodoLayers } from './layers'
-import type { ImplementationStep } from './tasksMd'
+import { parseImplementationSteps, type ImplementationStep } from './tasksMd'
 
 function layerOrPlaceholder(text: string, placeholder: string): string {
   return text.trim() || placeholder
@@ -112,12 +112,54 @@ export function formatTodoContextLight(todo: TodoItem, allTodos?: TodoItem[]): s
   return lines.join('\n')
 }
 
-export function buildStartWorkMessage(todo: TodoItem, allTodos: TodoItem[]): string {
+/** True when the task already has agent/workspace progress worth resuming. */
+export function shouldResumeWork(todo: TodoItem): boolean {
   const item = migrateTodoLayers(todo)
-  const blocked = item.depends_on.some((depId) => {
+  if (item.status === 'in_progress') return true
+  if (item.links.length > 0) return true
+  if (item.checklist.some((entry) => entry.done)) return true
+  if (parseImplementationSteps(item.tasks_md).some((step) => step.done)) return true
+  return false
+}
+
+function dependencyBlocked(item: TodoItem, allTodos: TodoItem[]): boolean {
+  return item.depends_on.some((depId) => {
     const dep = allTodos.find((t) => t.id === depId || t.id.startsWith(depId))
     return dep && dep.status !== 'done'
   })
+}
+
+export function buildResumeWorkMessage(todo: TodoItem, allTodos: TodoItem[]): string {
+  const item = migrateTodoLayers(todo)
+  const blocked = dependencyBlocked(item, allTodos)
+  const blockedNote = blocked
+    ? ' Resolve or acknowledge blocking dependencies noted in context first.'
+    : ''
+
+  if (todoHasSpecLayers(item)) {
+    return (
+      '/agent Continue the active task from where you stopped. ' +
+      'A **workspace snapshot** is injected — do **not** ls, Grep, or GitStatus. ' +
+      'Use ReadRange + EditText on the **Next action** file only. ' +
+      'Do not reset completed checklist items; work the next incomplete item.' +
+      blockedNote
+    )
+  }
+
+  return (
+    '/agent Continue the active task checklist from where you stopped. ' +
+    'Use ReadRange and EditText on the next incomplete item — ' +
+    'do not repeat exploration unless necessary. Do not uncheck completed items.' +
+    blockedNote
+  )
+}
+
+export function buildStartWorkMessage(todo: TodoItem, allTodos: TodoItem[]): string {
+  if (shouldResumeWork(todo)) {
+    return buildResumeWorkMessage(todo, allTodos)
+  }
+  const item = migrateTodoLayers(todo)
+  const blocked = dependencyBlocked(item, allTodos)
   let body: string
   if (todoHasSpecLayers(item)) {
     if (blocked) {

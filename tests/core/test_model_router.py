@@ -8,6 +8,19 @@ from bright_vision_core.model_router import (
 )
 
 
+def test_from_payload_normalizes_heavy_keep_alive_zero():
+    cfg = ModelRouterConfig.from_payload(
+        {
+            "enabled": True,
+            "fast_model": "ollama_chat/small",
+            "heavy_model": "ollama_chat/big",
+            "keep_alive_heavy": 0,
+        }
+    )
+    assert cfg is not None
+    assert cfg.keep_alive_heavy == -1
+
+
 def test_classify_low_tokens_fast_keyword():
     router = ModelRouterConfig(
         enabled=True,

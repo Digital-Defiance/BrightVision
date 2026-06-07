@@ -3,11 +3,31 @@ import {
   applyLocalLlmHopperFromEnv,
   DEFAULT_MODEL_ROUTER_PREFS,
   modelRouterApiPayload,
+  normalizeKeepAliveHeavySec,
+  normalizeModelRouterPrefs,
 } from './modelRouterPrefs'
 import { resolveHopperModels } from './modelHopper'
 import { updateHopperEntry } from './modelHopper'
 
 describe('modelRouterApiPayload', () => {
+  it('normalizes heavy keep-alive 0 to -1 in API payload', () => {
+    const models = DEFAULT_MODEL_ROUTER_PREFS.models.map((m) =>
+      m.tier === 'fast' && m.id === 'hopper-fast-deepseek'
+        ? updateHopperEntry([m], m.id, { enabled: true })[0]
+        : m
+    )
+    const body = modelRouterApiPayload(
+      {
+        ...DEFAULT_MODEL_ROUTER_PREFS,
+        enabled: true,
+        models,
+        keepAliveHeavySec: 0,
+      },
+      'ollama_chat/big'
+    )
+    expect(body?.keep_alive_heavy).toBe(-1)
+  })
+
   it('returns undefined for cloud models', () => {
     expect(
       modelRouterApiPayload(
@@ -43,6 +63,19 @@ describe('modelRouterApiPayload', () => {
     expect(body?.fast_model).toBe('ollama_chat/deepseek-coder:6.7b')
     expect(body?.heavy_model).toBe('ollama_chat/big')
     expect(Array.isArray(body?.model_pool)).toBe(true)
+  })
+})
+
+describe('normalizeModelRouterPrefs', () => {
+  it('coerces keepAliveHeavySec 0 to -1', () => {
+    const next = normalizeModelRouterPrefs({
+      ...DEFAULT_MODEL_ROUTER_PREFS,
+      keepAliveHeavySec: 0,
+    })
+    expect(next.keepAliveHeavySec).toBe(-1)
+    expect(normalizeKeepAliveHeavySec(0)).toBe(-1)
+    expect(normalizeKeepAliveHeavySec(-1)).toBe(-1)
+    expect(normalizeKeepAliveHeavySec(300)).toBe(300)
   })
 })
 

@@ -274,12 +274,12 @@ pip install -e .
 
 **Also:** Turn runs 10+ minutes with ls/ReadRange/GitStatus, then **Empty response from the local model** and **Repetition Detected** on read tools — chat shows only opening prose and **no auto-recovery**.
 
-**Cause:** Ollama/Qwen often returns `finish_reason=length` with an empty body — not real context exhaustion. Auto-continue then drives a second huge implement pass; the model batches many `EditText` calls (`@000` on a dozen files), triggering cecli repetition guard. Separately, exploration-heavy turns can end when Ollama stalls after read tools with no EditText — previously no recovery ran.
+**Cause:** Ollama/Qwen often returns `finish_reason=length` with an empty body — not real context exhaustion. Auto-continue then drives a second huge implement pass; the model batches many `EditText` calls (`@000` on a dozen files), triggering cecli repetition guard. Separately, exploration-heavy turns can end when Ollama stalls after read tools with no EditText — often because **Model router → Heavy keep-alive** was **0** (unload 27B between every agent LLM call). Default is now **-1** (keep loaded); existing saved **0** migrates to **-1** on Settings load.
 
 **Current behavior (2026-06):**
 
 - Spurious Ollama token limits (~0 output, input ≪ window) **no longer auto-continue**; snackbar explains the stall.
-- **Stalled exploration** (agent tools ran + empty Ollama or repetition on ls/ReadRange with no edits) **auto-continues once** with a directive to EditText one file — no more silent 14-minute dead ends.
+- **Stalled exploration** with empty Ollama **auto-continues once** only when fewer than four LLM rounds ran with no edits; after that, BrightVision stops with a directive to fix keep-alive and **Implement** one step — avoids looping on empty Ollama.
 - Token-limit continue prompts scope to **one numbered task** and **one file per EditText**.
 - Prefer **Implement** on step **1.1** only — not open-ended **Start work** for greenfield scaffolding.
 

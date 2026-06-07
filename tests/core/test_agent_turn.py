@@ -157,9 +157,13 @@ def test_token_limit_detection_and_auto_continue():
 
 def test_agent_stall_detection_and_auto_continue():
     from bright_vision_core.agent_turn import (
+        agent_context_dead_end_in_events,
+        agent_context_dead_end_warning,
         agent_had_write_tool_in_events,
         agent_turn_stalled,
+        parse_token_usage_stat,
         should_auto_continue_after_agent_stall,
+        token_usage_stats_from_events,
     )
 
     explore_only = [
@@ -190,8 +194,94 @@ def test_agent_stall_detection_and_auto_continue():
     # Empty Ollama still counts as stalled (partial progress — continue to finish).
     assert agent_turn_stalled(had_tool_call=True, events=wrote, coder=None)
 
+    assert parse_token_usage_stat("14k ↑ 54 ↓ 306k ↑↓") == {
+        "input": 14_000,
+        "output": 54,
+        "cumulative": 306_000,
+    }
+    long_turn = [
+        *[
+            {"type": "tool_output", "text": f"{8 + i // 3}k ↑ 100 ↓ {80 + i * 8}k ↑↓"}
+            for i in range(16)
+        ],
+        {
+            "type": "tool_warning",
+            "text": "Empty response from the local model (Ollama). The model may have timed out.",
+        },
+    ]
+    assert len(token_usage_stats_from_events(long_turn)) == 16
+    assert agent_context_dead_end_in_events(long_turn)
+    assert not should_auto_continue_after_agent_stall(
+        had_tool_call=True,
+        events=long_turn,
+        assistant_text="",
+        coder=None,
+    )
+    msg = agent_context_dead_end_warning(
+        events=long_turn,
+        auto_continue_attempted=True,
+    )
+    assert "context dead end" in msg
+    assert "Implement" in msg
 
-def test_empty_agent_turn_warning():
+
+def test_agent_context_pressure_and_abort():
+    from bright_vision_core.agent_turn import (
+        AGENT_CONTEXT_ABORT_CUMULATIVE,
+        AGENT_CONTEXT_PRESSURE_CUMULATIVE,
+        agent_context_dead_end_in_events,
+        agent_context_pressure_abort_warning,
+        agent_context_pressure_warning,
+        agent_turn_context_overloaded,
+        is_readrange_first_edit_error_event,
+        should_abort_agent_for_context_pressure,
+        should_auto_continue_after_agent_stall,
+    )
+
+    err = {
+        "type": "tool_error",
+        "text": "Error in EditText: Please call `ReadRange` first to make sure edits are appropriately scoped",
+    }
+    assert is_readrange_first_edit_error_event(err)
+    assert not is_readrange_first_edit_error_event({"type": "tool_error", "text": "other"})
+
+    stats_events = [
+        {"type": "tool_output", "text": f"14k ↑ 54 ↓ {AGENT_CONTEXT_ABORT_CUMULATIVE // 1000}k ↑↓"}
+    ]
+    msg = agent_context_pressure_warning(
+        cumulative=AGENT_CONTEXT_PRESSURE_CUMULATIVE,
+        rounds=20,
+    )
+    assert "context pressure" in msg
+
+    assert should_abort_agent_for_context_pressure(
+        cumulative_tokens=AGENT_CONTEXT_ABORT_CUMULATIVE,
+        edit_error_event=err,
+        agent_cmd=True,
+        agent_continuation=False,
+    )
+    assert not should_abort_agent_for_context_pressure(
+        cumulative_tokens=AGENT_CONTEXT_ABORT_CUMULATIVE - 1,
+        edit_error_event=err,
+        agent_cmd=True,
+        agent_continuation=False,
+    )
+
+    overloaded = stats_events + [err]
+    assert agent_turn_context_overloaded(overloaded)
+    assert agent_context_dead_end_in_events(overloaded)
+    assert not should_auto_continue_after_agent_stall(
+        had_tool_call=True,
+        events=overloaded,
+        assistant_text="",
+        coder=None,
+    )
+    abort_msg = agent_context_pressure_abort_warning(
+        cumulative=AGENT_CONTEXT_ABORT_CUMULATIVE,
+        rounds=22,
+    )
+    assert "Stopped /agent" in abort_msg
+    assert "Implement" in abort_msg
     from bright_vision_core.agent_turn import empty_agent_turn_warning
 
     msg = empty_agent_turn_warning(had_tool_activity=False, assistant_text="")
@@ -199,6 +289,104 @@ def test_empty_agent_turn_warning():
     assert "/agent finished immediately" in msg
     assert empty_agent_turn_warning(had_tool_activity=True, assistant_text="") is None
     assert empty_agent_turn_warning(had_tool_activity=False, assistant_text="hi") is None
+
+
+def test_empty_ollama_exploration_blocks_auto_continue():
+    from bright_vision_core.agent_turn import (
+        empty_ollama_exploration_exhausted,
+        empty_ollama_exploration_blocked_warning,
+        should_auto_continue_after_agent_stall,
+    )
+
+    exhausted = [
+        *[
+            {"type": "tool_output", "text": f"{8 + i}k ↑ 100 ↓ {20 + i * 10}k ↑↓"}
+            for i in range(4)
+        ],
+        {
+            "type": "tool_warning",
+            "text": "Empty response from the local model (Ollama). The model may have timed out.",
+        },
+    ]
+    assert empty_ollama_exploration_exhausted(exhausted)
+    assert not should_auto_continue_after_agent_stall(
+        had_tool_call=True,
+        events=exhausted,
+        assistant_text="",
+        coder=None,
+    )
+    msg = empty_ollama_exploration_blocked_warning()
+    assert "1.1" in msg
+    assert "Implement" in msg
+
+
+def test_ls_exploration_abort():
+    from bright_vision_core.agent_turn import (
+        LS_EXPLORATION_ABORT_THRESHOLD,
+        exploration_ls_abort_warning,
+        is_ls_tool_output_event,
+        ls_call_count_from_events,
+        should_abort_turn_for_ls_exploration,
+    )
+
+    ls_event = {"type": "tool_output", "text": "Tool Call: Local • ls"}
+    assert is_ls_tool_output_event(ls_event)
+    events = [ls_event] * LS_EXPLORATION_ABORT_THRESHOLD
+    assert ls_call_count_from_events(events) == LS_EXPLORATION_ABORT_THRESHOLD
+    assert should_abort_turn_for_ls_exploration(
+        total_ls_calls=LS_EXPLORATION_ABORT_THRESHOLD,
+        had_write=False,
+        edit_failure_continuation=False,
+    )
+    assert not should_abort_turn_for_ls_exploration(
+        total_ls_calls=LS_EXPLORATION_ABORT_THRESHOLD,
+        had_write=True,
+        edit_failure_continuation=False,
+    )
+    msg = exploration_ls_abort_warning(total=4)
+    assert "ls call" in msg
+    assert "1.1" in msg
+
+
+def test_readrange_tool_error_abort():
+    from bright_vision_core.agent_turn import (
+        is_readrange_tool_error_event,
+        readrange_failure_abort_warning,
+        should_abort_turn_for_readrange_failures,
+    )
+
+    traceback_err = {
+        "type": "tool_error",
+        "text": (
+            "Traceback (most recent call last):\n"
+            '  File ".../read_range.py", line 632, in format_output\n'
+            "AttributeError: 'int' object has no attribute 'splitlines'"
+        ),
+    }
+    batch_err = {
+        "type": "tool_error",
+        "text": "Errors encountered for 2 operation(s)",
+    }
+    edit_err = {
+        "type": "tool_error",
+        "text": "Error in EditText: Please call `ReadRange` first",
+    }
+
+    assert is_readrange_tool_error_event(traceback_err)
+    assert is_readrange_tool_error_event(batch_err)
+    assert not is_readrange_tool_error_event(edit_err)
+
+    assert not should_abort_turn_for_readrange_failures(
+        total_readrange_failures=1,
+        edit_failure_continuation=False,
+    )
+    assert should_abort_turn_for_readrange_failures(
+        total_readrange_failures=2,
+        edit_failure_continuation=False,
+    )
+    msg = readrange_failure_abort_warning(total=2)
+    assert "ReadRange failure" in msg
+    assert "Implement" in msg
 
 
 def test_shell_output_in_events():
@@ -209,3 +397,94 @@ def test_shell_output_in_events():
         [{"type": "tool_output", "text": "Recovered prose shell (read-only):\n$ find\n."}]
     )
     assert not shell_output_in_events([{"type": "tool_output", "text": "41k ↑ 256 ↓"}])
+
+
+def test_edit_tool_failures_in_events():
+    from bright_vision_core.agent_turn import edit_tool_failures_in_events
+
+    events = [
+        {"type": "tool_output", "text": "ok"},
+        {
+            "type": "tool_error",
+            "text": "Error in EditText: Please call `ReadRange` first",
+        },
+    ]
+    assert len(edit_tool_failures_in_events(events)) == 1
+
+
+def test_edit_failure_turn_warning_no_edits():
+    from bright_vision_core.agent_turn import edit_failure_turn_warning
+
+    msg = edit_failure_turn_warning(
+        events=[{"type": "tool_error", "text": "Error in EditText: No edits were successfully applied"}],
+        edited_files=[],
+    )
+    assert msg is not None
+    assert "ReadRange" in msg
+    assert "UpdateTodoList" in msg
+
+
+def test_edit_failure_turn_warning_with_partial_edits():
+    from bright_vision_core.agent_turn import edit_failure_turn_warning
+
+    msg = edit_failure_turn_warning(
+        events=[{"type": "tool_error", "text": "Error in EditText: bounds"}],
+        edited_files=["lib/foo.dart"],
+    )
+    assert msg is not None
+    assert "One or more EditText calls failed" in msg
+
+
+def test_should_auto_continue_after_edit_failure():
+    from bright_vision_core.agent_turn import should_auto_continue_after_edit_failure
+
+    events = [{"type": "tool_error", "text": "Error in EditText: fail"}]
+    assert should_auto_continue_after_edit_failure(
+        events=events, agent_cmd=False, edit_failure_continuation=False
+    )
+    assert not should_auto_continue_after_edit_failure(
+        events=events, agent_cmd=True, edit_failure_continuation=False
+    )
+    assert not should_auto_continue_after_edit_failure(
+        events=events, agent_cmd=False, edit_failure_continuation=True
+    )
+
+
+def test_should_abort_turn_for_edit_failures():
+    from bright_vision_core.agent_turn import (
+        EDIT_FAILURE_ABORT_THRESHOLD,
+        should_abort_turn_for_edit_failures,
+    )
+
+    assert should_abort_turn_for_edit_failures(
+        consecutive_edit_failures=EDIT_FAILURE_ABORT_THRESHOLD,
+        total_edit_failures=EDIT_FAILURE_ABORT_THRESHOLD,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+    )
+    assert not should_abort_turn_for_edit_failures(
+        consecutive_edit_failures=1,
+        total_edit_failures=1,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+    )
+    assert not should_abort_turn_for_edit_failures(
+        consecutive_edit_failures=5,
+        total_edit_failures=5,
+        agent_cmd=True,
+        edit_failure_continuation=False,
+    )
+
+
+def test_edit_success_resets_consecutive_counter_logic():
+    from bright_vision_core.agent_turn import (
+        is_edit_tool_success_event,
+        is_read_range_success_event,
+    )
+
+    assert is_edit_tool_success_event(
+        {"type": "tool_output", "text": "Applied 1 edits in lib/foo.dart"}
+    )
+    assert is_read_range_success_event(
+        {"type": "tool_output", "text": "✅ Retrieved context for 1 operation(s)"}
+    )

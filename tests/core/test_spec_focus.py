@@ -150,6 +150,7 @@ class TestSpecFocusGating(unittest.TestCase):
             self.assertIn("Scaffold lib/", text)
             self.assertIn("Implementation turn (tools)", text)
             self.assertIn("EditText", text)
+            self.assertIn("Workspace snapshot", text)
 
     def test_implement_turn_detects_agent_prefix(self):
         from bright_vision_core.spec_focus import is_implement_turn_message
@@ -157,6 +158,11 @@ class TestSpecFocusGating(unittest.TestCase):
         self.assertTrue(
             is_implement_turn_message(
                 "/agent Implement only implementation task 1: Scaffold lib/."
+            )
+        )
+        self.assertTrue(
+            is_implement_turn_message(
+                "/agent Continue the active task from where you stopped."
             )
         )
 

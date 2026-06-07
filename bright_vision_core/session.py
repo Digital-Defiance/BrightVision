@@ -290,9 +290,12 @@ class Session:
                 router_cfg.heavy_model = model_name
 
             main_model = models.Model(model_name)
-            if main_model.is_ollama() and not (router_cfg and router_cfg.enabled):
+            if main_model.is_ollama():
                 main_model._ensure_extra_params_dict()
-                main_model.extra_params.setdefault("keep_alive", -1)
+                keep_alive = -1
+                if router_cfg and router_cfg.enabled:
+                    keep_alive = router_cfg.keep_alive_heavy
+                main_model.extra_params.setdefault("keep_alive", keep_alive)
 
             fnames = [str(Path(f).resolve()) for f in (files or [])]
 
@@ -319,6 +322,8 @@ class Session:
                 auto_load=auto_load,
                 auto_save_session_name=auto_save_session_name,
             )
+            max_input = int(main_model.info.get("max_input_tokens") or 0)
+            compaction_max = int(max_input * 0.65) if max_input > 0 else 65_536
             coder = run(
                 Coder.create(
                     main_model=main_model,
@@ -333,6 +338,8 @@ class Session:
                     commands=commands,
                     use_git=repo is not None,
                     args=headless_args,
+                    enable_context_compaction=True,
+                    context_compaction_max_tokens=compaction_max,
                 )
             )
             commands.coder = coder
@@ -388,6 +395,16 @@ class Session:
             payload["swapped"] = swapped
         return self.io.emit("model_route", **payload)
 
+    def _yield_model_route(
+        self,
+        decision: RouteDecision,
+        *,
+        escalated: bool = False,
+    ) -> Iterator[dict[str, Any]]:
+        """Emit one model_route SSE event (emit queues; do not also yield emit return)."""
+        self._emit_model_route(decision, escalated=escalated)
+        yield from self.io.drain_events()
+
     def _route_and_apply(
         self,
         user_message: str,
@@ -427,6 +444,7 @@ class Session:
         force_tier: str | None = None,
         escalate_from_last: bool = False,
         agent_continuation: bool = False,
+        edit_failure_continuation: bool = False,
     ) -> Iterator[dict[str, Any]]:
         user_text = maybe_append_roadmap_hint(message, self.coder)
         focus_requested = spec_focus_requested(
@@ -467,18 +485,135 @@ class Session:
         assistant_text: list[str] = []
         turn_had_tool_activity = False
         turn_had_tool_call = False
+        turn_context_state = {
+            "warned": False,
+            "cumulative": 0,
+            "rounds": 0,
+            "aborted": False,
+            "readrange_errors": 0,
+            "ls_calls": 0,
+            "exploration_aborted": False,
+        }
 
         def _track_tool_activity(event: dict[str, Any]) -> None:
             nonlocal turn_had_tool_activity, turn_had_tool_call
             from bright_vision_core.agent_turn import (
+                AGENT_CONTEXT_PRESSURE_CUMULATIVE,
+                agent_context_pressure_abort_warning,
+                agent_context_pressure_warning,
+                agent_had_write_tool_in_events,
+                exploration_ls_abort_warning,
+                exploration_repetition_abort_warning,
                 is_agent_tool_activity_event,
+                is_ls_tool_output_event,
+                is_readrange_first_edit_error_event,
+                is_readrange_tool_error_event,
                 is_tool_activity_event,
+                parse_token_usage_stat,
+                readrange_failure_abort_warning,
+                should_abort_agent_for_context_pressure,
+                should_abort_turn_for_ls_exploration,
+                should_abort_turn_for_readrange_failures,
+                should_abort_turn_for_repetition_guard,
             )
 
             if is_agent_tool_activity_event(event):
                 turn_had_tool_call = True
             if is_tool_activity_event(event):
                 turn_had_tool_activity = True
+            if turn_context_state["aborted"]:
+                return
+            if event.get("type") == "tool_output":
+                stat = parse_token_usage_stat(str(event.get("text") or ""))
+                if stat:
+                    turn_context_state["rounds"] += 1
+                    cumulative = stat.get("cumulative", 0)
+                    if cumulative:
+                        turn_context_state["cumulative"] = max(
+                            turn_context_state["cumulative"], cumulative
+                        )
+                    if (
+                        agent_cmd
+                        and not agent_continuation
+                        and not turn_context_state["warned"]
+                        and turn_context_state["cumulative"]
+                        >= AGENT_CONTEXT_PRESSURE_CUMULATIVE
+                    ):
+                        turn_context_state["warned"] = True
+                        self.io.tool_warning(
+                            agent_context_pressure_warning(
+                                cumulative=turn_context_state["cumulative"],
+                                rounds=turn_context_state["rounds"],
+                            )
+                        )
+            if (
+                agent_cmd
+                and not agent_continuation
+                and event.get("type") == "tool_error"
+                and is_readrange_first_edit_error_event(event)
+                and should_abort_agent_for_context_pressure(
+                    cumulative_tokens=turn_context_state["cumulative"],
+                    edit_error_event=event,
+                    agent_cmd=agent_cmd,
+                    agent_continuation=agent_continuation,
+                )
+            ):
+                turn_context_state["aborted"] = True
+                turn_context_state["exploration_aborted"] = True
+                self.io.tool_warning(
+                    agent_context_pressure_abort_warning(
+                        cumulative=turn_context_state["cumulative"],
+                        rounds=turn_context_state["rounds"],
+                    )
+                )
+                self.interrupt_turn()
+            if event.get("type") == "tool_error" and is_readrange_tool_error_event(event):
+                turn_context_state["readrange_errors"] += 1
+                if (
+                    not turn_context_state["aborted"]
+                    and should_abort_turn_for_readrange_failures(
+                        total_readrange_failures=turn_context_state["readrange_errors"],
+                        edit_failure_continuation=edit_failure_continuation,
+                    )
+                ):
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(
+                        readrange_failure_abort_warning(
+                            total=turn_context_state["readrange_errors"],
+                        )
+                    )
+                    self.interrupt_turn()
+            if event.get("type") == "tool_output" and is_ls_tool_output_event(event):
+                turn_context_state["ls_calls"] += 1
+                ring = list(getattr(self.io, "debug_event_ring", []) or [])
+                if (
+                    not turn_context_state["aborted"]
+                    and should_abort_turn_for_ls_exploration(
+                        total_ls_calls=turn_context_state["ls_calls"],
+                        had_write=agent_had_write_tool_in_events(ring),
+                        edit_failure_continuation=edit_failure_continuation,
+                        agent_continuation=agent_continuation,
+                    )
+                ):
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(
+                        exploration_ls_abort_warning(total=turn_context_state["ls_calls"])
+                    )
+                    self.interrupt_turn()
+            if not turn_context_state["aborted"] and is_agent_tool_activity_event(event):
+                ring = list(getattr(self.io, "debug_event_ring", []) or [])
+                if should_abort_turn_for_repetition_guard(
+                    coder=self.coder,
+                    events=ring,
+                    edit_failure_continuation=edit_failure_continuation,
+                    agent_continuation=agent_continuation,
+                ):
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(exploration_repetition_abort_warning())
+                    self.interrupt_turn()
 
         def _run_agent_continuation(continue_message: str, status: str) -> Iterator[dict[str, Any]]:
             if not agent_cmd or agent_continuation:
@@ -493,6 +628,26 @@ class Session:
                 spec_focus=focus_requested,
                 force_tier=effective_force_tier,
                 agent_continuation=True,
+            ):
+                yield event
+
+        def _run_edit_failure_continuation() -> Iterator[dict[str, Any]]:
+            if edit_failure_continuation:
+                return
+            from bright_vision_core.agent_turn import edit_failure_continue_message
+
+            yield self.io.tool_output(
+                "EditText failed — auto-continuing once with ReadRange guidance…"
+            )
+            for event in self.run_message(
+                edit_failure_continue_message(),
+                preproc=False,
+                skip_workspace_init=True,
+                active_todo_id=turn_todo_id,
+                inject_todo_spec=False,
+                spec_focus=focus_requested,
+                force_tier=effective_force_tier,
+                edit_failure_continuation=True,
             ):
                 yield event
 
@@ -519,6 +674,41 @@ class Session:
                 agent_continue_after_stall_message(),
                 "Continuing /agent after stalled exploration (empty model / repetition)…",
             )
+
+        def _maybe_verify_implement_tests() -> Iterator[dict[str, Any]]:
+            from bright_vision_core.implement_workspace import (
+                edited_dart_test_files,
+                first_open_checklist_item,
+                list_workspace_test_files,
+                run_flutter_tests,
+            )
+            from bright_vision_core.spec_focus import is_implement_turn_message
+
+            if not is_implement_turn_message(message):
+                return
+            edited = _edited_files(self.coder)
+            tests = edited_dart_test_files(edited)
+            if not tests and item is not None and item.checklist:
+                focus = first_open_checklist_item(item.checklist)
+                if focus and "test" in focus.text.lower():
+                    tests = [
+                        f
+                        for f in list_workspace_test_files(self.coder.root)
+                        if f.endswith("_test.dart")
+                    ][:4]
+            if not tests:
+                return
+            ok, output = run_flutter_tests(self.coder.root, tests)
+            header = "✅ flutter test passed" if ok else "❌ flutter test failed"
+            yield self.io.tool_output(f"{header} ({', '.join(tests)}):\n{output}")
+            if ok:
+                yield self.io.tool_warning(
+                    "Tests passed — mark the checklist item **done** in Tasks if this step is complete."
+                )
+            else:
+                yield self.io.tool_warning(
+                    "Fix failing tests with **ReadRange** + **EditText** on one file — do not ls or resume."
+                )
 
         def _maybe_warn_agent_shell_stop() -> Iterator[dict[str, Any]]:
             if not agent_cmd or agent_continuation:
@@ -607,11 +797,15 @@ class Session:
             )
             yield from _maybe_recover_prose_shell()
             from bright_vision_core.agent_turn import (
+                agent_context_dead_end_in_events,
+                agent_context_dead_end_warning,
                 agent_stall_recovery_warning,
                 agent_token_limit_recovery_warning,
                 agent_turn_stalled,
                 empty_local_llm_response_in_events,
                 empty_ollama_auto_continue_blocked_warning,
+                empty_ollama_exploration_blocked_warning,
+                empty_ollama_exploration_exhausted,
                 is_agent_shell_only_stop,
                 should_auto_continue_after_agent_stall,
                 should_auto_continue_after_shell,
@@ -623,7 +817,11 @@ class Session:
 
             ring = list(getattr(self.io, "debug_event_ring", []) or [])
             blob = _assistant_text_blob()
-            if not agent_continuation:
+            model_ctx = int(self.coder.main_model.info.get("max_input_tokens") or 0) or None
+            context_dead_end = agent_context_dead_end_in_events(
+                ring, model_context_tokens=model_ctx
+            )
+            if not agent_continuation and not turn_context_state["exploration_aborted"]:
                 if should_auto_continue_after_shell(
                     had_tool_activity=turn_had_tool_activity,
                     had_tool_call=turn_had_tool_call,
@@ -639,6 +837,7 @@ class Session:
                     events=ring,
                     assistant_text=blob,
                     coder=self.coder,
+                    model_context_tokens=model_ctx,
                 ):
                     yield from _maybe_continue_agent_after_stall()
                     return
@@ -657,24 +856,59 @@ class Session:
                         yield self.io.tool_warning(
                             agent_token_limit_recovery_warning(auto_continue_attempted=False)
                         )
+                elif empty_ollama_exploration_exhausted(ring):
+                    yield self.io.tool_warning(empty_ollama_exploration_blocked_warning())
+                elif turn_context_state.get("exploration_aborted"):
+                    pass  # warning already emitted during the turn
                 elif agent_turn_stalled(
                     had_tool_call=turn_had_tool_call,
                     events=ring,
                     coder=self.coder,
                 ):
-                    yield self.io.tool_warning(agent_stall_recovery_warning(auto_continue_attempted=False))
+                    if context_dead_end:
+                        yield self.io.tool_warning(
+                            agent_context_dead_end_warning(
+                                events=ring,
+                                auto_continue_attempted=False,
+                                model_context_tokens=model_ctx,
+                            )
+                        )
+                    else:
+                        yield self.io.tool_warning(
+                            agent_stall_recovery_warning(auto_continue_attempted=False)
+                        )
             elif token_limit_exhausted(events=ring, assistant_text=blob):
                 yield self.io.tool_warning(
                     agent_token_limit_recovery_warning(auto_continue_attempted=True)
                 )
+            elif turn_context_state.get("exploration_aborted"):
+                pass
             elif agent_turn_stalled(
                 had_tool_call=turn_had_tool_call,
                 events=ring,
                 coder=self.coder,
             ):
-                yield self.io.tool_warning(agent_stall_recovery_warning(auto_continue_attempted=True))
+                if context_dead_end:
+                    yield self.io.tool_warning(
+                        agent_context_dead_end_warning(
+                            events=ring,
+                            auto_continue_attempted=True,
+                            model_context_tokens=model_ctx,
+                        )
+                    )
+                else:
+                    yield self.io.tool_warning(
+                        agent_stall_recovery_warning(auto_continue_attempted=True)
+                    )
             yield from _maybe_warn_incomplete_agent()
             yield from _maybe_warn_agent_shell_stop()
+            yield from _maybe_verify_implement_tests()
+            ring = list(getattr(self.io, "debug_event_ring", []) or [])
+            from bright_vision_core.agent_turn import edit_failure_turn_warning
+
+            msg = edit_failure_turn_warning(events=ring, edited_files=_edited_files(self.coder))
+            if msg:
+                yield self.io.tool_warning(msg)
             self.sync_agent_todos_with_workspace()
             yield self.io.emit(
                 "done",
@@ -731,9 +965,7 @@ class Session:
                         message, intent_message=message, force_tier="heavy"
                     )
                     if pre_route:
-                        yield self._emit_model_route(pre_route)
-                        for event in self.io.drain_events():
-                            yield event
+                        yield from self._yield_model_route(pre_route)
                 emit_progress(self.io, label="Vision", message="Running slash commands…")
                 yield from _drain_io_events(self.io)
 
@@ -779,8 +1011,9 @@ class Session:
                             on_event=_track_tool_activity,
                         ):
                             if isinstance(item, dict):
-                                _track_tool_activity(item)
                                 yield item
+                                if turn_context_state["aborted"]:
+                                    break
                             else:
                                 user_msg = item
                 except TimeoutError as err:
@@ -843,6 +1076,17 @@ class Session:
                     _restore_agent_preproc_io()
                     return
 
+                if turn_context_state["aborted"]:
+                    yield from _drain_io_events(
+                        self.io,
+                        mirror_assistant_complete=True,
+                        assistant_text=assistant_text,
+                        on_event=_track_tool_activity,
+                    )
+                    yield from _finalize_agent_preproc_turn()
+                    _restore_agent_preproc_io()
+                    return
+
             if user_msg is None or agent_cmd:
                 yield from _finalize_agent_preproc_turn()
                 _restore_agent_preproc_io()
@@ -857,29 +1101,81 @@ class Session:
                     user_msg, intent_message=message, force_tier="heavy"
                 )
                 if route_decision:
-                    yield self._emit_model_route(route_decision, escalated=True)
-                    for event in self.io.drain_events():
-                        yield event
+                    yield from self._yield_model_route(route_decision, escalated=True)
             elif self._model_router and self._model_router.enabled:
                 route_decision = self._route_and_apply(
                     user_msg, intent_message=message, force_tier=effective_force_tier
                 )
                 if route_decision:
-                    yield self._emit_model_route(route_decision)
-                    for event in self.io.drain_events():
-                        yield event
+                    yield from self._yield_model_route(route_decision)
 
             turn_had_tool_error = False
             turn_tool_error_text = ""
+            consecutive_edit_failures = 0
+            total_edit_failures = 0
+            total_readrange_failures = 0
+            edit_failure_aborted = False
             max_attempts = 2 if self._model_router and self._model_router.escalate_on_failure else 1
+
+            def _yield_turn_event(event: dict[str, Any]) -> Iterator[dict[str, Any]]:
+                nonlocal turn_had_tool_error, turn_tool_error_text
+                nonlocal consecutive_edit_failures, total_edit_failures, edit_failure_aborted
+                nonlocal total_readrange_failures
+                from bright_vision_core.agent_turn import (
+                    edit_failure_abort_warning,
+                    is_edit_tool_error_event,
+                    is_edit_tool_success_event,
+                    is_read_range_success_event,
+                    is_readrange_tool_error_event,
+                    readrange_failure_abort_warning,
+                    should_abort_turn_for_edit_failures,
+                    should_abort_turn_for_readrange_failures,
+                )
+
+                if event.get("type") == "tool_error":
+                    turn_had_tool_error = True
+                    turn_tool_error_text += str(event.get("text") or "")
+                    if is_edit_tool_error_event(event):
+                        consecutive_edit_failures += 1
+                        total_edit_failures += 1
+                    elif is_readrange_tool_error_event(event):
+                        total_readrange_failures += 1
+                elif is_edit_tool_success_event(event) or is_read_range_success_event(event):
+                    consecutive_edit_failures = 0
+                yield event
+                if edit_failure_aborted:
+                    return
+                if should_abort_turn_for_readrange_failures(
+                    total_readrange_failures=total_readrange_failures,
+                    edit_failure_continuation=edit_failure_continuation,
+                ):
+                    edit_failure_aborted = True
+                    yield self.io.tool_warning(
+                        readrange_failure_abort_warning(total=total_readrange_failures)
+                    )
+                    self.interrupt_turn()
+                    return
+                if should_abort_turn_for_edit_failures(
+                    consecutive_edit_failures=consecutive_edit_failures,
+                    total_edit_failures=total_edit_failures,
+                    agent_cmd=agent_cmd,
+                    edit_failure_continuation=edit_failure_continuation,
+                ):
+                    edit_failure_aborted = True
+                    yield self.io.tool_warning(
+                        edit_failure_abort_warning(
+                            consecutive=consecutive_edit_failures,
+                            total=total_edit_failures,
+                        )
+                    )
+                    self.interrupt_turn()
+
             for attempt in range(max_attempts):
                 if attempt > 0 and route_decision:
                     route_decision = self._route_and_apply(
                         user_msg, intent_message=message, force_tier="heavy"
                     )
-                    yield self._emit_model_route(route_decision, escalated=True)
-                    for event in self.io.drain_events():
-                        yield event
+                    yield from self._yield_model_route(route_decision, escalated=True)
 
                 wait_initial, wait_heartbeat = llm_wait_messages(self.coder.main_model)
                 emit_progress(self.io, label="LLM", message=wait_initial)
@@ -895,10 +1191,11 @@ class Session:
                     message=wait_heartbeat,
                 ):
                     for event in self.io.drain_events():
-                        if event.get("type") == "tool_error":
-                            turn_had_tool_error = True
-                            turn_tool_error_text += str(event.get("text") or "")
-                        yield event
+                        yield from _yield_turn_event(event)
+                        if edit_failure_aborted:
+                            break
+                    if edit_failure_aborted:
+                        break
                     if piece is HEARTBEAT_PULSE:
                         continue
                     if piece:
@@ -907,10 +1204,12 @@ class Session:
                         yield self.io.emit("token", text=piece)
 
                 for event in self.io.drain_events():
-                    if event.get("type") == "tool_error":
-                        turn_had_tool_error = True
-                        turn_tool_error_text += str(event.get("text") or "")
-                    yield event
+                    yield from _yield_turn_event(event)
+                    if edit_failure_aborted:
+                        break
+
+                if edit_failure_aborted:
+                    break
 
                 edited = _edited_files(self.coder)
                 if (
@@ -957,16 +1256,29 @@ class Session:
 
             self.sync_agent_todos_with_workspace()
             from bright_vision_core.agent_turn import (
+                edit_failure_turn_warning,
+                should_auto_continue_after_edit_failure,
                 token_limit_exhausted,
                 vibe_token_limit_recovery_warning,
             )
 
             ring = list(getattr(self.io, "debug_event_ring", []) or [])
+            msg = edit_failure_turn_warning(events=ring, edited_files=edited)
+            if msg:
+                yield self.io.tool_warning(msg)
+            if should_auto_continue_after_edit_failure(
+                events=ring,
+                agent_cmd=agent_cmd,
+                edit_failure_continuation=edit_failure_continuation,
+            ):
+                yield from _run_edit_failure_continuation()
+                return
             if token_limit_exhausted(
                 events=ring,
                 assistant_text="".join(assistant_text),
             ):
                 yield self.io.tool_warning(vibe_token_limit_recovery_warning())
+            yield from _maybe_verify_implement_tests()
             yield self.io.emit("done", **_attach_turn_capture(payload))
         except BaseException as err:
             if is_switch_coder_signal(err):

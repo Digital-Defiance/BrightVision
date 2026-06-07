@@ -90,6 +90,25 @@ export function ModelRouterSection({
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <TextField
+            label="Heavy model keep-alive (seconds)"
+            size="small"
+            type="number"
+            disabled={!prefs.enabled}
+            value={prefs.keepAliveHeavySec}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10)
+              onChange({
+                ...prefs,
+                keepAliveHeavySec: Number.isFinite(n) ? (n === 0 ? -1 : n) : -1,
+              })
+            }}
+            helperText="Use -1 for agent/implement (keeps 27B loaded). 0 unloads between calls and causes empty Ollama responses."
+            sx={{ flex: 1 }}
+            inputProps={{ 'data-testid': 'pref-model-router-heavy-keep-alive' }}
+          />
+        </Stack>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+          <TextField
             label="Fast tier if context below (tokens)"
             size="small"
             type="number"
