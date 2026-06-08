@@ -197,6 +197,8 @@ E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:llm:core
 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:e2e:llm
 # Example bigger model:
 E2E_OLLAMA_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_LLM=1 yarn test:e2e:llm
+# Prompt behavioral eval (scores one scoped /agent edit turn — see below):
+E2E_OLLAMA_MODEL=ollama_chat/qwen3-coder:30b yarn eval:prompts
 # Router lane with explicit fast/code tags (think optional):
 E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_CODE_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_THINK_MODEL=ollama_chat/deepseek-r1:32b yarn test:e2e:llm:router
 # Mocked role chips (no Ollama): yarn playwright test e2e/model-router-roles.spec.ts
@@ -311,6 +313,40 @@ yarn test:e2e:integration
 See [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md#real-core-integration-no-mocked-apicore).
 
 `/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. The assistant reply can appear **minutes before** slash preproc finishes and SSE `done` — `agent-llm` uses post-answer settle (same as router e2e) after asserting reply text. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
+
+## Measuring prompt quality (agent system prompt)
+
+Changing the agent system prompt (`cecli/cecli/prompts/agent.yml`) has effects that the
+"does it run" gates miss. There are three layers, cheapest first:
+
+| Layer | What it proves | Command | LLM? |
+|-------|----------------|---------|------|
+| **Contract** | The prompt *states* the rules (ReadRange→EditText, one file/call, empty-file markers, scope, no-loop) and renders with no stray `{}`; sub-agent inherits the agent identity; `{final_reminders}` reaches the prompt once | `pytest cecli/tests/basic/test_agent_prompt_contract.py` | No |
+| **Scorer** | The behavioral scorer turns an SSE event stream into objective signals (edit failures, ReadRange-before-edit, ls-spam, token limit, rounds) | `pytest tests/core/test_agent_eval.py` | No |
+| **Judge parsing** | The LLM-judge transcript rendering + JSON parsing are robust to fences, prose, out-of-range, and missing dims | `pytest tests/core/test_agent_judge.py` | No |
+| **Behavioral** | A real model, on a fixed scoped edit task, *follows* the contract: edits the file, no edit/readrange errors, ReadRange precedes the edit | `yarn eval:prompts` (or `E2E_OLLAMA_MODEL=… yarn eval:prompts`) | Yes (Ollama) |
+| **Subjective (judge)** | A capable model grades the turn transcript against a rubric (scope discipline, directness, investigation, summary quality) | `BV_PROMPT_JUDGE=1 yarn eval:prompts` | Yes (Ollama) |
+
+The behavioral eval (`tests/core/test_agent_prompt_eval.py`) prints a one-line objective
+score via `bright_vision_core.agent_eval.summarize_metrics`, and — when `BV_PROMPT_JUDGE=1`
+— a one-line subjective rubric via `bright_vision_core.agent_judge.summarize_verdict`:
+
+```
+[ollama_chat/qwen3-coder:30b] score=0.8 contract=ok edits_ok=1 edit_fail=0 rr_ok=1 rr_err=0 ls=0 rounds=4 tokens=21000 token_limit=False
+[ollama_chat/qwen3-coder:30b] judge overall=5.0 scope_discipline=5 directness=5 investigation=5 summary_quality=5
+  judge notes: Stayed strictly within scope; investigated before editing; clear summary.
+```
+
+The judge is opt-in (`BV_PROMPT_JUDGE=1`, model via `BV_PROMPT_JUDGE_MODEL`, defaults to the
+agent model) and never fails the test on judge unavailability — it is a signal, not a gate.
+Use a capable model as the judge; a 3b model makes a noisy grader.
+
+**To compare two prompt versions:** run `yarn eval:prompts` (add `BV_PROMPT_JUDGE=1` for the
+rubric) on the current prompt, note the metrics + judge lines, edit `agent.yml`, re-run, and
+diff. Lower failure counters, higher `score`, and higher judge `overall` mean the prompt
+steers the model better. The objective scorer reuses the same signal parsers as the live
+loop-guard in `bright_vision_core/agent_turn.py`, so the score reflects real product
+behavior, not a separate definition of "good".
 
 ## Manual smoke (not Playwright)
 
