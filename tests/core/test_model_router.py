@@ -443,3 +443,167 @@ def test_from_payload_parses_hopper_extra_params():
     )
     assert cfg is not None
     assert cfg.model_pool[0].extra_params == {"top_p": 0.85}
+
+
+def test_pool_prefers_think_when_think_above_code():
+    from bright_vision_core.model_router import pool_prefers_think
+
+    pool = [
+        ModelPoolEntry(model="ollama_chat/r1:32b", tier="think", enabled=True),
+        ModelPoolEntry(model="ollama_chat/qwen3:27b", tier="code", enabled=True),
+        ModelPoolEntry(model="ollama_chat/small", tier="fast", enabled=True),
+    ]
+    assert pool_prefers_think(pool) is True
+
+
+def test_pool_prefers_think_false_when_code_above_think():
+    from bright_vision_core.model_router import pool_prefers_think
+
+    pool = [
+        ModelPoolEntry(model="ollama_chat/qwen3:27b", tier="code", enabled=True),
+        ModelPoolEntry(model="ollama_chat/r1:32b", tier="think", enabled=True),
+        ModelPoolEntry(model="ollama_chat/small", tier="fast", enabled=True),
+    ]
+    assert pool_prefers_think(pool) is False
+
+
+def test_pool_prefers_think_false_when_no_think():
+    from bright_vision_core.model_router import pool_prefers_think
+
+    pool = [
+        ModelPoolEntry(model="ollama_chat/qwen3:27b", tier="code", enabled=True),
+        ModelPoolEntry(model="ollama_chat/small", tier="fast", enabled=True),
+    ]
+    assert pool_prefers_think(pool) is False
+
+
+def test_prefer_think_routes_agent_to_think():
+    """Agent turns always use code model (tool-capable) even with prefer_think."""
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/small",
+        code_model="ollama_chat/code",
+        think_model="ollama_chat/think",
+        prefer_think=True,
+    )
+    d = classify_prompt(
+        "/agent explore the repo",
+        message_tokens=400,
+        router=router,
+        code_model_name="ollama_chat/code",
+    )
+    assert d.role == "code"
+    assert d.model_name == "ollama_chat/code"
+    assert "slash:/agent" in d.reasons
+
+
+def test_prefer_think_routes_implement_turn_to_think():
+    """Implement turns always use code model (tool-capable) even with prefer_think."""
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/small",
+        code_model="ollama_chat/code",
+        think_model="ollama_chat/think",
+        prefer_think=True,
+    )
+    d = classify_prompt(
+        "implement the EncryptedStorageRepository",
+        message_tokens=400,
+        router=router,
+        code_model_name="ollama_chat/code",
+        turn=RouteTurnContext(implement_turn=True),
+    )
+    assert d.role == "code"
+    assert d.model_name == "ollama_chat/code"
+    assert "implement_turn" in d.reasons
+
+
+def test_prefer_think_falls_back_to_code_without_think_model():
+    router = ModelRouterConfig(
+        enabled=True,
+        fast_model="ollama_chat/small",
+        code_model="ollama_chat/code",
+        prefer_think=True,
+    )
+    d = classify_prompt(
+        "/agent explore the repo",
+        message_tokens=400,
+        router=router,
+        code_model_name="ollama_chat/code",
+    )
+    # No think model configured; falls back to code despite prefer_think
+    assert d.role == "code"
+    assert "prefer_think" not in d.reasons
+
+
+def test_from_payload_derives_prefer_think_from_pool_order():
+    cfg = ModelRouterConfig.from_payload(
+        {
+            "enabled": True,
+            "fast_model": "ollama_chat/fast",
+            "code_model": "ollama_chat/code",
+            "think_model": "ollama_chat/think",
+            "model_pool": [
+                {"model": "ollama_chat/think", "tier": "think", "enabled": True},
+                {"model": "ollama_chat/code", "tier": "code", "enabled": True},
+                {"model": "ollama_chat/fast", "tier": "fast", "enabled": True},
+            ],
+        }
+    )
+    assert cfg is not None
+    assert cfg.prefer_think is True
+
+
+def test_from_payload_no_prefer_think_when_code_first():
+    cfg = ModelRouterConfig.from_payload(
+        {
+            "enabled": True,
+            "fast_model": "ollama_chat/fast",
+            "code_model": "ollama_chat/code",
+            "think_model": "ollama_chat/think",
+            "model_pool": [
+                {"model": "ollama_chat/code", "tier": "code", "enabled": True},
+                {"model": "ollama_chat/think", "tier": "think", "enabled": True},
+                {"model": "ollama_chat/fast", "tier": "fast", "enabled": True},
+            ],
+        }
+    )
+    assert cfg is not None
+    assert cfg.prefer_think is False
+
+
+
+def test_router_lane_fast_prompt_routes_fast_with_think_enabled():
+    """E2E router lane contract (regression for e2e/router-llm.spec.ts).
+
+    Hopper order fast → code → think (think last) ⇒ ``prefer_think`` is False, so a
+    trivial fast-keyword prompt must route to the fast tier even though a think model
+    is enabled. The e2e ``fast tier routes to Fighter pilot`` test asserts exactly this;
+    if routing here returned ``think`` the e2e would fail (and previously did, when the
+    fast model was cold-evicted and the turn escalated fast→code→think).
+    """
+    cfg = ModelRouterConfig.from_payload(
+        {
+            "enabled": True,
+            "fast_model": "ollama_chat/qwen2.5-coder:7b",
+            "code_model": "ollama_chat/qwen3.6:27b-q4_K_M",
+            "think_model": "ollama_chat/deepseek-r1:32b",
+            "model_pool": [
+                {"model": "ollama_chat/qwen2.5-coder:7b", "tier": "fast", "enabled": True},
+                {"model": "ollama_chat/qwen3.6:27b-q4_K_M", "tier": "code", "enabled": True},
+                {"model": "ollama_chat/deepseek-r1:32b", "tier": "think", "enabled": True},
+            ],
+        }
+    )
+    assert cfg is not None
+    assert cfg.prefer_think is False
+    d = classify_prompt(
+        'Suggest a better button label than "Start" in one sentence only. '
+        "No code blocks, no file edits.",
+        message_tokens=30,
+        router=cfg,
+        code_model_name="ollama_chat/qwen3.6:27b-q4_K_M",
+        think_model_name="ollama_chat/deepseek-r1:32b",
+    )
+    assert d.role == "fast", d.reasons
+    assert d.model_name == "ollama_chat/qwen2.5-coder:7b"

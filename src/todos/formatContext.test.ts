@@ -66,13 +66,12 @@ describe('buildStartWorkMessage', () => {
     expect(msg).toContain('Implement the active task')
   })
 
-  it('uses resume prompt when task is in progress', () => {
+  it('sends fresh-start prompt even when task is in progress', () => {
     const msg = buildStartWorkMessage(
       { ...specTodo, status: 'in_progress', links: ['commit:abc'] },
       []
     )
-    expect(msg).toContain('Continue the active task from where you stopped')
-    expect(msg).toContain('Do not reset completed checklist items')
+    expect(msg).toContain('Implement the active task')
   })
 })
 

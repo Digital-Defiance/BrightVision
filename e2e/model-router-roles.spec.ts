@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installMockCoreApi } from './helpers/mockCoreApi'
 import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY, gotoVision } from './helpers/testConfig'
+import { applyOpenProjectStorage, openProjectStorageArgs } from './helpers/openProject'
 
 const MODEL_ROUTER_PREFS_STORAGE_KEY = 'bright-vision-model-router'
 
@@ -46,6 +47,7 @@ function turnWithRoute(ev: Record<string, unknown>) {
 
 async function primeRouterRolesApp(page: import('@playwright/test').Page) {
   const cfg = { ...E2E_CONFIG, model: 'ollama_chat/qwen3.6:27b' }
+  await page.addInitScript(applyOpenProjectStorage, openProjectStorageArgs(cfg.workingDir))
   await page.addInitScript(
     ([config, configKey, routerKey, router]) => {
       localStorage.setItem(configKey, JSON.stringify(config))

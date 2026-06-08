@@ -72,7 +72,8 @@ def assess_spec_richness(
                 "requirements: add a **User Story** line to each requirement"
             )
         criteria = len(re.findall(r"(?m)^\s*\d+\.\s+", req))
-        if len(requirement_ids(req)) < 2 and criteria < 2:
+        ids = len(requirement_ids(req))
+        if ids < 2 or criteria < 4:
             suggestions.append(
                 "requirements: add more requirements and acceptance criteria "
                 "(happy path, edge cases, errors)"

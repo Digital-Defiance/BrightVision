@@ -338,6 +338,24 @@ export function ensureLlmE2eWorkspace(): string {
   return LLM_E2E_WORKSPACE
 }
 
+/**
+ * Remove persisted workspace tasks (`.cecli/todos.json` + `.cecli/specs/`) from the shared
+ * LLM e2e workspace. Other suites (spec-gen) create and activate tasks there; a leftover
+ * **active** todo makes the next chat turn auto-inject the task spec, which forces the think
+ * tier and breaks router-tier assertions. Call in setup for tests that need a clean,
+ * todo-free session (e.g. the auto-router lane).
+ */
+export function clearLlmE2eWorkspaceTodos(): void {
+  const meta = path.join(LLM_E2E_WORKSPACE, '.cecli')
+  for (const target of [path.join(meta, 'todos.json'), path.join(meta, 'specs')]) {
+    try {
+      fs.rmSync(target, { recursive: true, force: true })
+    } catch {
+      /* best-effort: absent or locked is fine */
+    }
+  }
+}
+
 /** Env vars the headless core needs for LiteLLM → Ollama (UI config does not reach the server process). */
 export function ollamaEnvForCore(): Record<string, string> {
   const out: Record<string, string> = {}

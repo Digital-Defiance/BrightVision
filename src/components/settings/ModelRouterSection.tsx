@@ -33,6 +33,12 @@ export function ModelRouterSection({
   const resolved = resolveHopperModels(prefs.models, sessionModel)
   const routerOn = effectiveRouterEnabled(prefs, sessionModel, modelRouterEnv)
   const routerReady = Boolean(routerOn && resolved.fast)
+  // Gate the editable hopper controls on the user's raw intent (the toggle),
+  // not on `routerOn`. `routerOn`/`effectiveRouterEnabled` also requires an
+  // enabled fast model — gating the editor on it created a dead-end where the
+  // controls used to add a fast model were themselves disabled until one existed.
+  // Env opt-out (MODEL_ROUTER=0) still force-disables.
+  const routerIntent = modelRouterEnv === false ? false : prefs.enabled
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }} data-testid="model-router-settings">
@@ -50,7 +56,7 @@ export function ModelRouterSection({
         <FormControlLabel
           control={
             <Switch
-              checked={routerOn}
+              checked={routerIntent}
               onChange={(_, checked) =>
                 onChange({
                   ...prefs,
@@ -66,7 +72,7 @@ export function ModelRouterSection({
 
         <ModelHopperEditor
           models={prefs.models}
-          disabled={!routerOn}
+          disabled={!routerIntent}
           sessionModel={sessionModel}
           ollamaSnapshot={ollamaSnapshot}
           onChange={(models) => onChange({ ...prefs, models })}
@@ -74,14 +80,14 @@ export function ModelRouterSection({
         <Button
           size="small"
           variant="text"
-          disabled={!routerOn}
+          disabled={!routerIntent}
           onClick={() => onChange({ ...prefs, models: syncSessionModelToHopper(prefs.models, sessionModel) })}
           data-testid="model-hopper-sync-session"
         >
           Use session LLM as code slot
         </Button>
 
-        {routerOn && !resolved.fast && (
+        {routerIntent && !resolved.fast && (
           <Typography variant="body2" color="warning.main" data-testid="model-hopper-warning">
             Turn on at least one <strong>fast</strong> tier model in the hopper.
           </Typography>
@@ -101,7 +107,7 @@ export function ModelRouterSection({
             label="Code/think keep-alive (seconds)"
             size="small"
             type="number"
-            disabled={!routerOn}
+            disabled={!routerIntent}
             value={prefs.keepAliveHeavySec}
             onChange={(e) => {
               const n = parseInt(e.target.value, 10)
@@ -120,7 +126,7 @@ export function ModelRouterSection({
             label="Fast tier if context below (tokens)"
             size="small"
             type="number"
-            disabled={!routerOn}
+            disabled={!routerIntent}
             value={prefs.tokenFastMax}
             onChange={(e) =>
               onChange({ ...prefs, tokenFastMax: parseInt(e.target.value, 10) || 4096 })
@@ -131,7 +137,7 @@ export function ModelRouterSection({
             label="Think tier if context at/above (tokens)"
             size="small"
             type="number"
-            disabled={!routerOn}
+            disabled={!routerIntent}
             value={prefs.tokenHeavyMin}
             onChange={(e) =>
               onChange({ ...prefs, tokenHeavyMin: parseInt(e.target.value, 10) || 12000 })
@@ -143,7 +149,7 @@ export function ModelRouterSection({
           control={
             <Switch
               checked={prefs.escalateOnFailure}
-              disabled={!routerOn}
+              disabled={!routerIntent}
               onChange={(_, checked) => onChange({ ...prefs, escalateOnFailure: checked })}
               data-testid="pref-model-router-escalate"
             />

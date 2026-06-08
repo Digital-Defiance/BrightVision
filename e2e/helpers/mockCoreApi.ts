@@ -50,7 +50,7 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 
   const sessionId = opts.sessionId ?? E2E_SESSION_ID
-  const workspace = opts.workspacePath ?? '.'
+  const workspace = opts.workspacePath ?? process.cwd()
   const transcript = opts.sessionTranscript ?? []
   let healthHits = 0
   let todoStore = cloneStore(opts.initialTodos ?? emptyTodoStore())

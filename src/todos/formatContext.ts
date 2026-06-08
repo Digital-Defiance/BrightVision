@@ -155,9 +155,6 @@ export function buildResumeWorkMessage(todo: TodoItem, allTodos: TodoItem[]): st
 }
 
 export function buildStartWorkMessage(todo: TodoItem, allTodos: TodoItem[]): string {
-  if (shouldResumeWork(todo)) {
-    return buildResumeWorkMessage(todo, allTodos)
-  }
   const item = migrateTodoLayers(todo)
   const blocked = dependencyBlocked(item, allTodos)
   let body: string

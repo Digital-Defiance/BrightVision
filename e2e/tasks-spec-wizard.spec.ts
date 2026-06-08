@@ -37,6 +37,9 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
   test('blocks Tasks tab until design exists', async ({ page }) => {
     await page.getByLabel('Requirements document').fill(REQ_DRAFT)
     await page.getByLabel('Requirements document').blur()
+    // Wait for the requirements draft to register (design-next nudge appears) before
+    // switching tabs, otherwise the gate may still see empty requirements.
+    await expect(page.getByTestId('spec-wizard-nudge-design-next')).toBeVisible()
     await specLayerTab(page, 'Tasks').click()
     await expect(page.getByTestId('spec-tab-gate-alert')).toContainText(/design/i)
     await expect(page.getByLabel('Implementation tasks')).toHaveCount(0)
@@ -60,12 +63,15 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
 
     await page.getByLabel('Requirements document').fill(REQ_DRAFT)
     await page.getByLabel('Requirements document').blur()
+    await expect(page.getByTestId('spec-wizard-nudge-design-next')).toBeVisible()
     await specLayerTab(page, 'Design').click()
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate design')
 
     await page.getByLabel('Design').fill(DESIGN_DRAFT)
     await page.getByLabel('Design').blur()
+    await expect(page.getByTestId('spec-wizard-nudge-tasks-next')).toBeVisible()
     await specLayerTab(page, 'Tasks').click()
+    await expect(specLayerTab(page, 'Tasks')).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByTestId('todo-generate-spec-wizard')).toHaveText('Generate tasks')
   })
 
@@ -110,6 +116,7 @@ test.describe('Spec wizard phased flow (roadmap #23)', () => {
     let polls = 0
     await page.getByLabel('Requirements document').fill(REQ_DRAFT)
     await page.getByLabel('Requirements document').blur()
+    await expect(page.getByTestId('spec-wizard-nudge-design-next')).toBeVisible()
     await specLayerTab(page, 'Design').click()
 
     await page.route(

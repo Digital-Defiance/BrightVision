@@ -7,5 +7,5 @@ export function formatQueuePreview(text: string, maxLen = 56): string {
 }
 
 export function formatQueueChipLabel(count: number): string {
-  return `${count} queued`
+  return `${count} message${count === 1 ? '' : 's'} queued`
 }

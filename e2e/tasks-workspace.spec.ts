@@ -34,7 +34,7 @@ test.describe('Tasks workspace (roadmap #18, charter § spec-driven)', () => {
     await title.fill('Renamed in e2e')
     await title.blur()
     await patch
-    await expect(page.getByText('Renamed in e2e')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Renamed in e2e/ })).toBeVisible()
   })
 
   test('generate spec fills requirements (roadmap #18 v5)', async ({ page }) => {
@@ -42,7 +42,7 @@ test.describe('Tasks workspace (roadmap #18, charter § spec-driven)', () => {
     await expect(page.getByTestId('todo-generate-spec-wizard')).toBeEnabled({
       timeout: 10_000,
     })
-    await page.getByTestId('todo-generate-spec-wizard').click()
+    await page.getByTestId('todo-generate-spec-all').click()
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Run' }).click()
     await expect(page.getByText('REQ-001')).toBeVisible({ timeout: 15_000 })

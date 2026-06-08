@@ -9,6 +9,7 @@ import {
   normalizeHopperTier,
   resolveHopperEnableThinking,
   parseHopperExtraParams,
+  hopperPrefersThink,
   resolveHopperModels,
   syncSessionModelToHopper,
   type ModelHopperEntry,
@@ -239,12 +240,18 @@ export function applyLocalLlmHopperFromEnv(
 export function modelRouterApiPayload(
   prefs: ModelRouterPrefs,
   sessionModel: string,
-  modelRouterEnv?: boolean | null
+  modelRouterEnv?: boolean | null,
+  localLlmSnap?: { codeThink?: boolean | null; fastThink?: boolean | null } | null
 ): Record<string, unknown> | undefined {
   if (!effectiveRouterEnabled(prefs, sessionModel, modelRouterEnv)) {
     return undefined
   }
-  const { fast, code, think } = resolveHopperModels(prefs.models, sessionModel)
+  // Apply env think flags to ensure they override stale localStorage values
+  let models = prefs.models
+  if (localLlmSnap) {
+    models = applyHopperThinkFlagsFromEnv(models, localLlmSnap as LocalLlmSnapshot)
+  }
+  const { fast, code, think } = resolveHopperModels(models, sessionModel)
   if (!fast) return undefined
 
   return {
@@ -253,7 +260,8 @@ export function modelRouterApiPayload(
     heavy_model: code,
     code_model: code,
     think_model: think ?? undefined,
-    model_pool: prefs.models.map((m) => {
+    prefer_think: hopperPrefersThink(models),
+    model_pool: models.map((m) => {
       const row: Record<string, unknown> = {
         model: m.model,
         tier: normalizeHopperTier(m.tier),

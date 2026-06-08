@@ -41,13 +41,13 @@ test.describe('Tasks generate/refine spec layers (roadmap #18)', () => {
     )
 
     await page.getByText('First task').click()
-    await page.getByTestId('todo-generate-spec-wizard').click()
+    await page.getByTestId('todo-generate-spec-all').click()
     await page.getByRole('dialog').getByRole('textbox').fill('E2E non-blocking generate')
     await page.getByRole('button', { name: 'Run' }).click()
 
     await expect(page.getByRole('dialog')).not.toBeVisible()
     await expect(page.getByTestId('vision-activity')).toBeVisible()
-    await expect(page.getByTestId('vision-activity')).toContainText('GENERATING REQUIREMENTS')
+    await expect(page.getByTestId('vision-activity')).toContainText('GENERATING SPEC')
     await page.getByTestId('nav-chat').click()
     await expect(page.getByTestId('chat-input')).toBeVisible()
     await expect(page.getByTestId('spec-generating-chip')).toBeVisible()
@@ -55,11 +55,11 @@ test.describe('Tasks generate/refine spec layers (roadmap #18)', () => {
 
   test('generate spec fills requirements, design, and tasks tabs', async ({ page }) => {
     await page.getByText('First task').click()
-    await page.getByTestId('todo-generate-spec-wizard').click()
+    await page.getByTestId('todo-generate-spec-all').click()
     await page.getByRole('dialog').getByRole('textbox').fill('E2E ping counter feature')
     await page.getByRole('button', { name: 'Run' }).click()
 
-    const requirementsField = page.getByLabel('Requirements (EARS-style)')
+    const requirementsField = page.getByLabel('Requirements document')
     await expect(requirementsField).toHaveValue(/REQ-001/, { timeout: 15_000 })
 
     const requirements = await requirementsField.inputValue()
@@ -87,7 +87,7 @@ test.describe('Tasks generate/refine spec layers (roadmap #18)', () => {
     await page.getByRole('button', { name: 'Refine spec' }).click()
     await page.getByRole('dialog').getByRole('textbox').fill('Align tasks with REQ-002')
     await page.getByRole('button', { name: 'Run' }).click()
-    await expect(page.getByLabel('Requirements (EARS-style)')).toHaveValue(/REQ-002/, {
+    await expect(page.getByLabel('Requirements document')).toHaveValue(/REQ-002/, {
       timeout: 15_000,
     })
     await page.getByTestId('todo-validate-ears').click()
@@ -128,7 +128,7 @@ test.describe('Tasks generate/refine spec layers (roadmap #18)', () => {
     )
 
     await page.getByText('First task').click()
-    await page.getByTestId('todo-generate-spec-wizard').click()
+    await page.getByTestId('todo-generate-spec-all').click()
     await page.getByRole('button', { name: 'Run' }).click()
     await expect(page.getByText(/not saved|EARS error/i)).toBeVisible({ timeout: 15_000 })
   })

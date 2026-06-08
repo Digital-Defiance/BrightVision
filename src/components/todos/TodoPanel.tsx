@@ -17,6 +17,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonGroup,
   Checkbox,
   Chip,
   CircularProgress,
@@ -110,6 +111,7 @@ interface TodoPanelProps {
   onSetActive: (id: string | null) => void
   onMarkDone: (id: string) => void
   onStartWork: (todo: TodoItem) => void
+  onResumeWork: (todo: TodoItem) => void
   onImplementStep?: (todo: TodoItem, step: ImplementationStep) => void
   httpReady?: boolean
   sessionReady?: boolean
@@ -165,6 +167,7 @@ export function TodoPanel({
   onSetActive,
   onMarkDone,
   onStartWork,
+  onResumeWork,
   onImplementStep,
   httpReady,
   sessionReady,
@@ -347,8 +350,8 @@ export function TodoPanel({
       value={layerGenPrompt}
       onChange={(e) => setLayerGenPrompt(e.target.value)}
       helperText={wizardPromptForSection(section, selected?.title).helper}
-      data-testid="spec-layer-gen-prompt"
       placeholder="Describe the feature in plain language — the AI writes EARS requirements in the document below."
+      inputProps={{ 'data-testid': 'spec-layer-gen-prompt' }}
     />
   )
 
@@ -1343,28 +1346,50 @@ export function TodoPanel({
                     )}
                   </>
                 )}
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={resumeWork ? <ReplayIcon /> : <PlayArrowIcon />}
-                  onClick={() => {
-                    persistEditor()
-                    onStartWork({
-                      ...selected,
-                      title,
-                      requirements,
-                      design,
-                      tasks_md: tasksMd,
-                      depends_on: dependsOn,
-                      branch,
-                      pr_url: prUrl,
-                      checklist,
-                    })
-                  }}
-                  data-testid={resumeWork ? 'todo-resume-work' : 'todo-start-work'}
-                >
-                  {resumeWork ? 'Resume work' : 'Start work'}
-                </Button>
+                <ButtonGroup variant="contained" size="small" disableElevation>
+                  <Button
+                    startIcon={<PlayArrowIcon />}
+                    onClick={() => {
+                      persistEditor()
+                      onStartWork({
+                        ...selected,
+                        title,
+                        requirements,
+                        design,
+                        tasks_md: tasksMd,
+                        depends_on: dependsOn,
+                        branch,
+                        pr_url: prUrl,
+                        checklist,
+                      })
+                    }}
+                    data-testid="todo-start-work"
+                  >
+                    Start
+                  </Button>
+                  {resumeWork && (
+                    <Button
+                      startIcon={<ReplayIcon />}
+                      onClick={() => {
+                        persistEditor()
+                        onResumeWork({
+                          ...selected,
+                          title,
+                          requirements,
+                          design,
+                          tasks_md: tasksMd,
+                          depends_on: dependsOn,
+                          branch,
+                          pr_url: prUrl,
+                          checklist,
+                        })
+                      }}
+                      data-testid="todo-resume-work"
+                    >
+                      Resume
+                    </Button>
+                  )}
+                </ButtonGroup>
                 <Button
                   variant="outlined"
                   size="small"

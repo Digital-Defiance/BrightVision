@@ -63,7 +63,7 @@ import { useVisionSession } from './hooks/useVisionSession'
 import { useTurnResourcePeak } from './hooks/useTurnResourcePeak'
 import { usePathCompletion } from './hooks/usePathCompletion'
 import { filesToUploadParts } from './utils/imageUpload'
-import { buildImplementStepMessage, buildStartWorkMessage, shouldResumeWork } from './todos/formatContext'
+import { buildImplementStepMessage, buildResumeWorkMessage, buildStartWorkMessage } from './todos/formatContext'
 import type { ImplementationStep } from './todos/tasksMd'
 import type { TodoItem } from './todos/types'
 import { useCommandCatalog } from './hooks/useCommandCatalog'
@@ -2084,7 +2084,8 @@ function AppShell({
       const routerPayload = modelRouterApiPayload(
         modelRouterPrefs,
         savedConfig.model,
-        localLlmRef.current?.modelRouter
+        localLlmRef.current?.modelRouter,
+        localLlmRef.current
       )
       const { info, workingDir, transcript = [] } = await start(savedConfig, {
         modelRouter: routerPayload as ModelRouterApiConfig | undefined,
@@ -2705,10 +2706,34 @@ function AppShell({
       })
       todoInjectedIdRef.current = null
       setActiveTab('chat')
-      const resume = shouldResumeWork(todo)
       setInputValue(buildStartWorkMessage(todo, todoStore?.todos ?? []))
       setSnackbar({
-        message: resume ? `Resuming: ${todo.title}` : `Active task: ${todo.title}`,
+        message: `Active task: ${todo.title}`,
+        severity: 'info',
+      })
+    },
+    [setActiveTodo, updateTodo, todoStore?.todos]
+  )
+
+  const handleResumeWork = useCallback(
+    async (todo: TodoItem) => {
+      await setActiveTodo(todo.id)
+      await updateTodo(todo.id, {
+        title: todo.title,
+        spec: todo.spec,
+        requirements: todo.requirements,
+        design: todo.design,
+        tasks_md: todo.tasks_md,
+        depends_on: todo.depends_on,
+        branch: todo.branch,
+        pr_url: todo.pr_url,
+        checklist: todo.checklist,
+      })
+      todoInjectedIdRef.current = null
+      setActiveTab('chat')
+      setInputValue(buildResumeWorkMessage(todo, todoStore?.todos ?? []))
+      setSnackbar({
+        message: `Resuming: ${todo.title}`,
         severity: 'info',
       })
     },
@@ -3658,6 +3683,7 @@ function AppShell({
               onSetActive={(id) => void setActiveTodo(id)}
               onMarkDone={(id) => void markDone(id)}
               onStartWork={(todo) => void handleStartWork(todo)}
+              onResumeWork={(todo) => void handleResumeWork(todo)}
               onImplementStep={(todo, step) => void handleImplementStep(todo, step)}
               httpReady={todosHttpReady}
               tauriLocal={todosTauriLocal}

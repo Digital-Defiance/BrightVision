@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import {
   assertOllamaForLlmE2e,
+  clearLlmE2eWorkspaceTodos,
   ensureOllamaModelPulled,
   ensureLlmE2eWorkspace,
   isLlmE2eEnabled,
@@ -24,6 +25,9 @@ test.describe('LLM auto-router @router', () => {
   test.beforeAll(async () => {
     await assertOllamaForLlmE2e()
     ensureLlmE2eWorkspace()
+    // Drop any active todo left by spec-gen suites — an active task auto-injects its spec
+    // on the next chat turn, which forces the think tier and breaks router-tier routing.
+    clearLlmE2eWorkspaceTodos()
     const { fastTag, codeTag, thinkTag } = resolveRouterModelTags()
     if (!fastTag) {
       throw new Error(
@@ -55,11 +59,24 @@ test.describe('LLM auto-router @router', () => {
     await page.getByTestId('chat-input').fill(fastPrompt)
     await page.getByTestId('chat-send').click()
     await expectOptimisticSend(page, fastPrompt)
-    await expect(page.getByTestId('chat-message-assistant').last()).toHaveAttribute(
-      'data-model-route-tier',
-      'fast',
-      { timeout: 240_000 }
-    )
+    const assistantBubble = page.getByTestId('chat-message-assistant').last()
+    try {
+      await expect(assistantBubble).toHaveAttribute('data-model-route-tier', 'fast', {
+        timeout: 240_000,
+      })
+    } catch (err) {
+      const tier = await assistantBubble.getAttribute('data-model-route-tier').catch(() => null)
+      const reasons = await assistantBubble
+        .getAttribute('data-model-route-reasons')
+        .catch(() => null)
+      const escalated = await assistantBubble
+        .getAttribute('data-model-route-escalated')
+        .catch(() => null)
+      throw new Error(
+        `${err instanceof Error ? err.message : String(err)}\n` +
+          `Resolved tier: ${tier ?? '(none)'} · reasons: ${reasons ?? '(none)'} · escalated: ${escalated ?? 'false'}`
+      )
+    }
     await expectLatestAssistantReply(page, /begin|start|run|button|label|response/i, 360_000)
     await settleRouterTurnAfterReply(page, ROUTER_SETTLE_MS)
   })

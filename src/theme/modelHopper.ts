@@ -160,6 +160,20 @@ export function resolveHopperModels(
   return { fast, code, think, heavy: code }
 }
 
+/** True when the first enabled think entry appears before the first enabled code entry (user priority). */
+export function hopperPrefersThink(models: ModelHopperEntry[]): boolean {
+  let thinkIdx: number | null = null
+  let codeIdx: number | null = null
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i]
+    if (!m.enabled) continue
+    if (m.tier === 'think' && m.model.trim() && thinkIdx === null) thinkIdx = i
+    if ((m.tier === 'code' || m.tier === 'heavy') && codeIdx === null) codeIdx = i
+  }
+  if (thinkIdx === null || codeIdx === null) return false
+  return thinkIdx < codeIdx
+}
+
 export function migrateLegacyRouterModels(parsed: {
   fastModel?: string
   heavyModel?: string

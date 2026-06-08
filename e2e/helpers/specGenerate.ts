@@ -118,13 +118,13 @@ export async function expectRequirementsPopulated(
   await expect
     .poll(
       async () => {
-        const text = await page.getByLabel('Requirements (EARS-style)').inputValue()
+        const text = await page.getByLabel('Requirements document').inputValue()
         return /REQ-\d+/i.test(text) && /\bshall\b/i.test(text)
       },
       { timeout: timeoutMs }
     )
     .toBe(true)
-  return page.getByLabel('Requirements (EARS-style)').inputValue()
+  return page.getByLabel('Requirements document').inputValue()
 }
 
 export async function expectDesignPopulated(page: Page, timeoutMs = 60_000): Promise<string> {
@@ -153,19 +153,46 @@ export async function expectTasksPopulated(page: Page, timeoutMs = 60_000): Prom
   return page.getByLabel('Implementation tasks').inputValue()
 }
 
-/** Open wizard dialog on the active spec tab, optionally edit prompt, Run, wait for job. */
+/** Inline per-layer generate on the active spec tab: fill prompt, click Generate, wait for job. */
 export async function runWizardGenerateSpecDialog(
   page: Page,
   opts?: { prompt?: string; timeoutMs?: number }
 ) {
   const timeoutMs = opts?.timeoutMs ?? specGenTimeoutMs()
-  await page.getByTestId('todo-generate-spec-wizard').click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog).toBeVisible()
   if (opts?.prompt !== undefined) {
-    await dialog.getByRole('textbox').fill(opts.prompt)
+    await page.getByTestId('spec-layer-gen-prompt').fill(opts.prompt)
   }
-  await runGenerateSpecDialog(page, timeoutMs)
+  const postDone = page.waitForResponse(
+    (res) =>
+      res.request().method() === 'POST' &&
+      res.url().includes('/workspaces/todos/') &&
+      res.url().includes('/generate-spec') &&
+      (res.status() === 202 || res.ok()),
+    { timeout: 60_000 }
+  )
+  // Per-layer wizard button generates inline (no dialog) when on a spec tab.
+  await page.getByTestId('todo-generate-spec-wizard').click()
+  const postRes = await postDone
+  let jobId: string | undefined
+  if (postRes.status() === 202) {
+    const started = (await postRes.json()) as { job_id?: string }
+    jobId = started.job_id
+  }
+  if (jobId) {
+    const body = await waitForWorkspaceSpecGenerateJob(page, jobId, timeoutMs)
+    if (body.status === 'error') {
+      const detail = body.error || 'Spec generation failed'
+      throw new Error(
+        `${detail} (job ${jobId.slice(0, 8)}… — try a faster Ollama model or raise LLM_SPEC_GEN_TIMEOUT_S)`
+      )
+    }
+  } else {
+    const res = await waitForWorkspaceSpecGenerate(page, timeoutMs)
+    const body = (await res.json()) as { status?: string; error?: string | null }
+    if (body.status === 'error') {
+      throw new Error(body.error || 'Spec generation failed')
+    }
+  }
 }
 
 /** Legacy one-shot generate via **All layers** button. */

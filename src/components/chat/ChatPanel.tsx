@@ -384,6 +384,10 @@ export function ChatPanel({
                           : 'chat-message-system'
                     }
                     data-model-route-tier={routeRole ?? undefined}
+                    data-model-route-reasons={
+                      route?.reasons?.length ? route.reasons.join(',') : undefined
+                    }
+                    data-model-route-escalated={route?.escalated ? 'true' : undefined}
                     sx={(theme) => ({
                       position: 'relative',
                       px: 2,

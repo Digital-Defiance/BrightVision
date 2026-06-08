@@ -191,6 +191,92 @@ def resolve_model_pool(
     return ResolvedModelPool(fast=fast, code=code, think=think)
 
 
+def pool_prefers_think(pool: list[ModelPoolEntry]) -> bool:
+    """True when the first enabled think entry appears before the first enabled code entry.
+
+    This reflects the user dragging think to the top of the hopper (highest priority).
+    """
+    think_idx: int | None = None
+    code_idx: int | None = None
+    for i, entry in enumerate(pool):
+        if not entry.enabled:
+            continue
+        if entry.tier == "think" and entry.model.strip() and think_idx is None:
+            think_idx = i
+        elif entry.tier == "code" and code_idx is None:
+            code_idx = i
+    if think_idx is None or code_idx is None:
+        return False
+    return think_idx < code_idx
+
+
+def _parse_env_bool(key: str) -> bool | None:
+    """Parse CODE_THINK / FAST_THINK from process env or local-llm config files."""
+    # Check process env first
+    val = os.environ.get(key, "").strip().lower()
+    if val in ("1", "true", "yes", "on"):
+        return True
+    if val in ("0", "false", "no", "off"):
+        return False
+    # Fall back to reading local-llm env files (same paths Tauri reads)
+    return _read_local_llm_env_bool(key)
+
+
+def _read_local_llm_env_bool(key: str) -> bool | None:
+    """Read a key from the local-llm env file chain (last file wins)."""
+    from pathlib import Path
+
+    paths = []
+    home = Path.home()
+    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    config_home = Path(xdg) if xdg else home / ".config"
+    paths.append(config_home / "local-llm" / "env")
+    bv_root = os.environ.get("BRIGHT_VISION_ROOT", "").strip()
+    if bv_root:
+        paths.append(Path(bv_root) / "local-llm.env")
+    # Also check cwd
+    paths.append(Path.cwd() / "local-llm.env")
+
+    result: bool | None = None
+    for p in paths:
+        try:
+            if not p.is_file():
+                continue
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                if k.strip() != key:
+                    continue
+                v = v.strip().strip("'\"").lower()
+                if v in ("1", "true", "yes", "on"):
+                    result = True
+                elif v in ("0", "false", "no", "off"):
+                    result = False
+        except OSError:
+            continue
+    return result
+
+
+def _apply_env_think_to_pool(pool: list[ModelPoolEntry]) -> None:
+    """Override pool enable_thinking from CODE_THINK / FAST_THINK env vars.
+
+    The frontend may send stale localStorage values; the env file is authoritative.
+    """
+    code_think = _parse_env_bool("CODE_THINK")
+    fast_think = _parse_env_bool("FAST_THINK")
+    if code_think is None and fast_think is None:
+        return
+    for entry in pool:
+        if not entry.enabled:
+            continue
+        if entry.tier == "code" and code_think is not None:
+            entry.enable_thinking = code_think
+        elif entry.tier == "fast" and fast_think is not None:
+            entry.enable_thinking = fast_think
+
+
 @dataclass
 class RouteTurnContext:
     agent_cmd: bool = False
@@ -213,6 +299,7 @@ class ModelRouterConfig:
     keep_alive_fast: int | str = 300
     keep_alive_heavy: int | str = -1
     escalate_on_failure: bool = True
+    prefer_think: bool = False
 
     def __post_init__(self) -> None:
         self.keep_alive_heavy = normalize_keep_alive_for_tier("code", self.keep_alive_heavy)
@@ -278,6 +365,9 @@ class ModelRouterConfig:
             think = fallback_think
         if not fast:
             return None
+        # Override pool enable_thinking from env (CODE_THINK / FAST_THINK) —
+        # the frontend may send stale localStorage values.
+        _apply_env_think_to_pool(pool)
         return cls(
             enabled=True,
             fast_model=fast,
@@ -292,6 +382,11 @@ class ModelRouterConfig:
                 "code", raw.get("keep_alive_heavy", -1)
             ),
             escalate_on_failure=bool(raw.get("escalate_on_failure", True)),
+            prefer_think=bool(
+                raw.get("prefer_think")
+                if raw.get("prefer_think") is not None
+                else pool_prefers_think(pool)
+            ),
         )
 
     @classmethod
@@ -487,6 +582,8 @@ def classify_prompt(
     if ctx.implement_turn or ctx.agent_cmd:
         tag = "implement_turn" if ctx.implement_turn else "agent_cmd"
         reasons.append(tag)
+        # Implement/agent turns require tool use — always use code model.
+        # prefer_think only applies to non-tool turns (planning, questions, spec).
         return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
 
     if ctx.inject_todo_spec and not ctx.implement_turn:
@@ -506,6 +603,7 @@ def classify_prompt(
 
     if re.search(r"/agent\b", user_message, re.IGNORECASE):
         reasons.append("slash:/agent")
+        # /agent turns require tool use — always use code model.
         return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
 
     if context_tokens is not None and context_tokens > 0:
@@ -517,11 +615,14 @@ def classify_prompt(
                 f"context_tokens>={fast_limit - _FAST_CONTEXT_OUTPUT_RESERVE} "
                 f"(fast_max={fast_limit})"
             )
+            if router.prefer_think and think:
+                reasons.append("prefer_think")
+                return _finish_decision("think", think, router=router, display_tokens=display_tokens, reasons=reasons)
             return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
 
     if message_tokens >= router.token_heavy_min:
         reasons.append(f"msg_tokens>={router.token_heavy_min}")
-        if _CODE_TASK_STRONG.search(user_message):
+        if _CODE_TASK_STRONG.search(user_message) and not router.prefer_think:
             return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
         role, model = _pick_think_model(router, reasons=reasons)
         return _finish_decision(role, model, router=router, display_tokens=display_tokens, reasons=reasons)
@@ -535,7 +636,7 @@ def classify_prompt(
         role, model = _pick_think_model(router, reasons=reasons)
         return _finish_decision(role, model, router=router, display_tokens=display_tokens, reasons=reasons)
 
-    if fast_hit:
+    if fast_hit and not router.prefer_think:
         reasons.append(f"keyword:{fast_hit.group(0).lower()}")
         return _finish_decision(
             "fast", router.fast_model, router=router, display_tokens=display_tokens, reasons=reasons
@@ -543,15 +644,24 @@ def classify_prompt(
 
     if code_task:
         reasons.append("code_task")
+        if router.prefer_think and think:
+            reasons.append("prefer_think")
+            return _finish_decision("think", think, router=router, display_tokens=display_tokens, reasons=reasons)
         return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
 
     if message_tokens < router.token_fast_max:
         reasons.append(f"msg_tokens<{router.token_fast_max}")
+        if router.prefer_think and think:
+            reasons.append("prefer_think")
+            return _finish_decision("think", think, router=router, display_tokens=display_tokens, reasons=reasons)
         return _finish_decision(
             "fast", router.fast_model, router=router, display_tokens=display_tokens, reasons=reasons
         )
 
     reasons.append("default_code")
+    if router.prefer_think and think:
+        reasons.append("prefer_think")
+        return _finish_decision("think", think, router=router, display_tokens=display_tokens, reasons=reasons)
     return _finish_decision("code", code, router=router, display_tokens=display_tokens, reasons=reasons)
 
 

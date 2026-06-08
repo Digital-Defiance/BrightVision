@@ -121,7 +121,7 @@ export function assessSpecRichness(layers: SpecLayers): SpecLayerAssessment {
     }
     const criteria = (req.match(/^\s*\d+\.\s+/gm) || []).length
     const ids = new Set([...req.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()))
-    if (ids.size < 2 && criteria < 2) {
+    if (ids.size < 2 || criteria < 4) {
       suggestions.push('requirements: add more requirements and acceptance criteria')
     }
   }
