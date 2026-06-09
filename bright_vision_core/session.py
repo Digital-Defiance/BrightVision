@@ -538,6 +538,7 @@ class Session:
             "aborted": False,
             "readrange_errors": 0,
             "ls_calls": 0,
+            "duplicate_tool_calls": 0,
             "exploration_aborted": False,
             "flutter_test_ok": None,
             "focus_step": None,
@@ -570,9 +571,11 @@ class Session:
                 agent_context_pressure_abort_warning,
                 agent_context_pressure_warning,
                 agent_had_write_tool_in_events,
+                duplicate_tool_call_abort_warning,
                 exploration_ls_abort_warning,
                 exploration_repetition_abort_warning,
                 is_agent_tool_activity_event,
+                is_duplicate_tool_call_error_event,
                 is_ls_tool_output_event,
                 is_readrange_first_edit_error_event,
                 is_readrange_tool_error_event,
@@ -580,6 +583,7 @@ class Session:
                 parse_token_usage_stat,
                 readrange_failure_abort_warning,
                 should_abort_agent_for_context_pressure,
+                should_abort_turn_for_duplicate_tool_calls,
                 should_abort_turn_for_ls_exploration,
                 should_abort_turn_for_readrange_failures,
                 should_abort_turn_for_repetition_guard,
@@ -649,6 +653,27 @@ class Session:
                     self.io.tool_warning(
                         readrange_failure_abort_warning(
                             total=turn_context_state["readrange_errors"],
+                        )
+                    )
+                    self.interrupt_turn()
+            if (
+                event.get("type") == "tool_error"
+                and is_duplicate_tool_call_error_event(event)
+            ):
+                turn_context_state["duplicate_tool_calls"] += 1
+                if (
+                    not turn_context_state["aborted"]
+                    and should_abort_turn_for_duplicate_tool_calls(
+                        total_duplicate_calls=turn_context_state["duplicate_tool_calls"],
+                        edit_failure_continuation=edit_failure_continuation,
+                        agent_continuation=agent_continuation,
+                    )
+                ):
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(
+                        duplicate_tool_call_abort_warning(
+                            total=turn_context_state["duplicate_tool_calls"],
                         )
                     )
                     self.interrupt_turn()

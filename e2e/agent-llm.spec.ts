@@ -78,6 +78,8 @@ test.describe('Agent slash (real Ollama + Vision API)', () => {
       postAnswerGraceMs: 45_000,
     })
     await page.getByTestId('chat-input').fill('agent follow-up probe')
-    await expect(page.getByTestId('chat-send')).toBeEnabled({ timeout: 30_000 })
+    // After allowPostAnswerSettle, the turn may still be busy (showing Queue) or idle (showing Send).
+    const sendOrQueue = page.getByTestId('chat-send').or(page.getByTestId('chat-queue'))
+    await expect(sendOrQueue).toBeEnabled({ timeout: 30_000 })
   })
 })

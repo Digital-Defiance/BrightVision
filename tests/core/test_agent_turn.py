@@ -500,3 +500,49 @@ def test_agent_ran_flutter_via_shell_detects_missing_binary():
         }
     ]
     assert agent_ran_flutter_via_shell(events)
+
+
+def test_duplicate_tool_call_detection_and_abort():
+    from bright_vision_core.agent_turn import (
+        DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        duplicate_tool_call_abort_warning,
+        is_duplicate_tool_call_error_event,
+        should_abort_turn_for_duplicate_tool_calls,
+    )
+
+    dup_event = {
+        "type": "tool_error",
+        "text": "Error in ContextManager: Tool 'ContextManager' has been called with identical parameters. Duplicate tool call rejected.",
+    }
+    other_error = {"type": "tool_error", "text": "Error in EditText: bounds"}
+    wrong_type = {"type": "tool_output", "text": "Duplicate tool call rejected."}
+
+    assert is_duplicate_tool_call_error_event(dup_event)
+    assert not is_duplicate_tool_call_error_event(other_error)
+    assert not is_duplicate_tool_call_error_event(wrong_type)
+
+    # Below threshold — do not abort
+    assert not should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=DUPLICATE_TOOL_CALL_ABORT_THRESHOLD - 1,
+        edit_failure_continuation=False,
+    )
+    # At threshold — abort
+    assert should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        edit_failure_continuation=False,
+    )
+    # Bypassed during continuations
+    assert not should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        edit_failure_continuation=True,
+    )
+    assert not should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        edit_failure_continuation=False,
+        agent_continuation=True,
+    )
+
+    msg = duplicate_tool_call_abort_warning(total=5)
+    assert "5 duplicate tool call" in msg
+    assert "loop" in msg
+    assert "Clear chat" in msg

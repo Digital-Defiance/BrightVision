@@ -26,6 +26,7 @@ EDIT_FAILURE_ABORT_THRESHOLD = 3
 READRANGE_FAILURE_ABORT_THRESHOLD = 2
 LS_EXPLORATION_ABORT_THRESHOLD = 4
 AGENT_EXPLORATION_EMPTY_ABORT_ROUNDS = 4
+DUPLICATE_TOOL_CALL_ABORT_THRESHOLD = 5
 
 _PROSE_SHELL_FENCE = re.compile(
     r"```(?:bash|sh|shell|zsh|fish)\s*\n.+?```",
@@ -542,6 +543,35 @@ def exploration_repetition_abort_warning() -> str:
         "Stopped this turn: repetition guard fired (repeated ls/ReadRange) with no edits. "
         "**Clear chat** and **Implement** one prerequisite step (e.g. **1.1** scaffold `lib/`) — "
         "not another resume."
+    )
+
+
+def is_duplicate_tool_call_error_event(event: dict) -> bool:
+    """True for tool_error events caused by duplicate tool call rejection."""
+    if event.get("type") != "tool_error":
+        return False
+    text = str(event.get("text") or "")
+    return "Duplicate tool call rejected" in text
+
+
+def should_abort_turn_for_duplicate_tool_calls(
+    *,
+    total_duplicate_calls: int,
+    edit_failure_continuation: bool,
+    agent_continuation: bool = False,
+) -> bool:
+    """Stop a runaway turn that keeps calling the same tool with identical params."""
+    if edit_failure_continuation or agent_continuation:
+        return False
+    return total_duplicate_calls >= DUPLICATE_TOOL_CALL_ABORT_THRESHOLD
+
+
+def duplicate_tool_call_abort_warning(*, total: int) -> str:
+    return (
+        f"Stopped this turn after {total} duplicate tool call(s) "
+        "(same tool called with identical parameters). "
+        "The model is stuck in a loop. **Clear chat** and retry with a narrower task, "
+        "or use **Implement** on one numbered step."
     )
 
 
