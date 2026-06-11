@@ -239,6 +239,7 @@ def test_classify_routes_code_when_context_exceeds_fast_window():
         context_tokens=17_670,
         router=router,
         code_model_name="ollama_chat/qwen3.6:27b-q4_K_M",
+        fast_max_input=16_000,
     )
     assert d.role == "code"
     assert d.model_name == "ollama_chat/qwen3.6:27b-q4_K_M"
@@ -257,6 +258,7 @@ def test_fast_keyword_loses_to_context_overflow():
         context_tokens=20_000,
         router=router,
         code_model_name="ollama_chat/big",
+        fast_max_input=16_000,
     )
     assert d.role == "code"
 

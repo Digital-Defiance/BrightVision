@@ -512,8 +512,18 @@ def is_ls_tool_output_event(event: dict) -> bool:
     return "Tool Call: Local • ls" in str(event.get("text") or "")
 
 
+def is_explore_code_tool_output_event(event: dict) -> bool:
+    if event.get("type") != "tool_output":
+        return False
+    return "Tool Call: Local • ExploreCode" in str(event.get("text") or "")
+
+
 def ls_call_count_from_events(events: list[dict] | tuple) -> int:
     return sum(1 for event in events if is_ls_tool_output_event(event))
+
+
+def explore_code_call_count_from_events(events: list[dict] | tuple) -> int:
+    return sum(1 for event in events if is_explore_code_tool_output_event(event))
 
 
 def exploration_ls_abort_warning(*, total: int) -> str:
@@ -530,12 +540,21 @@ def should_abort_turn_for_ls_exploration(
     had_write: bool,
     edit_failure_continuation: bool,
     agent_continuation: bool = False,
+    total_explore_calls: int = 0,
 ) -> bool:
     if edit_failure_continuation or agent_continuation:
         return False
     if had_write:
         return False
-    return total_ls_calls >= LS_EXPLORATION_ABORT_THRESHOLD
+    # Abort on excessive ls OR excessive ExploreCode (or combined)
+    total_exploration = total_ls_calls + total_explore_calls
+    if total_ls_calls >= LS_EXPLORATION_ABORT_THRESHOLD:
+        return True
+    if total_explore_calls >= LS_EXPLORATION_ABORT_THRESHOLD:
+        return True
+    if total_exploration >= LS_EXPLORATION_ABORT_THRESHOLD + 2:
+        return True
+    return False
 
 
 def exploration_repetition_abort_warning() -> str:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from types import SimpleNamespace
 
 # Headless `/agent` — shorter command timeout; cecli still needs Finished tool to exit.
@@ -25,7 +26,7 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         yes_always_commands=False,
         fancy_input=False,
         show_speed=False,
-        show_thinking=True,
+        show_thinking=os.environ.get("BV_SHOW_THINKING", "1") not in ("0", "false", "no", "off"),
         max_reflections=3,
         custom="{}",
         file_diffs=True,

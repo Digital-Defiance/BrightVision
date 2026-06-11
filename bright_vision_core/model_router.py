@@ -552,6 +552,7 @@ def classify_prompt(
     # Back-compat for tests calling estimated_tokens=
     estimated_tokens: int | None = None,
     heavy_model_name: str | None = None,
+    fast_max_input: int | None = None,
 ) -> RouteDecision:
     if estimated_tokens is not None and context_tokens is None:
         context_tokens = estimated_tokens
@@ -608,7 +609,7 @@ def classify_prompt(
 
     if context_tokens is not None and context_tokens > 0:
         exceeds_fast, fast_limit = context_exceeds_fast_model_limit(
-            context_tokens, router.fast_model
+            context_tokens, router.fast_model, fast_max_input=fast_max_input
         )
         if exceeds_fast and fast_limit is not None:
             reasons.append(

@@ -538,6 +538,7 @@ class Session:
             "aborted": False,
             "readrange_errors": 0,
             "ls_calls": 0,
+            "explore_calls": 0,
             "duplicate_tool_calls": 0,
             "exploration_aborted": False,
             "flutter_test_ok": None,
@@ -576,6 +577,7 @@ class Session:
                 exploration_repetition_abort_warning,
                 is_agent_tool_activity_event,
                 is_duplicate_tool_call_error_event,
+                is_explore_code_tool_output_event,
                 is_ls_tool_output_event,
                 is_readrange_first_edit_error_event,
                 is_readrange_tool_error_event,
@@ -679,6 +681,11 @@ class Session:
                     self.interrupt_turn()
             if event.get("type") == "tool_output" and is_ls_tool_output_event(event):
                 turn_context_state["ls_calls"] += 1
+            if event.get("type") == "tool_output" and is_explore_code_tool_output_event(event):
+                turn_context_state["explore_calls"] += 1
+            if event.get("type") == "tool_output" and (
+                is_ls_tool_output_event(event) or is_explore_code_tool_output_event(event)
+            ):
                 ring = list(getattr(self.io, "debug_event_ring", []) or [])
                 if (
                     not turn_context_state["aborted"]
@@ -687,6 +694,7 @@ class Session:
                         had_write=agent_had_write_tool_in_events(ring),
                         edit_failure_continuation=edit_failure_continuation,
                         agent_continuation=agent_continuation,
+                        total_explore_calls=turn_context_state["explore_calls"],
                     )
                 ):
                     turn_context_state["aborted"] = True
