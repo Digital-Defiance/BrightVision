@@ -10,6 +10,8 @@ export interface HopperPrepareEntry {
   model_tag: string
   keep_alive_secs: number
   preload: boolean
+  /** Priority rank (0 = highest). Entries are processed in ascending rank order. */
+  priority_rank?: number | null
 }
 
 export interface OllamaEnsureModelResult {
@@ -93,6 +95,7 @@ export function buildHopperPrepareEntries(
       model_tag: tag,
       keep_alive_secs: keepAliveForRole(tier === 'heavy' ? 'code' : tier, prefs),
       preload,
+      priority_rank: row.priorityRank ?? null,
     })
   }
   return entries

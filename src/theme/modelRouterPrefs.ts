@@ -3,6 +3,7 @@ import { isOllamaVisionModel, ollamaChatModelFromTag } from '../ipc/localLlm'
 import { MODEL_ROUTER_PREFS_STORAGE_KEY } from '../storageKeys'
 import {
   DEFAULT_MODEL_HOPPER,
+  buildHopperFromSnapshot,
   createHopperEntry,
   migrateLegacyRouterModels,
   normalizeHopperEntries,
@@ -180,6 +181,27 @@ export function applyLocalLlmHopperFromEnv(
   const codeTag = snap.codeModel?.trim() || snap.heavyModel?.trim()
   const thinkTag = snap.thinkModel?.trim()
   const routerFlag = snap.modelRouter
+
+  // --- Multi-model snapshot path (tierSlots present and non-empty) ---
+  if (snap.tierSlots && snap.tierSlots.length > 0) {
+    const models = buildHopperFromSnapshot(snap, sessionModel)
+
+    let enabled = prefs.enabled
+    let routerEnabledUserSet = prefs.routerEnabledUserSet ?? false
+    if (routerFlag === true) {
+      enabled = true
+      if (!fillEmpty) routerEnabledUserSet = true
+    } else if (routerFlag === false && !fillEmpty) {
+      enabled = false
+      routerEnabledUserSet = true
+    } else if (models.length > 0 && fillEmpty && !routerEnabledUserSet) {
+      enabled = true
+    }
+
+    return { ...prefs, models, enabled, routerEnabledUserSet }
+  }
+
+  // --- Legacy single-model path (backward compat) ---
   if (!fastTag && !codeTag && !thinkTag && routerFlag == null) {
     return prefs
   }
@@ -254,6 +276,13 @@ export function modelRouterApiPayload(
   const { fast, code, think } = resolveHopperModels(models, sessionModel)
   if (!fast) return undefined
 
+  // Build priority_list: enabled models sorted by priorityRank (or list index as fallback)
+  const priorityList = models
+    .map((m, idx) => ({ model: m.model, rank: m.priorityRank ?? idx, enabled: m.enabled }))
+    .filter((m) => m.enabled && m.model.trim())
+    .sort((a, b) => a.rank - b.rank)
+    .map((m) => m.model)
+
   return {
     enabled: true,
     fast_model: fast,
@@ -261,16 +290,25 @@ export function modelRouterApiPayload(
     code_model: code,
     think_model: think ?? undefined,
     prefer_think: hopperPrefersThink(models),
-    model_pool: models.map((m) => {
+    priority_list: priorityList,
+    model_pool: models.map((m, idx) => {
       const row: Record<string, unknown> = {
         model: m.model,
         tier: normalizeHopperTier(m.tier),
         enabled: m.enabled,
         label: m.label ?? '',
         enable_thinking: resolveHopperEnableThinking(m),
+        priority_rank: m.priorityRank ?? idx,
       }
       const extra = parseHopperExtraParams(m.extraParams)
       if (extra) row.extra_params = extra
+      if (m.capabilities) {
+        const caps: Record<string, unknown> = {}
+        if (m.capabilities.vision) caps.vision = true
+        if (m.capabilities.maxContext) caps.max_context = m.capabilities.maxContext
+        if (m.capabilities.tags?.length) caps.tags = m.capabilities.tags
+        if (Object.keys(caps).length > 0) row.capabilities = caps
+      }
       return row
     }),
     token_fast_max: prefs.tokenFastMax,

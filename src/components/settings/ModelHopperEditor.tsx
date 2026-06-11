@@ -2,9 +2,12 @@ import AddIcon from '@mui/icons-material/Add'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import PsychologyIcon from '@mui/icons-material/Psychology'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import {
   Box,
   Button,
+  Chip,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -25,6 +28,7 @@ import {
   moveHopperEntry,
   normalizeHopperTier,
   removeHopperEntry,
+  reorderWithinTier,
   resolveHopperEnableThinking,
   updateHopperEntry,
   type ModelHopperEntry,
@@ -34,6 +38,7 @@ import {
   ModelRouteTierSelectLabel,
   modelRouteTierBorderSx,
 } from './ModelRouteTierIndicator'
+import { TierModelGroup } from './TierModelGroup'
 
 interface ModelHopperEditorProps {
   models: ModelHopperEntry[]
@@ -52,6 +57,22 @@ export function ModelHopperEditor({
 }: ModelHopperEditorProps) {
   const ollamaTags = ollamaSnapshot?.tagsRows?.map((r) => r.name).filter(Boolean) ?? []
 
+  // Group entries by tier to detect multi-model tiers.
+  // A tier is considered "multi-model" if it has > 1 entry AND at least one has tierSlot defined
+  // (indicating it came from a multi-model env snapshot).
+  const tierGroups = groupEntriesByTier(models)
+  const multiModelTiers = new Set(
+    (['fast', 'code', 'think'] as const).filter(
+      (tier) => tierGroups[tier].length > 1 && tierGroups[tier].some((e) => e.tierSlot != null)
+    )
+  )
+
+  // For multi-model tier rendering, entries belonging to grouped tiers are handled
+  // by TierModelGroup and removed from the flat list.
+  const flatEntries = multiModelTiers.size > 0
+    ? models.filter((e) => !multiModelTiers.has(normalizeHopperTier(e.tier) as 'fast' | 'code' | 'think'))
+    : models
+
   return (
     <Stack spacing={1} data-testid="model-hopper-editor">
       <Typography variant="body2" color="text.secondary">
@@ -64,7 +85,40 @@ export function ModelHopperEditor({
         </Typography>
         .
       </Typography>
-      {models.map((entry, index) => (
+
+      {/* Render multi-model tiers as grouped TierModelGroup */}
+      {multiModelTiers.size > 0 && (
+        <Stack spacing={2} data-testid="multi-model-tiers">
+          {(['fast', 'code', 'think'] as const)
+            .filter((tier) => multiModelTiers.has(tier))
+            .map((tier) => (
+              <TierModelGroup
+                key={tier}
+                tier={tier}
+                entries={tierGroups[tier]}
+                availableModels={ollamaTags}
+                disabled={disabled}
+                onToggle={(id, enabled) =>
+                  onChange(updateHopperEntry(models, id, { enabled }))
+                }
+                onRemove={(id) => onChange(removeHopperEntry(models, id))}
+                onAdd={(entry) => onChange([...models, entry])}
+                onReorder={(reordered) => {
+                  onChange(reorderWithinTier(models, tier, reordered))
+                }}
+                onCapabilityChange={(id, capabilities) =>
+                  onChange(updateHopperEntry(models, id, { capabilities }))
+                }
+                onThinkingChange={(id, enableThinking) =>
+                  onChange(updateHopperEntry(models, id, { enableThinking }))
+                }
+              />
+            ))}
+        </Stack>
+      )}
+
+      {/* Render single-model tiers (and all entries when no multi-model tiers) in flat layout */}
+      {flatEntries.map((entry, index) => (
         <Box
           key={entry.id}
           sx={(theme) => ({
@@ -162,28 +216,75 @@ export function ModelHopperEditor({
             title={
               entry.enableThinking == null
                 ? `Tier default (${resolveHopperEnableThinking(entry) ? 'on' : 'off'})`
-                : 'Explicit override'
+                : 'Explicit override — click to reset to tier default'
             }
           >
-            <FormControlLabel
-              sx={{ m: 0, minWidth: 88 }}
-              control={
-                <Switch
-                  size="small"
-                  checked={resolveHopperEnableThinking(entry)}
-                  disabled={disabled || !entry.enabled}
-                  onChange={(_, checked) =>
-                    onChange(
-                      updateHopperEntry(models, entry.id, { enableThinking: checked })
-                    )
-                  }
-                  inputProps={{ 'aria-label': `Enable thinking for ${entry.label ?? entry.model}` }}
-                  data-testid={`model-hopper-thinking-${entry.id}`}
-                />
-              }
+            <Chip
+              icon={<PsychologyIcon />}
               label="Think"
+              size="small"
+              color={resolveHopperEnableThinking(entry) ? 'secondary' : 'default'}
+              variant={resolveHopperEnableThinking(entry) ? 'filled' : 'outlined'}
+              disabled={disabled || !entry.enabled}
+              onClick={() =>
+                onChange(
+                  updateHopperEntry(models, entry.id, {
+                    enableThinking: !resolveHopperEnableThinking(entry),
+                  })
+                )
+              }
+              sx={{ opacity: resolveHopperEnableThinking(entry) ? 1 : 0.5, alignSelf: 'center' }}
+              data-testid={`model-hopper-thinking-${entry.id}`}
             />
           </Tooltip>
+          {/* Vision capability chip */}
+          <Tooltip title={entry.capabilities?.vision ? 'Vision enabled — click to disable' : 'Enable vision/image input'}>
+            <Chip
+              icon={<VisibilityIcon />}
+              label="Vision"
+              size="small"
+              color={entry.capabilities?.vision ? 'info' : 'default'}
+              variant={entry.capabilities?.vision ? 'filled' : 'outlined'}
+              disabled={disabled || !entry.enabled}
+              onClick={() => {
+                const current = entry.capabilities ?? {}
+                onChange(
+                  updateHopperEntry(models, entry.id, {
+                    capabilities: { ...current, vision: !current.vision },
+                  })
+                )
+              }}
+              sx={{ opacity: entry.capabilities?.vision ? 1 : 0.5, alignSelf: 'center' }}
+              data-testid={`model-hopper-vision-${entry.id}`}
+            />
+          </Tooltip>
+          {/* Max context field — shown when model id is non-empty */}
+          {entry.model.trim() && (
+            <TextField
+              size="small"
+              type="number"
+              label="Max ctx"
+              placeholder="e.g. 32768"
+              disabled={disabled || !entry.enabled}
+              value={entry.capabilities?.maxContext ?? ''}
+              onChange={(e) => {
+                const current = entry.capabilities ?? {}
+                const val = e.target.value.trim()
+                const maxContext = val ? parseInt(val, 10) : undefined
+                onChange(
+                  updateHopperEntry(models, entry.id, {
+                    capabilities: {
+                      ...current,
+                      maxContext: maxContext && maxContext > 0 ? maxContext : undefined,
+                    },
+                  })
+                )
+              }}
+              sx={{ width: 100 }}
+              slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.8rem' } } }}
+              data-testid={`model-hopper-maxctx-${entry.id}`}
+            />
+          )}
           <Stack direction="row" spacing={0.25}>
             <Tooltip title="Higher priority">
               <span>
@@ -201,7 +302,7 @@ export function ModelHopperEditor({
               <span>
                 <IconButton
                   size="small"
-                  disabled={disabled || index === models.length - 1}
+                  disabled={disabled || index === flatEntries.length - 1}
                   aria-label="Move down"
                   onClick={() => onChange(moveHopperEntry(models, entry.id, 1))}
                 >
@@ -300,12 +401,13 @@ export function ModelHopperEditor({
         </Button>
         {ollamaTags.length > 0 && (
           <FormControl size="small" sx={{ minWidth: 200 }} disabled={disabled}>
-            <InputLabel id="hopper-from-ollama">From Ollama tags</InputLabel>
+            <InputLabel id="hopper-from-ollama" shrink>From Ollama tags</InputLabel>
             <Select
               labelId="hopper-from-ollama"
               label="From Ollama tags"
               value=""
               displayEmpty
+              notched
               onChange={(e) => {
                 const tag = e.target.value
                 if (!tag) return
@@ -334,4 +436,23 @@ export function ModelHopperEditor({
       </Stack>
     </Stack>
   )
+}
+
+/** Group model hopper entries by their normalized tier. */
+function groupEntriesByTier(
+  models: ModelHopperEntry[]
+): Record<'fast' | 'code' | 'think', ModelHopperEntry[]> {
+  const groups: Record<'fast' | 'code' | 'think', ModelHopperEntry[]> = {
+    fast: [],
+    code: [],
+    think: [],
+  }
+  for (const entry of models) {
+    const tier = normalizeHopperTier(entry.tier)
+    // normalizeHopperTier maps 'heavy' → 'code', so result is always fast/code/think
+    if (tier === 'fast' || tier === 'code' || tier === 'think') {
+      groups[tier].push(entry)
+    }
+  }
+  return groups
 }

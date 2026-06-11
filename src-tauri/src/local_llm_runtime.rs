@@ -818,9 +818,16 @@ pub struct HopperPrepareEntry {
     pub keep_alive_secs: i64,
     /// When true, load into RAM now (typically the default fast model only).
     pub preload: bool,
+    /// Priority rank (0 = highest priority). When set, entries are processed in
+    /// ascending rank order for pull and preload operations.
+    pub priority_rank: Option<u32>,
 }
 
-/// Pull all hopper tags; preload the first entry marked `preload` (router warm-start).
+/// Pull all hopper tags; preload the first entry marked `preload` in priority order (router warm-start).
+///
+/// When entries have `priority_rank` set, they are sorted by rank (lowest first = highest priority)
+/// before iterating for pull and preload. This ensures higher-priority models are pulled first and
+/// the first `preload: true` entry in priority order gets loaded into RAM.
 pub async fn local_llm_prepare_hopper(
     ollama_host: &str,
     entries: Vec<HopperPrepareEntry>,
@@ -831,6 +838,12 @@ pub async fn local_llm_prepare_hopper(
         logs.push("No hopper entries".to_string());
         return Ok(logs);
     }
+
+    // Sort entries by priority_rank (ascending). Entries without a rank go last,
+    // preserving their relative order among themselves (stable sort).
+    let mut sorted_entries = entries;
+    sorted_entries.sort_by_key(|e| e.priority_rank.unwrap_or(u32::MAX));
+
     let client = OllamaClient::new(&host)?;
     if !client.is_running().await {
         spawn_ollama_serve(&mut logs).await?;
@@ -838,7 +851,7 @@ pub async fn local_llm_prepare_hopper(
     }
     let (tags_models, ps_models) = client.fetch_tags_and_ps().await?;
     let mut preloaded: Option<String> = None;
-    for entry in &entries {
+    for entry in &sorted_entries {
         let tag = entry.model_tag.trim();
         if tag.is_empty() {
             continue;

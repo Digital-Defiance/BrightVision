@@ -87,6 +87,20 @@ export function formatLlmPingHint(r: LlmPingResult): string | null {
   return detail ? `${base} (${detail})` : base
 }
 
+/** A numbered tier slot binding a model to a tier position (from Rust `TierSlotEntry`). */
+export interface TierSlotEntry {
+  /** Tier label: "fast", "code", or "think". */
+  tier: 'fast' | 'code' | 'think'
+  /** Slot number: 0 = base key, 1–9 = numbered env vars. */
+  slot: number
+  /** Ollama model tag (e.g. `qwen2.5-coder:7b`). */
+  modelTag: string
+  /** Whether this model supports vision/multimodal input (from `*_VISION=1` env). */
+  vision?: boolean | null
+  /** Max context window in tokens (from `*_MAX_CONTEXT=N` env). */
+  maxContext?: number | null
+}
+
 export interface LocalLlmSnapshot {
   sources: string[]
   ollamaHost: string | null
@@ -108,6 +122,16 @@ export interface LocalLlmSnapshot {
   codeThink?: boolean | null
   /** App path when `local-llm.env` exists at repo root or under `local-llm/`. */
   repoLocalLlmRoot?: string | null
+  /** Multi-model tier slots parsed from env (base keys as slot 0, numbered as 1–9). */
+  tierSlots?: TierSlotEntry[]
+  /** Resolved priority list from `MODEL_PRIORITY` or derived default (model tags in priority order). */
+  priorityList?: string[]
+  /** Raw `MODEL_PRIORITY` env value (null when not set). */
+  modelPriorityRaw?: string | null
+  /** Warnings generated during parsing (e.g. unresolved tier labels in MODEL_PRIORITY). */
+  warnings?: string[]
+  /** When true, prefer already-loaded models over cold-starting the highest-priority one. */
+  preferWarm?: boolean | null
 }
 
 /** Map an Ollama tag from `local-llm.env` to a LiteLLM model id for Vision. */

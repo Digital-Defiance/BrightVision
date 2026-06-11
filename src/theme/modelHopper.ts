@@ -1,3 +1,5 @@
+import type { LocalLlmSnapshot, TierSlotEntry } from '../ipc/localLlm'
+
 /** A model in the router hopper (Settings pool). */
 
 export type ModelHopperTier = 'fast' | 'heavy' | 'code' | 'think'
@@ -13,6 +15,22 @@ export interface ModelHopperEntry {
   enableThinking?: boolean | null
   /** LiteLLM kwargs JSON for this model when routed, e.g. ``{"top_p": 0.9}``. */
   extraParams?: string
+  /** Priority rank (0 = highest). Derived from MODEL_PRIORITY or hopper list order. */
+  priorityRank?: number
+  /** Slot number within the tier (0 = base key, 1-9 = numbered env var). */
+  tierSlot?: number
+  /** Model capabilities: vision, max_context, specializations. */
+  capabilities?: ModelCapabilities
+}
+
+/** Capability flags for a model in the hopper. */
+export interface ModelCapabilities {
+  /** Model supports multimodal/vision input (images). */
+  vision?: boolean
+  /** Max context window size in tokens. */
+  maxContext?: number
+  /** Free-form specialization tags (e.g. "refactoring", "tests"). */
+  tags?: string[]
 }
 
 export function normalizeHopperTier(raw: unknown): ModelHopperTier {
@@ -250,6 +268,161 @@ export function updateHopperEntry(
 export function removeHopperEntry(models: ModelHopperEntry[], id: string): ModelHopperEntry[] {
   const next = models.filter((m) => m.id !== id)
   return next.length > 0 ? next : [...DEFAULT_MODEL_HOPPER]
+}
+
+/**
+ * Build hopper entries from a multi-model LocalLlmSnapshot (Sync from env).
+ *
+ * Creates one `ModelHopperEntry` per tier slot, assigns `priorityRank` based on
+ * position in `priorityList`, and returns the entries sorted by priority rank
+ * (ascending, entries not in the priority list go to the end).
+ */
+export function buildHopperFromSnapshot(
+  snap: LocalLlmSnapshot,
+  _sessionModel: string
+): ModelHopperEntry[] {
+  const tierSlots: TierSlotEntry[] = snap.tierSlots ?? []
+  const priorityList: string[] = snap.priorityList ?? []
+
+  const entries: ModelHopperEntry[] = tierSlots.map((slot) => {
+    const priorityIdx = priorityList.indexOf(slot.modelTag)
+    const liteLlmModel =
+      slot.modelTag.trim() ? `ollama_chat/${slot.modelTag}` : ''
+    // Build capabilities from env-declared vision/maxContext
+    const capabilities: ModelCapabilities | undefined =
+      (slot.vision || slot.maxContext)
+        ? {
+            vision: slot.vision === true ? true : undefined,
+            maxContext: (slot.maxContext && slot.maxContext > 0) ? slot.maxContext : undefined,
+          }
+        : undefined
+    return {
+      id: `${slot.tier}-${slot.slot}-${newHopperEntryId()}`,
+      model: liteLlmModel,
+      label: slot.modelTag,
+      tier: normalizeHopperTier(slot.tier),
+      enabled: true,
+      priorityRank: priorityIdx >= 0 ? priorityIdx : undefined,
+      tierSlot: slot.slot,
+      capabilities,
+    }
+  })
+
+  // Sort by priorityRank ascending; entries without a rank go to the end.
+  entries.sort((a, b) => {
+    const aRank = a.priorityRank ?? Number.MAX_SAFE_INTEGER
+    const bRank = b.priorityRank ?? Number.MAX_SAFE_INTEGER
+    return aRank - bRank
+  })
+
+  return entries
+}
+
+/** Strip the `ollama_chat/` prefix from a LiteLLM model id to get the raw Ollama tag. */
+function stripOllamaChatPrefix(model: string): string {
+  return model.startsWith('ollama_chat/') ? model.slice('ollama_chat/'.length) : model
+}
+
+/** Canonical tier ordering for reassembly. */
+const TIER_ORDER: ModelHopperTier[] = ['fast', 'code', 'think']
+
+/**
+ * Reorder entries within each tier to match a given priority list.
+ * Models earlier in the priority list appear first within their tier group.
+ * Entries not found in the priority list are placed at the end of their tier group.
+ * Returns a new array with updated `priorityRank` values; does NOT mutate the input.
+ */
+export function applyPriorityOrder(
+  entries: ModelHopperEntry[],
+  priorityList: string[]
+): ModelHopperEntry[] {
+  // Build a lookup: raw tag → index in priorityList
+  const priorityIndex = new Map<string, number>()
+  for (let i = 0; i < priorityList.length; i++) {
+    priorityIndex.set(priorityList[i], i)
+  }
+
+  // Group entries by tier (preserve relative input order as a tiebreaker)
+  const groups = new Map<ModelHopperTier, ModelHopperEntry[]>()
+  for (const tier of TIER_ORDER) {
+    groups.set(tier, [])
+  }
+  for (const entry of entries) {
+    const tier = normalizeHopperTier(entry.tier)
+    const group = groups.get(tier)
+    if (group) {
+      group.push(entry)
+    } else {
+      // Shouldn't happen, but handle gracefully
+      groups.set(tier, [entry])
+    }
+  }
+
+  // Sort within each tier by priority list position
+  for (const [, group] of groups) {
+    group.sort((a, b) => {
+      const tagA = stripOllamaChatPrefix(a.model)
+      const tagB = stripOllamaChatPrefix(b.model)
+      const idxA = priorityIndex.has(tagA) ? priorityIndex.get(tagA)! : Infinity
+      const idxB = priorityIndex.has(tagB) ? priorityIndex.get(tagB)! : Infinity
+      return idxA - idxB
+    })
+  }
+
+  // Reassemble in tier order and assign priorityRank
+  const result: ModelHopperEntry[] = []
+  let rank = 0
+  for (const tier of TIER_ORDER) {
+    const group = groups.get(tier) ?? []
+    for (const entry of group) {
+      result.push({ ...entry, priorityRank: rank })
+      rank++
+    }
+  }
+
+  return result
+}
+
+/**
+ * Reassign `priorityRank` values based on visual position within the full entries list.
+ * After a user reorders within a tier, call this with the updated entries list so that
+ * topmost entry = rank 0, next = rank 1, etc. This makes UI order authoritative
+ * over any env-derived priority (Req 6.3, 6.4).
+ */
+export function reassignPriorityRanks(entries: ModelHopperEntry[]): ModelHopperEntry[] {
+  return entries.map((entry, idx) => ({ ...entry, priorityRank: idx }))
+}
+
+/**
+ * Replace entries for a specific tier with reordered entries, preserving other tiers.
+ * Returns the full updated entries array with `priorityRank` reassigned across all entries.
+ */
+export function reorderWithinTier(
+  allEntries: ModelHopperEntry[],
+  tier: ModelHopperTier,
+  reorderedTierEntries: ModelHopperEntry[]
+): ModelHopperEntry[] {
+  const normalizedTarget = normalizeHopperTier(tier)
+  // Replace entries for the target tier with the reordered ones, keeping other tiers in place
+  const result: ModelHopperEntry[] = []
+  let tierInsertDone = false
+  for (const entry of allEntries) {
+    if (normalizeHopperTier(entry.tier) === normalizedTarget) {
+      // Insert the full reordered tier group at the position of the first tier entry
+      if (!tierInsertDone) {
+        result.push(...reorderedTierEntries)
+        tierInsertDone = true
+      }
+      // Skip original tier entries (replaced by reorderedTierEntries)
+    } else {
+      result.push(entry)
+    }
+  }
+  // Edge case: if the tier didn't previously exist but reorderedTierEntries has entries
+  if (!tierInsertDone && reorderedTierEntries.length > 0) {
+    result.push(...reorderedTierEntries)
+  }
+  return reassignPriorityRanks(result)
 }
 
 /** Point the enabled code slot at the session LLM model (or add one). */
