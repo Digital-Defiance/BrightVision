@@ -6,6 +6,8 @@ export interface OllamaModelRow {
   size?: string | null
   vram?: string | null
   expiresAt?: string | null
+  processor?: string | null
+  context?: number | null
 }
 
 export interface OllamaModelsSnapshot {

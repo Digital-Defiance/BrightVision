@@ -43,15 +43,16 @@ pub struct OllamaModelRow {
     pub size: Option<String>,
     pub vram: Option<String>,
     pub expires_at: Option<String>,
+    pub processor: Option<String>,
+    pub context: Option<u64>,
 }
 
 fn entry_to_row(entry: &serde_json::Value) -> Option<OllamaModelRow> {
     let name = model_label(entry)?;
     let size_raw = entry.get("size").and_then(|v| v.as_u64());
     let size = size_raw.filter(|&n| n > 0).map(format_bytes);
-    let vram = entry
-        .get("size_vram")
-        .and_then(|v| v.as_u64())
+    let vram_raw = entry.get("size_vram").and_then(|v| v.as_u64());
+    let vram = vram_raw
         .filter(|&n| n > 0)
         .map(|n| format!("VRAM {}", format_bytes(n)));
     let expires_at = entry
@@ -59,11 +60,28 @@ fn entry_to_row(entry: &serde_json::Value) -> Option<OllamaModelRow> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
+    // Processor: GPU offload percentage (matches `ollama ps` PROCESSOR column)
+    let processor = match (size_raw, vram_raw) {
+        (Some(s), Some(v)) if s > 0 => {
+            let gpu_pct = ((v as f64 / s as f64) * 100.0).round() as u64;
+            if gpu_pct >= 100 {
+                Some("100% GPU".to_string())
+            } else if gpu_pct == 0 {
+                Some("100% CPU".to_string())
+            } else {
+                Some(format!("{}% GPU / {}% CPU", gpu_pct, 100 - gpu_pct))
+            }
+        }
+        _ => None,
+    };
+    let context = entry.get("context_length").and_then(|v| v.as_u64());
     Some(OllamaModelRow {
         name,
         size,
         vram,
         expires_at,
+        processor,
+        context,
     })
 }
 

@@ -86,7 +86,7 @@ fn parse_env_file(path: &Path, into: &mut HashMap<String, String>) -> bool {
             continue;
         };
         let key = key.trim();
-        if !KEYS.contains(&key) {
+        if !KEYS.contains(&key) && !key.starts_with("BV_") {
             continue;
         }
         let mut value = value.trim().to_string();
@@ -205,4 +205,15 @@ pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {
         repo_local_llm_root: repo_local_llm_root(),
         sources,
     }
+}
+
+/// Return all `BV_*` keys found in the local-llm env file chain.
+/// These are forwarded to the Vision API subprocess so users can configure
+/// engine behavior (e.g. `BV_IMPLEMENT_DESIGN_MAX_CHARS`) from `~/.config/local-llm/env`.
+pub fn bv_env_vars(hint_root: Option<&str>) -> HashMap<String, String> {
+    let mut vars: HashMap<String, String> = HashMap::new();
+    for path in config_file_paths(hint_root) {
+        parse_env_file(&path, &mut vars);
+    }
+    vars.into_iter().filter(|(k, _)| k.starts_with("BV_")).collect()
 }

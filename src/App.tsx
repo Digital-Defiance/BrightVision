@@ -239,6 +239,7 @@ import {
   saveModelRouterPrefs,
   type ModelRouterPrefs,
 } from './theme/modelRouterPrefs'
+import type { ModelHopperTier } from './theme/modelHopper'
 import type { ModelRouterApiConfig, SendMessageOptions } from './ipc/httpClient'
 import {
   ensureRoutedOllamaModel,
@@ -792,6 +793,14 @@ function AppShell({
     (command: VisionClientCommandId, snapshot: OllamaModelsSnapshot, userLabel: string) => {
       const userId = nextChatMessageId()
       const assistantId = nextChatMessageId()
+      // Build model name → tier map from the hopper for row color-coding
+      const tierMap: Record<string, ModelHopperTier> = {}
+      for (const entry of modelRouterPrefs.models) {
+        if (!entry.model?.trim()) continue
+        // Strip ollama_chat/ prefix to match Ollama /api/ps names
+        const raw = entry.model.trim().replace(/^ollama_chat\//, '')
+        tierMap[raw] = entry.tier
+      }
       setChatMessages((prev) =>
         capList(
           [
@@ -801,7 +810,7 @@ function AppShell({
               id: assistantId,
               role: 'assistant' as const,
               content: '',
-              ollamaStatus: { command, snapshot },
+              ollamaStatus: { command, snapshot, tierMap },
             },
           ],
           MAX_CHAT_MESSAGES
@@ -1052,6 +1061,16 @@ function AppShell({
           const client = httpClientRef.current
           const sid = sessionInfoIdRef.current
           if (client && sid) hydrateChatFromCoreRef.current(client, sid)
+        }
+        // ContextManager added/created files — refresh file count mid-turn
+        if (
+          text.includes('Made editable') ||
+          text.includes('Created and made editable') ||
+          text.includes('directly to editable context')
+        ) {
+          void refreshSessionInfoRef.current().then((info) => {
+            if (info?.files_in_chat) syncSessionFilesRef.current(info.files_in_chat)
+          })
         }
         break
       }

@@ -27,11 +27,29 @@ function entryToRow(entry: Record<string, unknown>): OllamaModelRow | null {
     typeof entry.expires_at === 'string' && entry.expires_at.trim()
       ? entry.expires_at.trim()
       : null
+  // Compute processor split (e.g. "100% GPU" or "60% GPU / 40% CPU")
+  let processor: string | null = null
+  if (sizeNum && sizeNum > 0 && vramNum !== null) {
+    const gpuPct = Math.round((vramNum / sizeNum) * 100)
+    if (gpuPct >= 100) {
+      processor = '100% GPU'
+    } else if (gpuPct <= 0) {
+      processor = '100% CPU'
+    } else {
+      processor = `${gpuPct}% GPU / ${100 - gpuPct}% CPU`
+    }
+  }
+  // Context length from Ollama /api/ps
+  const context =
+    typeof entry.context_length === 'number' ? entry.context_length :
+    typeof entry.num_ctx === 'number' ? entry.num_ctx : null
   return {
     name,
     size: sizeNum && sizeNum > 0 ? formatBytes(sizeNum) : null,
     vram: vramNum && vramNum > 0 ? `VRAM ${formatBytes(vramNum)}` : null,
     expiresAt: expires,
+    processor,
+    context,
   }
 }
 

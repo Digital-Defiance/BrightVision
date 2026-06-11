@@ -1,14 +1,17 @@
 import { Alert, Stack, Typography } from '@mui/material'
 import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
+import type { ModelHopperTier } from '../../theme/modelHopper'
 import { OllamaModelsTable } from './OllamaModelsTable'
 
 interface OllamaStatusMessageProps {
   command: VisionClientCommandId
   snapshot: OllamaModelsSnapshot
+  /** Model name → hopper tier, for row color-coding. */
+  tierMap?: Record<string, ModelHopperTier>
 }
 
-export function OllamaStatusMessage({ command, snapshot }: OllamaStatusMessageProps) {
+export function OllamaStatusMessage({ command, snapshot, tierMap }: OllamaStatusMessageProps) {
   const tag = snapshot.configuredTag?.trim() ?? ''
   const showPs = command === 'ps' || command === 'models'
   const showTags = command === 'tags' || command === 'models'
@@ -40,6 +43,7 @@ export function OllamaStatusMessage({ command, snapshot }: OllamaStatusMessagePr
           rows={snapshot.tagsRows ?? []}
           emptyLabel="No models in /api/tags (run ollama pull or Local LLM → Start)"
           highlightTag={tag || undefined}
+          tierMap={tierMap}
         />
       )}
       {showPs && (
@@ -49,6 +53,7 @@ export function OllamaStatusMessage({ command, snapshot }: OllamaStatusMessagePr
           rows={snapshot.psRows ?? []}
           emptyLabel="No models in /api/ps (empty — model may have unloaded; use Local LLM → Start)"
           highlightTag={tag || undefined}
+          tierMap={tierMap}
         />
       )}
     </Stack>

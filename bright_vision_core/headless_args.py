@@ -25,6 +25,7 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         yes_always_commands=False,
         fancy_input=False,
         show_speed=False,
+        show_thinking=True,
         max_reflections=3,
         custom="{}",
         file_diffs=True,

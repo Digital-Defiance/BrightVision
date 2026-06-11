@@ -35,6 +35,7 @@ import { TokenStatsBar } from './TokenStatsBar'
 import { OllamaStatusMessage } from './OllamaStatusMessage'
 import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
+import type { ModelHopperTier } from '../../theme/modelHopper'
 import { formatDurationMs, type TurnThinkingTiming } from '../../utils/thinkingTiming'
 import {
   DEFAULT_THINKING_TIMING_PREFS,
@@ -72,6 +73,7 @@ export interface ChatMessage {
   ollamaStatus?: {
     command: VisionClientCommandId
     snapshot: OllamaModelsSnapshot
+    tierMap?: Record<string, ModelHopperTier>
   }
   /** Client `/turns` — rendered as React table (reads live stats from props). */
   turnsTable?: {
@@ -423,6 +425,7 @@ export function ChatPanel({
                       <OllamaStatusMessage
                         command={entry.item.ollamaStatus.command}
                         snapshot={entry.item.ollamaStatus.snapshot}
+                        tierMap={entry.item.ollamaStatus.tierMap}
                       />
                     ) : entry.item.role === 'assistant' &&
                       entry.item.turnsTable &&

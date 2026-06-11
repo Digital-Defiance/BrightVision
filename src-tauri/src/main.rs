@@ -649,6 +649,10 @@ async fn start_core_api(
         .env("BRIGHT_VISION_HEADLESS", "1")
         .env("BRIGHT_VISION_ROOT", engine_root.as_os_str())
         .env("TQDM_DISABLE", "1");
+    // Forward BV_* vars from local-llm env files (e.g. BV_IMPLEMENT_DESIGN_MAX_CHARS)
+    for (key, value) in local_llm_config::bv_env_vars(None) {
+        cmd.env(&key, &value);
+    }
     if !extra_params.trim().is_empty() {
         cmd.env("LITELLM_EXTRA_PARAMS", &extra_params);
     }

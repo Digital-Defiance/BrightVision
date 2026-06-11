@@ -5,6 +5,7 @@ Workspace task list persisted in ``.cecli/todos.json`` (see ``workspace_paths``)
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -261,7 +262,7 @@ def format_todo_context_light(item: TodoItem, *, store: TodoStore | None = None)
     return "\n".join(lines)
 
 
-_IMPLEMENT_DESIGN_MAX_CHARS = 4000
+_IMPLEMENT_DESIGN_MAX_CHARS = int(os.environ.get("BV_IMPLEMENT_DESIGN_MAX_CHARS", "4000"))
 
 
 def _truncate_spec_layer(text: str, *, max_chars: int, label: str) -> str:
@@ -270,10 +271,23 @@ def _truncate_spec_layer(text: str, *, max_chars: int, label: str) -> str:
         return _layer_or_placeholder(trimmed, f"(No {label} yet.)")
     if len(trimmed) <= max_chars:
         return trimmed
-    return (
-        trimmed[:max_chars]
-        + f"\n… ({label} truncated — full text in chat history or `.cecli/specs/`)"
-    )
+    cut = trimmed[:max_chars]
+    # If we cut inside a fenced code block, close it so downstream markdown/mermaid
+    # parsers don't receive an unterminated fence.
+    open_fences = 0
+    for line in cut.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            # Toggle: opening fence or closing fence
+            if open_fences > 0 and stripped == "```":
+                open_fences -= 1
+            else:
+                open_fences += 1
+    suffix = f"\n… ({label} truncated — full text in chat history or `.cecli/specs/`)"
+    if open_fences > 0:
+        # Close the open fence before the truncation notice
+        suffix = "\n```" + suffix
+    return cut + suffix
 
 
 def _requirements_summary_for_implement(requirements: str) -> str:
