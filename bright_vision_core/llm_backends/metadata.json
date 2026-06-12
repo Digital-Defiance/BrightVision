@@ -1,0 +1,19 @@
+{
+  "models": {
+    "qwen2.5-coder:1.5b": { "max_context": 32768, "estimated_vram_mb": 1200 },
+    "qwen2.5-coder:3b": { "max_context": 32768, "estimated_vram_mb": 2400 },
+    "qwen2.5-coder:7b": { "max_context": 32768, "estimated_vram_mb": 4800 },
+    "qwen2.5-coder:14b": { "max_context": 32768, "estimated_vram_mb": 9600 },
+    "qwen2.5-coder:32b": { "max_context": 32768, "estimated_vram_mb": 20480 },
+    "llama3.2:1b": { "max_context": 131072, "estimated_vram_mb": 800 },
+    "llama3.2:3b": { "max_context": 131072, "estimated_vram_mb": 2000 },
+    "llama3.1:8b": { "max_context": 131072, "estimated_vram_mb": 6400 },
+    "llama3.1:70b": { "max_context": 131072, "estimated_vram_mb": 40960 },
+    "mistral-small:24b": { "max_context": 32768, "estimated_vram_mb": 16384 },
+    "phi3.5:3.8b": { "max_context": 128000, "estimated_vram_mb": 2800 },
+    "gemma2:9b": { "max_context": 8192, "estimated_vram_mb": 6000 },
+    "gemma2:27b": { "max_context": 8192, "estimated_vram_mb": 16000 },
+    "deepseek-coder-v2:16b": { "max_context": 32768, "estimated_vram_mb": 10240 },
+    "codestral:latest": { "max_context": 32768, "estimated_vram_mb": 8192 }
+  }
+}

@@ -81,7 +81,7 @@ def resolve_backend_config() -> dict[str, Any]:
             "backend_url": persisted.get("backend_url", ""),
             "platform_supported": True,
             "user_vram_override_mb": persisted.get("user_vram_override_mb"),
-        }\n
+        }
     # 3. Default.
     return _default_config()
 

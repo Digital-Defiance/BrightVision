@@ -108,12 +108,14 @@ export function useThinkingTiming(model: string, prefs: ThinkingTimingPrefs) {
         endBd?: number
         memPressurePeak?: number
         captureMode?: string
-      }
+      },
+      routedModel?: string
     ): TurnTimingRecord | null => {
       if (timing.turnDurationMs <= 0) return null
       let recorded: TurnTimingRecord | null = null
+      const effectiveModel = routedModel?.trim() || model
       setStatsStore((prev) => {
-        const next = recordTurnTiming(prev, model, {
+        const next = recordTurnTiming(prev, effectiveModel, {
           thinkMs: timing.thoughtMs,
           promptChars: timing.userPromptChars,
           responseMs: timing.turnDurationMs,

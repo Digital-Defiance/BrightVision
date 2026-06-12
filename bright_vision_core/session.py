@@ -818,6 +818,113 @@ class Session:
                     "do not ls, resume, or mark test tasks done in UpdateTodoList."
                 )
 
+        def _maybe_verify_step_and_auto_advance() -> Iterator[dict[str, Any]]:
+            """Post-step: run verify command, detect duplicates, auto-advance to next step."""
+            from bright_vision_core.implement_verify import (
+                auto_advance_enabled,
+                build_auto_advance_message,
+                check_edited_files_for_duplicates,
+                duplicate_detect_enabled,
+                extract_step_text,
+                extract_verify_for_step,
+                next_step_after,
+                run_verify_command,
+                verify_enabled,
+                MAX_AUTO_ADVANCES,
+            )
+            from bright_vision_core.spec_focus import is_implement_turn_message
+
+            if not is_implement_turn_message(message):
+                return
+
+            # --- Duplicate output detection ---
+            if duplicate_detect_enabled():
+                edited = _edited_files(self.coder)
+                if edited:
+                    fixes = check_edited_files_for_duplicates(self.coder.root, edited)
+                    for rel_path, deduped_content in fixes:
+                        fix_path = Path(self.coder.root) / rel_path
+                        try:
+                            fix_path.write_text(deduped_content, encoding="utf-8")
+                            yield self.io.tool_warning(
+                                f"⚠️ Duplicate output detected in `{rel_path}` — "
+                                f"auto-truncated to first copy. Review the file."
+                            )
+                        except OSError:
+                            yield self.io.tool_warning(
+                                f"⚠️ Duplicate output detected in `{rel_path}` but "
+                                f"failed to auto-fix. Manual review needed."
+                            )
+
+            # --- Verify gate ---
+            if not verify_enabled():
+                return
+            if item is None or not item.tasks_md.strip():
+                return
+
+            # Determine which step was just worked
+            from bright_vision_core.implement_workspace import implement_step_from_message
+            focus_step = implement_step_from_message(message)
+            if not focus_step:
+                # Fall back to turn_context_state if available
+                focus_step = turn_context_state.get("focus_step")
+            if not focus_step:
+                return
+
+            verify_cmd = extract_verify_for_step(item.tasks_md, focus_step)
+            if verify_cmd:
+                yield self.io.tool_output(f"🔍 Running verify for step {focus_step}: `{verify_cmd}`")
+                ok, output = run_verify_command(self.coder.root, verify_cmd)
+                status = "✅ Verify passed" if ok else "❌ Verify failed"
+                yield self.io.tool_output(f"{status} (step {focus_step}):\n{output}")
+                if not ok:
+                    yield self.io.tool_warning(
+                        f"Verify failed for step {focus_step}. "
+                        f"The step is not complete — fix and retry."
+                    )
+                    return  # Don't auto-advance on failed verify
+
+            # --- Auto-advance ---
+            if not auto_advance_enabled():
+                return
+            advance_count = turn_context_state.get("auto_advance_count", 0)
+            if advance_count >= MAX_AUTO_ADVANCES:
+                yield self.io.tool_output(
+                    f"Auto-advance limit reached ({MAX_AUTO_ADVANCES} steps this session). "
+                    f"Trigger the next step manually."
+                )
+                return
+
+            next_step = next_step_after(item.tasks_md, focus_step)
+            if not next_step:
+                yield self.io.tool_output(
+                    "🎉 All implementation steps appear complete. No more open tasks."
+                )
+                return
+
+            step_text = extract_step_text(item.tasks_md, next_step)
+            advance_msg = build_auto_advance_message(next_step, step_text)
+            turn_context_state["auto_advance_count"] = advance_count + 1
+
+            yield self.io.tool_output(
+                f"⏩ Auto-advancing to step {next_step} "
+                f"({advance_count + 1}/{MAX_AUTO_ADVANCES})…"
+            )
+            # Reset interrupt state to avoid "bound to a different event loop" errors
+            # when the recursive run_message triggers a new async send.
+            self.coder.interrupt_event = __import__("asyncio").Event()
+            for event in self.run_message(
+                advance_msg,
+                preproc=preproc if not agent_cmd else True,
+                skip_workspace_init=True,
+                active_todo_id=turn_todo_id,
+                inject_todo_spec=True,
+                spec_focus=True,
+                force_tier=effective_force_tier,
+                agent_continuation=True,
+            ):
+                yield event
+
         def _maybe_warn_agent_shell_stop() -> Iterator[dict[str, Any]]:
             if not agent_cmd or agent_continuation:
                 return
@@ -1046,6 +1153,7 @@ class Session:
                 prior_done_texts=prior_done,
             ):
                 yield self.io.tool_warning(warning)
+            yield from _maybe_verify_step_and_auto_advance()
             yield self.io.emit(
                 "done",
                 **_attach_turn_capture({"assistant_text": "".join(assistant_text) or _assistant_text_blob()}),
@@ -1447,6 +1555,7 @@ class Session:
             ):
                 yield self.io.tool_warning(vibe_token_limit_recovery_warning())
             yield from _maybe_verify_implement_tests()
+            yield from _maybe_verify_step_and_auto_advance()
             yield self.io.emit("done", **_attach_turn_capture(payload))
         except BaseException as err:
             if is_switch_coder_signal(err):

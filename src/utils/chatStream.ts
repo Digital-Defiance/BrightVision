@@ -21,6 +21,8 @@ interface SectionMarker {
 const SECTION_MARKERS: SectionMarker[] = [
   { kind: 'thinking', pattern: /<think>/gi },
   { kind: 'answer', pattern: /<\/think>/gi },
+  { kind: 'thinking', pattern: /<thinking-content-[0-9a-f]+>/gi },
+  { kind: 'answer', pattern: /<\/thinking-content-[0-9a-f]+>/gi },
   { kind: 'thinking', pattern: /►\s*\*\*THINKING\*\*/gi },
   { kind: 'answer', pattern: /►\s*\*\*ANSWER\*\*/gi },
   { kind: 'reasoning', pattern: /►\s*\*\*REASONING\*\*/gi },

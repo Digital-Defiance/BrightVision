@@ -151,6 +151,12 @@ yarn vision          # or: yarn tauri dev
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Stuck sessions, `:8741` |
 | [TESTING.md](docs/TESTING.md) | Test matrix |
 
+## VS Code Extension
+
+Kiro users might find this VS Code Extension handy:
+
+- [https://marketplace.visualstudio.com/items?itemName=DigitalDefiance.kiro-brightvision-sync](https://marketplace.visualstudio.com/items?itemName=DigitalDefiance.kiro-brightvision-sync)
+
 ## License
 
 MIT — see `LICENSE`. Copyright (c) 2026 Digital Defiance, Jessica Mulein

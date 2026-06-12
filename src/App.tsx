@@ -277,6 +277,21 @@ interface EngineInstallInfo {
   default_python_path: string
 }
 
+/**
+ * Estimate token usage from streamed assistant text when cecli's usage report
+ * didn't fire or wasn't parsed. Returns null if content is too short to matter.
+ */
+function estimateTokensFromStream(
+  streamedContent: string
+): { tokensSent: number; tokensReceived: number } | null {
+  const chars = (streamedContent || '').length
+  if (chars < 20) return null // too short to be a real response
+  const estimatedReceived = Math.ceil(chars / 4) // ~4 chars per token heuristic
+  // We can't estimate sent tokens from streaming — leave at 0 so TPS still works
+  // (TPS only uses tokensReceived)
+  return { tokensSent: 0, tokensReceived: estimatedReceived }
+}
+
 /** Drop stale Settings paths when the repo moved (e.g. /Users/.../Code vs /Volumes/Code). */
 function alignConfigWithInstallRoot(cfg: VisionConfig, info: EngineInstallInfo): VisionConfig {
   const root = info.install_root.replace(/\\/g, '/').replace(/\/$/, '')
@@ -553,7 +568,8 @@ function AppShell({
         endBd?: number
         memPressurePeak?: number
         captureMode?: string
-      }
+      },
+      routedModel?: string
     ) => import('./utils/thinkingStats').TurnTimingRecord | null
   }>({
     beginTurn: () => {},
@@ -1192,8 +1208,11 @@ function AppShell({
               const recorded = thinkingTimingRef.current.recordCompletedTurn(
                 turnTiming,
                 resources,
-                turnTokenUsageRef.current ?? undefined,
-                captureExtras
+                turnTokenUsageRef.current ??
+                  estimateTokensFromStream(lastAssistantStreamRef.current) ??
+                  undefined,
+                captureExtras,
+                activeAssistantRouteRef.current?.model ?? undefined
               )
               turnTokenUsageRef.current = null
               setTurnTokenUsage(null)

@@ -521,6 +521,23 @@ class RouteTurnContext:
     exploration_aborted: bool = False
 
 
+_BACKEND_PROVIDER_PREFIXES: dict[str, str] = {
+    "ollama": "ollama_chat/",
+    "vllm": "openai/",
+    "tgi": "openai/",
+    "llamacpp": "openai/",
+    "mlx-lm": "openai/",
+}
+
+
+def resolve_provider_prefix(backend: str) -> str:
+    """Map a backend name to its LiteLLM provider prefix.
+
+    Defaults to ``ollama_chat/`` for unknown backends.
+    """
+    return _BACKEND_PROVIDER_PREFIXES.get((backend or "").strip().lower(), "ollama_chat/")
+
+
 @dataclass
 class ModelRouterConfig:
     enabled: bool = False
@@ -537,11 +554,14 @@ class ModelRouterConfig:
     prefer_think: bool = False
     """Global priority list of model tags in priority order (index 0 = highest)."""
     priority_list: list[str] = field(default_factory=list)
+    backend: str = "ollama"
+    provider_prefix: str = "ollama_chat/"
 
     def __post_init__(self) -> None:
         self.keep_alive_heavy = normalize_keep_alive_for_tier("code", self.keep_alive_heavy)
         if not self.code_model and self.heavy_model:
             self.code_model = self.heavy_model
+        self.provider_prefix = resolve_provider_prefix(self.backend)
 
     @property
     def resolved_code_model(self) -> str:
