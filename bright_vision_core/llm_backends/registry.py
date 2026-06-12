@@ -27,6 +27,7 @@ class _Registry:
     def get_active(self) -> BackendClient:
         """Return the active backend client. Lazily instantiates from config."""
         if self._client is None:
+            cfg = resolve_backend_config()
             self.set_active(cfg["active_backend"])
         assert self._client is not None  # set_active always sets it
         return self._client
@@ -50,6 +51,7 @@ class _Registry:
 
     def _get_host_for(self, name: str) -> str:
         """Return the host URL for a backend name."""
+        cfg = resolve_backend_config()
         return cfg["backend_url"]
 
 
