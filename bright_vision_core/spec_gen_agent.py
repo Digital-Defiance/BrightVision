@@ -248,5 +248,9 @@ def run_spec_layer_llm(
         skip_workspace_init=True,
     )
     if raw2.strip():
+        # If the deepen pass produced a complete requirements document (with REQ headings),
+        # use it as a replacement — not concatenation — to avoid duplicate REQ IDs.
+        if section == "requirements" and "### REQ-" in raw2:
+            return raw2.strip()
         return raw.rstrip() + "\n\n--- deepen pass ---\n\n" + raw2.strip()
     return raw
