@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 from bright_vision_core.model_router import RouteTurnContext
@@ -25,6 +26,28 @@ _SECTION_LABELS = {
     "tasks_md": "Implementation tasks",
     "all": "All spec layers",
 }
+
+# Pattern matches the Cecli reasoning tag used by thinking models (e.g. qwen3.6, deepseek-r1).
+_THINKING_TAG_RE = re.compile(
+    r"<thinking-content-[0-9a-f]+>.*?</thinking-content-[0-9a-f]+>",
+    re.DOTALL,
+)
+
+
+def _strip_thinking_content(text: str) -> str:
+    """Remove <thinking-content-...>...</thinking-content-...> blocks from raw LLM output.
+
+    These blocks contain the model's chain-of-thought reasoning and should not be
+    included in the parsed spec layers — they often duplicate REQ headings which
+    triggers EARS_DUP_ID lint errors.
+    """
+    result = _THINKING_TAG_RE.sub("", text).strip()
+    # Handle case where closing tag exists but opening tag was truncated/missing
+    closing_pattern = re.compile(r"</thinking-content-[0-9a-f]+>")
+    match = closing_pattern.search(result)
+    if match:
+        result = result[match.end():].strip()
+    return result
 
 
 def spec_gen_agent_enabled() -> bool:
@@ -210,6 +233,9 @@ def run_spec_layer_llm(
         timeout_s=spec_gen_write_timeout_s(total_turn_timeout_s),
         skip_workspace_init=True,
     )
+    # Strip thinking/reasoning blocks that thinking models (qwen3.6, deepseek-r1) emit.
+    # These contain duplicated REQ headings in chain-of-thought that trigger EARS_DUP_ID.
+    raw = _strip_thinking_content(raw)
 
     if not spec_gen_richness_gate_enabled():
         return raw
@@ -247,6 +273,7 @@ def run_spec_layer_llm(
         timeout_s=max(120.0, total_turn_timeout_s * 0.35),
         skip_workspace_init=True,
     )
+    raw2 = _strip_thinking_content(raw2)
     if raw2.strip():
         # If the deepen pass produced a complete requirements document (with REQ headings),
         # use it as a replacement — not concatenation — to avoid duplicate REQ IDs.
