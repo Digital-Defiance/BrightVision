@@ -95,10 +95,13 @@ interface ChatMarkdownProps {
 export function ChatMarkdown({ content }: ChatMarkdownProps) {
   const trimmed = content.trim()
   if (!trimmed) return null
+  // Fix sentences running together without space (e.g. "complete.Tasks" → "complete. Tasks")
+  // This happens when cecli streaming drops newlines between paragraphs.
+  const normalized = trimmed.replace(/\.([A-Z])/g, '. $1')
   return (
     <Box className="vision-chat-markdown" data-testid="chat-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {withMarkdownHardBreaks(content)}
+        {withMarkdownHardBreaks(normalized)}
       </ReactMarkdown>
     </Box>
   )

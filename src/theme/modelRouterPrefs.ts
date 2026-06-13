@@ -156,6 +156,8 @@ function applyHopperThinkFlagsFromEnv(
   if (snap.codeThink === true || snap.codeThink === false) tierThink.code = snap.codeThink
   if (!Object.keys(tierThink).length) return models
   return models.map((m) => {
+    // Don't override if per-slot enableThinking is already explicitly set
+    if (m.enableThinking === true || m.enableThinking === false) return m
     const tier = normalizeHopperTier(m.tier)
     if (tier === 'fast' && tierThink.fast !== undefined) {
       return { ...m, enableThinking: tierThink.fast }
@@ -184,7 +186,11 @@ export function applyLocalLlmHopperFromEnv(
 
   // --- Multi-model snapshot path (tierSlots present and non-empty) ---
   if (snap.tierSlots && snap.tierSlots.length > 0) {
-    const models = buildHopperFromSnapshot(snap, sessionModel)
+    let models = buildHopperFromSnapshot(snap, sessionModel)
+
+    // Apply tier-level think flags (CODE_THINK/FAST_THINK) as fallback
+    // for slots that don't have per-slot enableThinking set.
+    models = applyHopperThinkFlagsFromEnv(models, snap)
 
     let enabled = prefs.enabled
     let routerEnabledUserSet = prefs.routerEnabledUserSet ?? false

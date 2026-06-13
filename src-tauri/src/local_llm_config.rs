@@ -19,6 +19,7 @@ const KEYS: &[&str] = &[
     "MODEL_ROUTER",
     "FAST_THINK",
     "CODE_THINK",
+    "DATA_THINK",
     "MODEL_PRIORITY",
     "PREFER_WARM",
 ];
@@ -40,6 +41,9 @@ pub struct TierSlotEntry {
     /// Max context window in tokens (from `*_MAX_CONTEXT=N` env).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_context: Option<u32>,
+    /// Per-slot LiteLLM think mode (from `*_THINK=0|1` env). Overrides tier-level CODE_THINK/FAST_THINK.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_thinking: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,7 +120,8 @@ fn is_numbered_tier_slot(key: &str) -> bool {
 
 /// Check if a key is a per-model capability env var:
 /// `{TIER}_MODEL_VISION`, `{TIER}_MODEL_{N}_VISION`,
-/// `{TIER}_MODEL_MAX_CONTEXT`, `{TIER}_MODEL_{N}_MAX_CONTEXT`.
+/// `{TIER}_MODEL_MAX_CONTEXT`, `{TIER}_MODEL_{N}_MAX_CONTEXT`,
+/// `{TIER}_MODEL_THINK`, `{TIER}_MODEL_{N}_THINK`.
 fn is_model_capability_key(key: &str) -> bool {
     // Check for _VISION suffix
     if let Some(prefix) = key.strip_suffix("_VISION") {
@@ -136,6 +141,22 @@ fn is_model_capability_key(key: &str) -> bool {
     }
     // Check for _MAX_CONTEXT suffix
     if let Some(prefix) = key.strip_suffix("_MAX_CONTEXT") {
+        return matches!(
+            prefix,
+            "FAST_MODEL" | "CODE_MODEL" | "THINK_MODEL"
+                | "FAST_MODEL_1" | "FAST_MODEL_2" | "FAST_MODEL_3"
+                | "FAST_MODEL_4" | "FAST_MODEL_5" | "FAST_MODEL_6"
+                | "FAST_MODEL_7" | "FAST_MODEL_8" | "FAST_MODEL_9"
+                | "CODE_MODEL_1" | "CODE_MODEL_2" | "CODE_MODEL_3"
+                | "CODE_MODEL_4" | "CODE_MODEL_5" | "CODE_MODEL_6"
+                | "CODE_MODEL_7" | "CODE_MODEL_8" | "CODE_MODEL_9"
+                | "THINK_MODEL_1" | "THINK_MODEL_2" | "THINK_MODEL_3"
+                | "THINK_MODEL_4" | "THINK_MODEL_5" | "THINK_MODEL_6"
+                | "THINK_MODEL_7" | "THINK_MODEL_8" | "THINK_MODEL_9"
+        );
+    }
+    // Check for _THINK suffix (per-slot think mode)
+    if let Some(prefix) = key.strip_suffix("_THINK") {
         return matches!(
             prefix,
             "FAST_MODEL" | "CODE_MODEL" | "THINK_MODEL"
@@ -203,12 +224,14 @@ fn build_tier_slots(vars: &HashMap<String, String>) -> Vec<TierSlotEntry> {
             if !trimmed.is_empty() {
                 let vision_key = format!("{}_VISION", base_key);
                 let ctx_key = format!("{}_MAX_CONTEXT", base_key);
+                let think_key = format!("{}_THINK", base_key);
                 entries.push(TierSlotEntry {
                     tier: tier_label.to_string(),
                     slot: 0,
                     model_tag: trimmed.to_string(),
                     vision: vars.get(&vision_key).and_then(|v| parse_bool_env(v)),
                     max_context: vars.get(&ctx_key).and_then(|v| v.trim().parse::<u32>().ok()).filter(|&n| n > 0),
+                    enable_thinking: vars.get(&think_key).and_then(|v| parse_bool_env(v)),
                 });
             }
         }
@@ -221,12 +244,14 @@ fn build_tier_slots(vars: &HashMap<String, String>) -> Vec<TierSlotEntry> {
                 if !trimmed.is_empty() {
                     let vision_key = format!("{}_{}_VISION", base_key, n);
                     let ctx_key = format!("{}_{}_MAX_CONTEXT", base_key, n);
+                    let think_key = format!("{}_{}_THINK", base_key, n);
                     entries.push(TierSlotEntry {
                         tier: tier_label.to_string(),
                         slot: n,
                         model_tag: trimmed.to_string(),
                         vision: vars.get(&vision_key).and_then(|v| parse_bool_env(v)),
                         max_context: vars.get(&ctx_key).and_then(|v| v.trim().parse::<u32>().ok()).filter(|&n| n > 0),
+                        enable_thinking: vars.get(&think_key).and_then(|v| parse_bool_env(v)),
                     });
                 }
             }

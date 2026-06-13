@@ -99,6 +99,8 @@ export interface TierSlotEntry {
   vision?: boolean | null
   /** Max context window in tokens (from `*_MAX_CONTEXT=N` env). */
   maxContext?: number | null
+  /** Per-slot LiteLLM think mode (from `*_THINK=0|1` env). Overrides tier-level CODE_THINK/FAST_THINK. */
+  enableThinking?: boolean | null
 }
 
 export interface LocalLlmSnapshot {

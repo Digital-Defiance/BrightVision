@@ -26,19 +26,19 @@ class VLLMBackendClient(BackendClient):
 
     # -- BackendClient protocol ---------------------------------------------
 
-    def preload_models(self, models: list[str]) -> list[str]:
+    async def preload_models(self, models: list[str]) -> list[str]:
         """vLLM loads models at startup — no-op. Returns empty list."""
         return []
 
-    def get_vram_usage(self) -> int | None:
+    async def get_vram_usage(self) -> int | None:
         """vLLM does not expose a VRAM query endpoint.  Returns ``None``."""
         return None
 
-    def get_context_window(self, model: str) -> int | None:
+    async def get_context_window(self, model: str) -> int | None:
         """Return context window from /v1/models if available, else ``None``."""
         try:
-            with httpx.Client(timeout=10) as client:
-                resp = client.get(f"{self._host}/v1/models")
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{self._host}/v1/models")
                 resp.raise_for_status()
                 data: dict[str, Any] = resp.json()
                 for m in data.get("data", []):
@@ -48,11 +48,11 @@ class VLLMBackendClient(BackendClient):
             logger.error("VLLMBackendClient: get_context_window failed for '%s'", model, exc_info=True)
         return None
 
-    def list_available_models(self) -> list[str]:
+    async def list_available_models(self) -> list[str]:
         """Return model names from ``/v1/models``."""
         try:
-            with httpx.Client(timeout=10) as client:
-                resp = client.get(f"{self._host}/v1/models")
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{self._host}/v1/models")
                 resp.raise_for_status()
                 data: dict[str, Any] = resp.json()
                 return [m.get("id", "") for m in data.get("data", []) if m.get("id")]

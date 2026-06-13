@@ -26,10 +26,21 @@ def register_litellm_extra_params(*, exclude_think: bool = False) -> dict[str, A
 
     When ``exclude_think`` is true (model router enabled), drop ``think`` so hopper/route
     owns per-model thinking — global Settings must not force one value on every model.
+
+    When router is off and ``DATA_THINK=1`` is set, inject ``think: true`` so the
+    non-routed DATA_MODEL also uses thinking mode.
     """
     params = parse_litellm_extra_params_env()
     if exclude_think:
         params = {k: v for k, v in params.items() if k != "think"}
+    else:
+        # Router off — check DATA_THINK for non-routed model think mode
+        if "think" not in params:
+            data_think = os.environ.get("DATA_THINK", "").strip().lower()
+            if data_think in ("1", "true", "yes", "on"):
+                params["think"] = True
+            elif data_think in ("0", "false", "no", "off"):
+                params["think"] = False
     if not params:
         return {}
 

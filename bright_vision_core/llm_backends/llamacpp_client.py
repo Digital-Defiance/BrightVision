@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-import httpx
+from bright_vision_core.llm_backends.base import BackendClient
 
 logger = logging.getLogger(__name__)
 
 LLAMACPP_DEFAULT_HOST = "http://localhost:8080"
 
 
-class LlamaCppBackendClient:
+class LlamaCppBackendClient(BackendClient):
     """Backend client for the llama.cpp HTTP server.
 
     All lifecycle operations are best-effort no-ops because llama.cpp does not

@@ -296,12 +296,20 @@ export function buildHopperFromSnapshot(
             maxContext: (slot.maxContext && slot.maxContext > 0) ? slot.maxContext : undefined,
           }
         : undefined
+    // Per-slot think from env (CODE_MODEL_1_THINK=1 etc.)
+    const enableThinking: boolean | undefined =
+      slot.enableThinking === true
+        ? true
+        : slot.enableThinking === false
+          ? false
+          : undefined
     return {
       id: `${slot.tier}-${slot.slot}-${newHopperEntryId()}`,
       model: liteLlmModel,
       label: slot.modelTag,
       tier: normalizeHopperTier(slot.tier),
       enabled: true,
+      enableThinking,
       priorityRank: priorityIdx >= 0 ? priorityIdx : undefined,
       tierSlot: slot.slot,
       capabilities,

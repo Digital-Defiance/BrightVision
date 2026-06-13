@@ -1,15 +1,18 @@
 import CloseIcon from '@mui/icons-material/Close'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import {
   Alert,
   Box,
   Chip,
+  Collapse,
   Divider,
   IconButton,
   Paper,
   Stack,
   Typography,
 } from '@mui/material'
+import { useState } from 'react'
 import { CollapsibleJsonBlock } from './CollapsibleJsonBlock'
 import type { ToolInvocationGroup } from '../../utils/toolOutputGroups'
 
@@ -19,6 +22,7 @@ interface ToolInvocationCardProps {
 }
 
 export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps) {
+  const [showOutput, setShowOutput] = useState(false)
   const borderColor = group.failed ? 'error.main' : 'divider'
   const headerColor = group.failed ? 'error.main' : 'primary.main'
 
@@ -86,13 +90,58 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
         {group.results.length > 0 && (
           <>
             {(group.args != null || group.ranges.length > 0) && <Divider sx={{ my: 1 }} />}
+            {/* First result line is typically the command/args — always show it */}
             <Typography
               component="pre"
               variant="body2"
-              sx={{ m: 0, whiteSpace: 'pre-wrap', overflowX: 'auto', color: 'text.primary' }}
+              sx={{
+                m: 0,
+                whiteSpace: 'pre-wrap',
+                overflowX: 'auto',
+                color: 'text.primary',
+                fontSize: '0.75rem',
+              }}
             >
-              {group.results.join('\n')}
+              {group.results[0]}
             </Typography>
+            {/* Remaining results are command output — collapsible */}
+            {group.results.length > 1 && (
+              <>
+                <Box
+                  onClick={() => setShowOutput((v) => !v)}
+                  sx={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}
+                >
+                  <ExpandMoreIcon
+                    sx={{
+                      fontSize: 16,
+                      transform: showOutput ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
+                    }}
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {showOutput ? 'Hide output' : 'Show output'} ({group.results.length - 1} line{group.results.length - 1 !== 1 ? 's' : ''})
+                  </Typography>
+                </Box>
+                <Collapse in={showOutput}>
+                  <Typography
+                    component="pre"
+                    variant="body2"
+                    sx={{
+                      m: 0,
+                      mt: 0.5,
+                      whiteSpace: 'pre-wrap',
+                      overflowX: 'auto',
+                      color: 'text.primary',
+                      maxHeight: 300,
+                      overflow: 'auto',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    {group.results.slice(1).join('\n')}
+                  </Typography>
+                </Collapse>
+              </>
+            )}
           </>
         )}
 

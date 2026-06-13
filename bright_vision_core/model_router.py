@@ -495,20 +495,47 @@ def _read_local_llm_env_bool(key: str) -> bool | None:
 
 
 def _apply_env_think_to_pool(pool: list[ModelPoolEntry]) -> None:
-    """Override pool enable_thinking from CODE_THINK / FAST_THINK env vars.
+    """Override pool enable_thinking from per-slot or tier-level env vars.
+
+    Resolution order (highest priority first):
+      1. Per-slot: ``CODE_MODEL_THINK=1`` (slot 0), ``CODE_MODEL_1_THINK=1`` (slot 1)
+      2. Tier-level: ``CODE_THINK=1`` (applies to all slots in tier without per-slot override)
 
     The frontend may send stale localStorage values; the env file is authoritative.
     """
     code_think = _parse_env_bool("CODE_THINK")
     fast_think = _parse_env_bool("FAST_THINK")
-    if code_think is None and fast_think is None:
+
+    # Per-slot overrides: {TIER}_MODEL_THINK (slot 0), {TIER}_MODEL_{N}_THINK (slots 1-9)
+    slot_think: dict[tuple[str, int], bool | None] = {}
+    for tier_prefix in ("FAST", "CODE", "THINK"):
+        # Slot 0: {TIER}_MODEL_THINK
+        val = _parse_env_bool(f"{tier_prefix}_MODEL_THINK")
+        if val is not None:
+            slot_think[(tier_prefix.lower(), 0)] = val
+        # Slots 1-9: {TIER}_MODEL_{N}_THINK
+        for n in range(1, 10):
+            val = _parse_env_bool(f"{tier_prefix}_MODEL_{n}_THINK")
+            if val is not None:
+                slot_think[(tier_prefix.lower(), n)] = val
+
+    if code_think is None and fast_think is None and not slot_think:
         return
+
     for entry in pool:
         if not entry.enabled:
             continue
-        if entry.tier == "code" and code_think is not None:
+        # Determine slot index from priority_rank or default to 0
+        slot_idx = entry.priority_rank if entry.priority_rank is not None else 0
+        tier = entry.tier
+
+        # Per-slot override takes priority
+        per_slot = slot_think.get((tier, slot_idx))
+        if per_slot is not None:
+            entry.enable_thinking = per_slot
+        elif tier == "code" and code_think is not None:
             entry.enable_thinking = code_think
-        elif entry.tier == "fast" and fast_think is not None:
+        elif tier == "fast" and fast_think is not None:
             entry.enable_thinking = fast_think
 
 
