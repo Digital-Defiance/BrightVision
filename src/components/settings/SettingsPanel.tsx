@@ -48,6 +48,7 @@ import { AgentsSection } from './AgentsSection'
 import { AgentGuardSection } from './AgentGuardSection'
 import type { AgentGuardPrefs } from '../../theme/agentGuardPrefs'
 import type { AppVersions } from '../../hooks/useAppVersions'
+import type { GithubReleaseInfo } from '../../utils/appUpdateCheck'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
 import { SpecGenerationSection } from './SpecGenerationSection'
 import type { SpecGenTimeoutPrefs } from '../../theme/specGenTimeoutPrefs'
@@ -91,6 +92,7 @@ interface SettingsPanelProps {
   onSave: () => void
   onReset: () => void
   appVersions: AppVersions
+  updateRelease?: GithubReleaseInfo | null
   subagents: SubAgentInfo[]
   agentModeAvailable: boolean
   sessionActive: boolean
@@ -136,6 +138,7 @@ export function SettingsPanel({
   onSave,
   onReset,
   appVersions,
+  updateRelease = null,
   subagents,
   agentModeAvailable,
   sessionActive,
@@ -540,7 +543,7 @@ export function SettingsPanel({
         onExportSessionDebug={onExportSessionDebug}
       />
 
-      <AppVersionSection versions={appVersions} />
+      <AppVersionSection versions={appVersions} updateRelease={updateRelease} />
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>

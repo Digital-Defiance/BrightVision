@@ -182,6 +182,8 @@ import {
 } from './theme/ntfyAlertsPrefs'
 import { maybeNotifyTurnComplete, maybeNotifySpecJobComplete } from './ipc/ntfyAlerts'
 import { useAppVersions } from './hooks/useAppVersions'
+import { useAppUpdateCheck } from './hooks/useAppUpdateCheck'
+import { UpdateAvailableCard } from './components/UpdateAvailableCard'
 import { StderrBatcher } from './utils/stderrBatch'
 import { useThinkingTiming } from './hooks/useThinkingTiming'
 import { useSessionStallWatch } from './hooks/useSessionStallWatch'
@@ -1691,6 +1693,8 @@ function AppShell({
     },
     refreshDeps: [isRunning, httpClient, activeTab === 'settings', aboutOpen],
   })
+  const appUpdate = useAppUpdateCheck(appVersions.app, { recheck: aboutOpen })
+  const updateRelease = appUpdate.updateAvailable ? appUpdate.release : null
 
   const workspaceTodosApi = useMemo(
     () => ({
@@ -3416,6 +3420,13 @@ function AppShell({
           ) : undefined
         }
       >
+          {appUpdate.updateAvailable && appVersions.app && appUpdate.release ? (
+            <UpdateAvailableCard
+              currentVersion={appVersions.app}
+              release={appUpdate.release}
+              onDismiss={appUpdate.dismiss}
+            />
+          ) : null}
           {activeTab === 'chat' && (
             <>
             {!isRunning && showWelcome && (
@@ -3944,6 +3955,7 @@ function AppShell({
                 onSave={handleSave}
                 onReset={handleReset}
                 appVersions={appVersions}
+                updateRelease={updateRelease}
                 subagents={subagents}
                 agentModeAvailable={agentModeAvailable}
                 sessionActive={isRunning}
@@ -3959,7 +3971,12 @@ function AppShell({
           )}
       </AppChrome>
 
-      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} versions={appVersions} />
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        versions={appVersions}
+        updateRelease={updateRelease}
+      />
 
       <Snackbar
         open={snackbar !== null}

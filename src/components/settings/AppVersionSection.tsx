@@ -10,6 +10,7 @@ import {
   DISPLAY_VISION_API,
 } from '../../brand'
 import type { AppVersions } from '../../hooks/useAppVersions'
+import type { GithubReleaseInfo } from '../../utils/appUpdateCheck'
 
 function VersionRow({ label, value }: { label: string; value: string | null }) {
   return (
@@ -32,9 +33,15 @@ interface AppVersionSectionProps {
   versions: AppVersions
   /** When true, omit outer Paper (e.g. inside About dialog). */
   embedded?: boolean
+  /** Latest GitHub release when an update is available. */
+  updateRelease?: GithubReleaseInfo | null
 }
 
-export function AppVersionSection({ versions, embedded = false }: AppVersionSectionProps) {
+export function AppVersionSection({
+  versions,
+  embedded = false,
+  updateRelease = null,
+}: AppVersionSectionProps) {
   const body = (
     <>
       {!embedded && (
@@ -52,6 +59,14 @@ export function AppVersionSection({ versions, embedded = false }: AppVersionSect
         <VersionRow label={`${DISPLAY_VISION_API} (package)`} value={versions.brightVisionCore} />
         <VersionRow label={DISPLAY_CORE} value={versions.cecli} />
       </Stack>
+      {updateRelease && (
+        <Typography variant="body2" sx={{ mt: 1.5 }} data-testid="settings-update-available">
+          Update available:{' '}
+          <Link href={updateRelease.url} target="_blank" rel="noopener noreferrer">
+            {updateRelease.version} on GitHub
+          </Link>
+        </Typography>
+      )}
       {!versions.loading && !versions.brightVisionCore && !versions.cecli && (
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
           Engine versions load from the running {DISPLAY_VISION_API} or your configured Python engine path.

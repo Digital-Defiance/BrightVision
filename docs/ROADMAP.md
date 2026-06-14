@@ -90,6 +90,7 @@ Log dogfooding bugs as roadmap rows or issues with repro (workspace path, file p
 | 14 | **Done** | No longer pass workspace dir as chat file (`Session.create` empty `fnames`) |
 | 17 | **Done** | Settings: prompt before commit → `auto_commits: false` on session create |
 | **41** | **Done** | **About dialog** — header/rail logo → versions + [Digital Defiance](https://digitaldefiance.org) 501(c)(3) + Cecli credit (`AboutDialog`, `AppVersionSection`, e2e `about-dialog.spec.ts`). |
+| **48** | **Done** | **GitHub release update check** — desktop app polls GitHub releases (24h cache); dismissible update banner + Settings/About link (`appUpdateCheck.ts`, `UpdateAvailableCard`, `useAppUpdateCheck`). |
 | — | **Done** | Terminate `:8741` Vision API on app quit (Tauri) |
 | — | **Done** | **Core API lifecycle** — Start/Stop tied to activity-bar phases (`sessionLifecycle`), cancel in-flight start, `start_core_api` timeout, health fetch timeouts, port cleanup on stop/launch, SSE reader release ([TROUBLESHOOTING.md](./TROUBLESHOOTING.md)) |
 
