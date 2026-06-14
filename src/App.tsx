@@ -149,7 +149,10 @@ const EditorPanel = lazy(() =>
 )
 import { ProcessProvider } from './progress/processStore'
 import { useProcess } from './progress/processStore'
-import { isSessionLifecycleActive } from './utils/sessionLifecycle'
+import {
+  isSessionLifecycleActive,
+  isSessionRestartInFlight,
+} from './utils/sessionLifecycle'
 import {
   applyAppearanceCssVars,
   DEFAULT_APPEARANCE,
@@ -1668,6 +1671,7 @@ function AppShell({
     isRunning,
     isStarting
   )
+  const restartInFlight = isSessionRestartInFlight(process.snapshot, isStarting)
 
   const todoApiClient = useMemo(
     () => createCoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
@@ -2175,6 +2179,7 @@ function AppShell({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
+      process.idle()
       setSnackbar({ message: `Could not start: ${msg}`, severity: 'error' })
       setTerminalLines((prev) => [
         ...prev,
@@ -3435,7 +3440,7 @@ function AppShell({
                       activeModel: sessionInfo.model,
                       settingsModel: savedConfig.model,
                       onRestart: () => void handleRestartSession(),
-                      restarting: lifecycleActive,
+                      restarting: restartInFlight,
                     }
                   : undefined
               }

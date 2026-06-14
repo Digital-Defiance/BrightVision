@@ -23,3 +23,11 @@ export function isSessionLifecycleActive(
     (process.active && isLifecyclePhase(process.phase))
   )
 }
+
+/** Start/stop/restart in flight — excludes a steady running session. */
+export function isSessionRestartInFlight(
+  process: ProcessSnapshot,
+  isStarting: boolean
+): boolean {
+  return isStarting || (process.active && isLifecyclePhase(process.phase))
+}
