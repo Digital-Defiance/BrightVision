@@ -524,9 +524,9 @@ export function ChatPanel({
                       data-testid="chat-tool-warning"
                       onClose={() => onDismissToolEvent(entry.item.id)}
                     >
-                      <Typography variant="body2" component="span">
-                        {entry.item.output}
-                      </Typography>
+                      <Typography variant="body2" component="span" sx={{ '& strong': { fontWeight: 600 } }}
+                        dangerouslySetInnerHTML={{ __html: (entry.item.output ?? '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') }}
+                      />
                     </Alert>
                   )
                 ) : entry.item.name === 'error' ? (

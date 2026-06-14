@@ -23,6 +23,7 @@ interface ToolInvocationCardProps {
 
 export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps) {
   const [showOutput, setShowOutput] = useState(false)
+  const isCommandTool = /^(command|ls)$/i.test(group.toolName)
   const borderColor = group.failed ? 'error.main' : 'divider'
   const headerColor = group.failed ? 'error.main' : 'primary.main'
 
@@ -104,8 +105,8 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
             >
               {group.results[0]}
             </Typography>
-            {/* Remaining results are command output — collapsible */}
-            {group.results.length > 1 && (
+            {/* Remaining results: collapsible for Command, inline for everything else */}
+            {group.results.length > 1 && isCommandTool ? (
               <>
                 <Box
                   onClick={() => setShowOutput((v) => !v)}
@@ -141,7 +142,22 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
                   </Typography>
                 </Collapse>
               </>
-            )}
+            ) : group.results.length > 1 ? (
+              <Typography
+                component="pre"
+                variant="body2"
+                sx={{
+                  m: 0,
+                  mt: 0.5,
+                  whiteSpace: 'pre-wrap',
+                  overflowX: 'auto',
+                  color: 'text.primary',
+                  fontSize: '0.75rem',
+                }}
+              >
+                {group.results.slice(1).join('\n')}
+              </Typography>
+            ) : null}
           </>
         )}
 
