@@ -23,7 +23,7 @@ interface ToolInvocationCardProps {
 
 export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps) {
   const [showOutput, setShowOutput] = useState(false)
-  const isCommandTool = /^(command|ls)$/i.test(group.toolName)
+  const hasExtraOutput = group.results.length > 1
   const borderColor = group.failed ? 'error.main' : 'divider'
   const headerColor = group.failed ? 'error.main' : 'primary.main'
 
@@ -105,8 +105,8 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
             >
               {group.results[0]}
             </Typography>
-            {/* Remaining results: collapsible for Command, inline for everything else */}
-            {group.results.length > 1 && isCommandTool ? (
+            {/* Remaining results: collapsible when there is more than one chunk */}
+            {hasExtraOutput ? (
               <>
                 <Box
                   onClick={() => setShowOutput((v) => !v)}
@@ -120,7 +120,8 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
                     }}
                   />
                   <Typography variant="caption" color="text.secondary">
-                    {showOutput ? 'Hide output' : 'Show output'} ({group.results.length - 1} line{group.results.length - 1 !== 1 ? 's' : ''})
+                    {showOutput ? 'Hide output' : 'Show output'} ({group.results.length - 1} chunk
+                    {group.results.length - 1 !== 1 ? 's' : ''})
                   </Typography>
                 </Box>
                 <Collapse in={showOutput}>
@@ -142,21 +143,6 @@ export function ToolInvocationCard({ group, onDismiss }: ToolInvocationCardProps
                   </Typography>
                 </Collapse>
               </>
-            ) : group.results.length > 1 ? (
-              <Typography
-                component="pre"
-                variant="body2"
-                sx={{
-                  m: 0,
-                  mt: 0.5,
-                  whiteSpace: 'pre-wrap',
-                  overflowX: 'auto',
-                  color: 'text.primary',
-                  fontSize: '0.75rem',
-                }}
-              >
-                {group.results.slice(1).join('\n')}
-              </Typography>
             ) : null}
           </>
         )}
