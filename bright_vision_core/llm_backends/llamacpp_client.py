@@ -22,20 +22,18 @@ class LlamaCppBackendClient(BackendClient):
     def __init__(self, host: str = LLAMACPP_DEFAULT_HOST) -> None:
         self._host = host.rstrip("/")
 
-    # -- BackendClient protocol ---------------------------------------------
-
-    def preload_models(self, models: list[str]) -> list[str]:
+    async def preload_models(self, models: list[str]) -> list[str]:
         """llama.cpp has no preload API — no-op. Returns empty list."""
         return []
 
-    def get_vram_usage(self) -> int | None:
+    async def get_vram_usage(self) -> int | None:
         """llama.cpp does not expose a VRAM query endpoint.  Returns ``None``."""
         return None
 
-    def get_context_window(self, model: str) -> int | None:
+    async def get_context_window(self, model: str) -> int | None:
         """llama.cpp does not expose a context-window endpoint.  Returns ``None``."""
         return None
 
-    def list_available_models(self) -> list[str]:
+    async def list_available_models(self) -> list[str]:
         """llama.cpp has no model-listing endpoint.  Returns empty list."""
         return []

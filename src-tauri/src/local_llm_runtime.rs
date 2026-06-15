@@ -1,5 +1,6 @@
 //! Built-in Local LLM: Ollama up, pull chat model, preload with keep_alive=-1.
 
+use crate::local_llm_config;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -105,6 +106,109 @@ pub struct OllamaModelsSnapshot {
     pub tags_rows: Vec<OllamaModelRow>,
 }
 
+/// Lifecycle operation routed through [`LlmBackendDispatcher`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmOperation {
+    FetchTagsModels,
+    PullModel,
+    PreloadGenerate,
+    TouchKeepAlive,
+    PingGenerate,
+}
+
+/// Structured IPC error for unsupported backend operations (REQ-003.2).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsupportedOperationError {
+    pub code: String,
+    pub message: String,
+}
+
+impl UnsupportedOperationError {
+    pub fn pull_model_not_ollama() -> Self {
+        Self {
+            code: "UNSUPPORTED_OPERATION".into(),
+            message: "Model pulling is only supported for Ollama backends.".into(),
+        }
+    }
+
+    fn into_ipc_string(self) -> String {
+        serde_json::to_string(&self).unwrap_or(self.message)
+    }
+}
+
+/// Routes model lifecycle calls based on the active backend from config.
+pub struct LlmBackendDispatcher {
+    backend: String,
+}
+
+impl LlmBackendDispatcher {
+    pub fn new(backend: &str) -> Self {
+        Self {
+            backend: backend.to_string(),
+        }
+    }
+
+    pub fn from_config() -> Self {
+        Self::new(&local_llm_config::active_backend(None))
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    pub fn supports_operation(&self, op: LlmOperation) -> bool {
+        match op {
+            LlmOperation::FetchTagsModels | LlmOperation::PullModel => self.backend == "ollama",
+            LlmOperation::PreloadGenerate
+            | LlmOperation::TouchKeepAlive
+            | LlmOperation::PingGenerate => self.backend == "ollama",
+        }
+    }
+
+    async fn fetch_tags_models(
+        &self,
+        client: &OllamaClient,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        if !self.supports_operation(LlmOperation::FetchTagsModels) {
+            return Ok(vec![]);
+        }
+        client.fetch_tags_models().await
+    }
+
+    pub async fn pull_model(&self, model: &str, logs: &mut Vec<String>) -> Result<(), String> {
+        if !self.supports_operation(LlmOperation::PullModel) {
+            return Err(UnsupportedOperationError::pull_model_not_ollama().into_ipc_string());
+        }
+        pull_model_ollama(model, logs).await
+    }
+
+    async fn preload_generate(&self, client: &OllamaClient, model: &str) -> Result<(), String> {
+        if !self.supports_operation(LlmOperation::PreloadGenerate) {
+            return Ok(());
+        }
+        client.preload_generate(model).await
+    }
+
+    async fn touch_keep_alive(&self, client: &OllamaClient, model: &str) -> Result<(), String> {
+        if !self.supports_operation(LlmOperation::TouchKeepAlive) {
+            return Ok(());
+        }
+        client.touch_keep_alive(model).await
+    }
+
+    async fn ping_generate(
+        &self,
+        client: &OllamaClient,
+        model: &str,
+    ) -> Result<(u64, String), String> {
+        if !self.supports_operation(LlmOperation::PingGenerate) {
+            return Err("ping generate is only supported for Ollama backends".into());
+        }
+        client.ping_generate(model).await
+    }
+}
+
 fn format_bytes(n: u64) -> String {
     const GB: f64 = 1024.0 * 1024.0 * 1024.0;
     const MB: f64 = 1024.0 * 1024.0;
@@ -200,13 +304,23 @@ impl OllamaClient {
         })
     }
 
-    async fn fetch_tags_and_ps(&self) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), String> {
-        let (tags, ps) = tokio::join!(self.fetch_tags_models(), self.fetch_ps_models());
+    async fn fetch_tags_and_ps(
+        &self,
+        dispatcher: &LlmBackendDispatcher,
+    ) -> Result<(Vec<serde_json::Value>, Vec<serde_json::Value>), String> {
+        let (tags, ps) = tokio::join!(
+            dispatcher.fetch_tags_models(self),
+            self.fetch_ps_models()
+        );
         Ok((tags?, ps?))
     }
 
-    async fn is_pulled(&self, model: &str) -> Result<bool, String> {
-        let models = self.fetch_tags_models().await?;
+    async fn is_pulled(
+        &self,
+        dispatcher: &LlmBackendDispatcher,
+        model: &str,
+    ) -> Result<bool, String> {
+        let models = dispatcher.fetch_tags_models(self).await?;
         Ok(Self::model_in_tags(&models, model))
     }
 
@@ -472,7 +586,7 @@ async fn wait_for_ollama(client: &OllamaClient, max_secs: u64, logs: &mut Vec<St
     ))
 }
 
-async fn pull_model(model: &str, logs: &mut Vec<String>) -> Result<(), String> {
+async fn pull_model_ollama(model: &str, logs: &mut Vec<String>) -> Result<(), String> {
     logs.push(format!("Pulling {model}…"));
     let output = Command::new("ollama")
         .args(["pull", model])
@@ -493,21 +607,34 @@ pub async fn ollama_models_snapshot(
 ) -> Result<OllamaModelsSnapshot, String> {
     let host = normalize_ollama_host(ollama_host);
     let tag = model_tag.trim().to_string();
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
-    let reachable = client.is_running().await;
+    let reachable = if dispatcher.backend() == "ollama" {
+        client.is_running().await
+    } else {
+        false
+    };
     if !reachable {
         return Ok(OllamaModelsSnapshot {
             ollama_host: host,
             reachable: false,
             configured_tag: tag,
             configured_in_ps: false,
-            tags_text: "(Ollama not reachable — check host or run ollama serve)".to_string(),
-            ps_text: "(Ollama not reachable)".to_string(),
+            tags_text: if dispatcher.backend() == "ollama" {
+                "(Ollama not reachable — check host or run ollama serve)".to_string()
+            } else {
+                "(model listing managed externally for this backend)".to_string()
+            },
+            ps_text: if dispatcher.backend() == "ollama" {
+                "(Ollama not reachable)".to_string()
+            } else {
+                "(VRAM / loaded models managed externally)".to_string()
+            },
             ps_rows: vec![],
             tags_rows: vec![],
         });
     }
-    let tags_models = client.fetch_tags_models().await.unwrap_or_default();
+    let tags_models = dispatcher.fetch_tags_models(&client).await.unwrap_or_default();
     let ps_models = client.fetch_ps_models().await.unwrap_or_default();
     let tags_rows = rows_from_models(&tags_models);
     let ps_rows = rows_from_models(&ps_models);
@@ -531,10 +658,15 @@ pub async fn local_llm_status(ollama_host: &str, model_tag: &str) -> Result<Loca
     if model.is_empty() {
         return Err("model tag is empty".into());
     }
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
-    let running = client.is_running().await;
+    let running = if dispatcher.backend() == "ollama" {
+        client.is_running().await
+    } else {
+        false
+    };
     let pulled = if running {
-        client.is_pulled(&model).await.unwrap_or(false)
+        client.is_pulled(&dispatcher, &model).await.unwrap_or(false)
     } else {
         false
     };
@@ -563,7 +695,12 @@ pub async fn local_llm_start_plain(
         return Err("model tag is empty".into());
     }
     let mut logs = vec![format!("Local LLM (plain): {model} @ {host}")];
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
+
+    if dispatcher.backend() != "ollama" {
+        return Err(UnsupportedOperationError::pull_model_not_ollama().into_ipc_string());
+    }
 
     if !client.is_running().await {
         logs.push("Ollama not running — starting…".to_string());
@@ -573,12 +710,12 @@ pub async fn local_llm_start_plain(
         logs.push("Ollama already running".to_string());
     }
 
-    let (tags_models, ps_models) = client.fetch_tags_and_ps().await?;
+    let (tags_models, ps_models) = client.fetch_tags_and_ps(&dispatcher).await?;
     let mut pulled = OllamaClient::model_in_tags(&tags_models, &model);
     let mut loaded = OllamaClient::model_in_ps(&ps_models, &model);
 
     if !pulled {
-        pull_model(&model, &mut logs).await?;
+        dispatcher.pull_model(&model, &mut logs).await?;
         pulled = true;
     } else {
         logs.push(format!("Model {model} already pulled"));
@@ -591,7 +728,7 @@ pub async fn local_llm_start_plain(
         // Avoid queueing another /api/generate behind an in-flight load (session Start looked stuck at 10%).
     } else {
         logs.push(format!("Loading {model} into RAM (keep_alive=-1)…"));
-        client.preload_generate(&model).await?;
+        dispatcher.preload_generate(&client, &model).await?;
         loaded = client.is_loaded(&model).await.unwrap_or(true);
         if loaded {
             logs.push(format!("{model} in /api/ps (persistent load)"));
@@ -651,9 +788,14 @@ pub async fn llm_ping(
         return Err("model tag is empty".into());
     }
     let mut logs = vec![format!("Ping {model} @ {host}")];
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
 
-    let ollama_reachable = client.is_running().await;
+    let ollama_reachable = if dispatcher.backend() == "ollama" {
+        client.is_running().await
+    } else {
+        false
+    };
     logs.push(if ollama_reachable {
         "Ollama API reachable (/api/tags)".to_string()
     } else {
@@ -661,7 +803,7 @@ pub async fn llm_ping(
     });
 
     let model_pulled = if ollama_reachable {
-        client.is_pulled(&model).await.unwrap_or(false)
+        client.is_pulled(&dispatcher, &model).await.unwrap_or(false)
     } else {
         false
     };
@@ -689,7 +831,7 @@ pub async fn llm_ping(
 
     if ollama_reachable && model_pulled {
         logs.push("Running 1-token generate probe…".to_string());
-        match client.ping_generate(&model).await {
+        match dispatcher.ping_generate(&client, &model).await {
             Ok((ms, preview)) => {
                 generate_ok = true;
                 latency_ms = Some(ms);
@@ -764,16 +906,20 @@ pub async fn local_llm_refresh_keep_alive(
     if model.is_empty() {
         return Err("model tag is empty".into());
     }
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
+    if dispatcher.backend() != "ollama" {
+        return Err("keep_alive refresh is only supported for Ollama backends".into());
+    }
     if !client.is_running().await {
         return Err("Ollama is not running".into());
     }
     let loaded = client.is_loaded(&model).await.unwrap_or(false);
     if loaded {
-        client.touch_keep_alive(&model).await?;
+        dispatcher.touch_keep_alive(&client, &model).await?;
         Ok(vec![format!("{model}: keep_alive=-1 refreshed (already in /api/ps)")])
     } else {
-        client.preload_generate(&model).await?;
+        dispatcher.preload_generate(&client, &model).await?;
         Ok(vec![format!("{model}: loaded with keep_alive=-1")])
     }
 }
@@ -844,12 +990,21 @@ pub async fn local_llm_prepare_hopper(
     let mut sorted_entries = entries;
     sorted_entries.sort_by_key(|e| e.priority_rank.unwrap_or(u32::MAX));
 
+    let dispatcher = LlmBackendDispatcher::from_config();
+    if dispatcher.backend() != "ollama" {
+        logs.push(format!(
+            "Skipping hopper pull/preload — backend is {}",
+            dispatcher.backend()
+        ));
+        return Ok(logs);
+    }
+
     let client = OllamaClient::new(&host)?;
     if !client.is_running().await {
         spawn_ollama_serve(&mut logs).await?;
         wait_for_ollama(&client, 30, &mut logs).await?;
     }
-    let (tags_models, ps_models) = client.fetch_tags_and_ps().await?;
+    let (tags_models, ps_models) = client.fetch_tags_and_ps(&dispatcher).await?;
     let mut preloaded: Option<String> = None;
     for entry in &sorted_entries {
         let tag = entry.model_tag.trim();
@@ -857,7 +1012,7 @@ pub async fn local_llm_prepare_hopper(
             continue;
         }
         if !OllamaClient::model_in_tags(&tags_models, tag) {
-            pull_model(tag, &mut logs).await?;
+            dispatcher.pull_model(tag, &mut logs).await?;
         } else {
             logs.push(format!("{tag} already pulled"));
         }
@@ -903,13 +1058,17 @@ pub async fn ollama_ensure_model_loaded(
         return Err("model tag is empty".into());
     }
     let mut logs = vec![format!("Ensuring Ollama model {model}…")];
+    let dispatcher = LlmBackendDispatcher::from_config();
     let client = OllamaClient::new(&host)?;
+    if dispatcher.backend() != "ollama" {
+        return Err(UnsupportedOperationError::pull_model_not_ollama().into_ipc_string());
+    }
     if !client.is_running().await {
         return Err("Ollama is not running".into());
     }
-    let (tags, ps) = client.fetch_tags_and_ps().await?;
+    let (tags, ps) = client.fetch_tags_and_ps(&dispatcher).await?;
     if !OllamaClient::model_in_tags(&tags, &model) {
-        pull_model(&model, &mut logs).await?;
+        dispatcher.pull_model(&model, &mut logs).await?;
     }
     let already = OllamaClient::model_in_ps(&ps, &model);
     let mut swapped = false;
@@ -938,4 +1097,56 @@ pub async fn ollama_ensure_model_loaded(
         load_ms,
         swapped,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatcher_ollama_supports_lifecycle_ops() {
+        let d = LlmBackendDispatcher::new("ollama");
+        assert!(d.supports_operation(LlmOperation::FetchTagsModels));
+        assert!(d.supports_operation(LlmOperation::PullModel));
+        assert!(d.supports_operation(LlmOperation::PreloadGenerate));
+        assert!(d.supports_operation(LlmOperation::TouchKeepAlive));
+        assert!(d.supports_operation(LlmOperation::PingGenerate));
+    }
+
+    #[test]
+    fn dispatcher_vllm_disables_ollama_only_ops() {
+        let d = LlmBackendDispatcher::new("vllm");
+        assert!(!d.supports_operation(LlmOperation::FetchTagsModels));
+        assert!(!d.supports_operation(LlmOperation::PullModel));
+        assert!(!d.supports_operation(LlmOperation::PreloadGenerate));
+    }
+
+    #[test]
+    fn unsupported_pull_error_serializes_structured_json() {
+        let err = UnsupportedOperationError::pull_model_not_ollama();
+        let json = serde_json::to_string(&err).expect("serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed["code"], "UNSUPPORTED_OPERATION");
+        assert!(parsed["message"]
+            .as_str()
+            .unwrap()
+            .contains("Ollama"));
+    }
+
+    #[tokio::test]
+    async fn dispatcher_fetch_tags_returns_empty_for_vllm() {
+        let d = LlmBackendDispatcher::new("vllm");
+        let client = OllamaClient::new("http://127.0.0.1:11434").expect("client");
+        let tags = d.fetch_tags_models(&client).await.expect("fetch");
+        assert!(tags.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dispatcher_pull_model_returns_structured_error_for_vllm() {
+        let d = LlmBackendDispatcher::new("vllm");
+        let mut logs = Vec::new();
+        let err = d.pull_model("qwen2.5:7b", &mut logs).await.unwrap_err();
+        let parsed: serde_json::Value = serde_json::from_str(&err).expect("structured err");
+        assert_eq!(parsed["code"], "UNSUPPORTED_OPERATION");
+    }
 }

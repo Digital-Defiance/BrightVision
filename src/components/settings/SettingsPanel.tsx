@@ -298,7 +298,11 @@ export function SettingsPanel({
                 <strong>Terminal → Local LLM</strong>.
               </Typography>
               {isOllamaVisionModel(config.model) ? (
-                <LocalLlmActionButtons controls={localLlmControls} showSecondary={false} />
+                <LocalLlmActionButtons
+                  controls={localLlmControls}
+                  showSecondary={false}
+                  showPull={localLlmControls.capabilities.supportsModelPull}
+                />
               ) : (
                 <Typography variant="caption" color="warning.main" display="block">
                   Set <strong>LLM model</strong> to <code>ollama_chat/&lt;tag&gt;</code> or click{' '}

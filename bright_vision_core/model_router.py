@@ -230,15 +230,17 @@ def pick_tier_model(
 async def preload_priority_list(
     priority_list: list[str],
     *,
-    ollama_client: Any,
+    ollama_client: Any | None = None,
     vram_budget_bytes: int | None = None,
+    backend_client: Any | None = None,
 ) -> list[str]:
     """Preload models in priority order, respecting VRAM budget.
 
     Iterates ``priority_list`` from index 0 (highest priority) onward. For each model:
     - If ``vram_budget_bytes`` is set, fetches model size info and checks cumulative VRAM.
       When the budget would be exceeded, logs deferred models and stops.
-    - Attempts to preload via the Ollama client.
+    - Attempts to preload via the active :class:`~bright_vision_core.llm_backends.base.BackendClient`
+      (or legacy ``ollama_client`` when provided for tests).
     - On success, appends to the returned list.
     - On failure, logs the error, skips the model, and continues with the next.
 
@@ -252,13 +254,13 @@ async def preload_priority_list(
         if not tag:
             continue
 
-        # Strip ollama_chat/ or ollama/ prefix for raw Ollama API calls.
         raw_tag = _strip_ollama_prefix(tag)
 
-        # --- VRAM budget check ---
         model_size: int | None = None
         if vram_budget_bytes is not None:
-            model_size = await _get_model_size(ollama_client, raw_tag)
+            model_size = await _get_model_size_for_budget(
+                raw_tag, ollama_client=ollama_client
+            )
             if model_size is not None:
                 if cumulative_vram + model_size > vram_budget_bytes:
                     deferred = [t.strip() for t in priority_list[idx:] if t.strip()]
@@ -270,21 +272,15 @@ async def preload_priority_list(
                         deferred,
                     )
                     break
-            # If model_size is None (info unavailable), skip budget check for this model
-            # and attempt preload anyway.
 
-        # --- Preload attempt ---
-        try:
-            await ollama_client.post_generate(raw_tag, keep_alive=-1)
+        if await _preload_single_model(
+            raw_tag,
+            ollama_client=ollama_client,
+            backend_client=backend_client,
+        ):
             preloaded.append(tag)
-            # Track VRAM only when size is known
             if model_size is not None:
                 cumulative_vram += model_size
-        except Exception as exc:
-            logger.error(
-                "Preload failed for model '%s': %s", tag, exc
-            )
-            continue
 
     return preloaded
 
@@ -292,17 +288,16 @@ async def preload_priority_list(
 async def warmup_keep_alive(
     priority_list: list[str],
     *,
-    ollama_client: Any,
+    ollama_client: Any | None = None,
+    backend_client: Any | None = None,
 ) -> list[str]:
     """Send keep-alive requests in priority order to refresh model TTLs.
 
     Iterates ``priority_list`` from index 0 (highest priority) onward. For each model:
-    - Strips the ``ollama_chat/`` or ``ollama/`` prefix for raw Ollama API calls.
-    - Sends a keep-alive request via ``post_generate`` with ``keep_alive=-1``.
+    - Strips the ``ollama_chat/`` or ``ollama/`` prefix for backend API calls.
+    - Sends a keep-alive/preload request via the active backend (or legacy client).
     - On success, appends to the returned list.
     - On failure, logs the error, skips the model, and continues with the next.
-
-    Higher-priority models (lower index) refresh their TTL before lower-priority ones.
 
     Returns the list of model tags that were successfully kept alive.
     """
@@ -313,17 +308,16 @@ async def warmup_keep_alive(
         if not tag:
             continue
 
-        # Strip ollama_chat/ or ollama/ prefix for raw Ollama API calls.
         raw_tag = _strip_ollama_prefix(tag)
 
-        try:
-            await ollama_client.post_generate(raw_tag, keep_alive=-1)
+        if await _preload_single_model(
+            raw_tag,
+            ollama_client=ollama_client,
+            backend_client=backend_client,
+        ):
             kept_alive.append(tag)
-        except Exception as exc:
-            logger.error(
-                "Keep-alive warmup failed for model '%s': %s", tag, exc
-            )
-            continue
+        else:
+            logger.error("Keep-alive warmup failed for model '%s'", tag)
 
     return kept_alive
 
@@ -347,6 +341,54 @@ async def _get_model_size(ollama_client: Any, raw_tag: str) -> int | None:
         return None
     except Exception:
         return None
+
+
+def _estimate_model_size_bytes(raw_tag: str) -> int | None:
+    """Static VRAM estimate from bundled metadata registry (bytes)."""
+    from bright_vision_core.llm_backends.metadata_resolver import resolve_static_metadata
+
+    meta = resolve_static_metadata(raw_tag)
+    mb = meta.get("estimated_vram_mb")
+    if isinstance(mb, (int, float)) and mb > 0:
+        return int(mb) * 1024 * 1024
+    return None
+
+
+async def _get_model_size_for_budget(
+    raw_tag: str,
+    *,
+    ollama_client: Any | None,
+) -> int | None:
+    """Resolve model size for VRAM budgeting (Ollama show or static metadata)."""
+    if ollama_client is not None:
+        return await _get_model_size(ollama_client, raw_tag)
+    return _estimate_model_size_bytes(raw_tag)
+
+
+async def _preload_single_model(
+    raw_tag: str,
+    *,
+    ollama_client: Any | None = None,
+    backend_client: Any | None = None,
+) -> bool:
+    """Preload one model via legacy Ollama client or active backend registry."""
+    if ollama_client is not None:
+        try:
+            await ollama_client.post_generate(raw_tag, keep_alive=-1)
+            return True
+        except Exception as exc:
+            logger.error("Preload failed for model '%s': %s", raw_tag, exc)
+            return False
+
+    from bright_vision_core.llm_backends.registry import BackendRegistry
+
+    client = backend_client or BackendRegistry.get_active()
+    try:
+        loaded = await client.preload_models([raw_tag])
+        return raw_tag in loaded
+    except Exception as exc:
+        logger.error("Preload failed for model '%s': %s", raw_tag, exc)
+        return False
 
 
 def find_pool_entry(
@@ -563,6 +605,29 @@ def resolve_provider_prefix(backend: str) -> str:
     Defaults to ``ollama_chat/`` for unknown backends.
     """
     return _BACKEND_PROVIDER_PREFIXES.get((backend or "").strip().lower(), "ollama_chat/")
+
+
+def inject_backend_extra_params(backend: str, extra_params: dict[str, object] | None) -> dict[str, object]:
+    """Merge ``LITELLM_EXTRA_PARAMS`` for non-Ollama backends (REQ-006.4).
+
+    Ollama uses its own env wiring; other backends may need auth headers or base URLs
+    via JSON in ``LITELLM_EXTRA_PARAMS``. Existing *extra_params* keys are preserved.
+    """
+    merged: dict[str, object] = dict(extra_params or {})
+    name = (backend or "").strip().lower()
+    if name in ("", "ollama"):
+        return merged
+    raw = os.environ.get("LITELLM_EXTRA_PARAMS", "").strip()
+    if not raw:
+        return merged
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning("LITELLM_EXTRA_PARAMS is not valid JSON — ignoring for backend %s", name)
+        return merged
+    if isinstance(parsed, dict):
+        merged.update(parsed)
+    return merged
 
 
 @dataclass

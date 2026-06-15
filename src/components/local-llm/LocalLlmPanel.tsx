@@ -38,7 +38,17 @@ function LocalLlmPanelView({
   controls,
   hideActions = false,
 }: LocalLlmPanelViewProps) {
-  const { ollamaHost, modelTag, status, modelsSnapshot, canRun } = controls
+  const {
+    ollamaHost,
+    modelTag,
+    status,
+    modelsSnapshot,
+    canRun,
+    capabilities,
+    backend,
+    backendUnavailable,
+    busy,
+  } = controls
 
   if (!isTauriRuntime()) {
     return (
@@ -65,17 +75,44 @@ function LocalLlmPanelView({
   return (
     <Paper variant="outlined" sx={{ p: compact ? 1.5 : 2, mb: compact ? 0 : 2 }}>
       <Stack spacing={1.5}>
-        <Stack direction="row" alignItems="center" spacing={1}>
+        {backendUnavailable && (
+          <Alert severity="error" data-testid="local-llm-backend-unavailable">
+            Backend unavailable
+          </Alert>
+        )}
+        <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
           <MemoryIcon fontSize="small" color="primary" />
           <Typography variant="subtitle2" fontWeight={700}>
             Local LLM
           </Typography>
           <Chip size="small" label="built-in" variant="outlined" color="primary" />
+          {backend !== 'ollama' && (
+            <Chip size="small" label={backend} variant="outlined" color="info" />
+          )}
+          {!capabilities.supportsVramQuery && (
+            <Chip
+              size="small"
+              label="Managed externally"
+              variant="outlined"
+              color="warning"
+              data-testid="local-llm-managed-externally"
+            />
+          )}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          Starts Ollama if needed, pulls your tag, and preloads with{' '}
-          <code>keep_alive: -1</code> only when the model is not already in{' '}
-          <code>/api/ps</code>. Host and model tag come from env files and Settings above.
+          {capabilities.supportsModelPull
+            ? 'Starts Ollama if needed, pulls your tag, and preloads with '
+            : 'Model lifecycle is managed by your external runtime ('}
+          {capabilities.supportsModelPull ? (
+            <>
+              <code>keep_alive: -1</code> only when the model is not already in{' '}
+              <code>/api/ps</code>. Host and model tag come from env files and Settings above.
+            </>
+          ) : (
+            <>
+              <code>{backend}</code>). VRAM and model lists are not queried from BrightVision.
+            </>
+          )}
         </Typography>
         <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
           {statusChip(status?.ollamaRunning ?? false, 'Ollama up', 'Ollama down')}
@@ -89,7 +126,7 @@ function LocalLlmPanelView({
             {modelTag} @ {ollamaHost}
           </Typography>
         </Stack>
-        {modelsSnapshot && (
+        {modelsSnapshot && capabilities.supportsVramQuery && (
           <Paper
             variant="outlined"
             data-testid="ollama-models-snapshot"
@@ -114,14 +151,17 @@ function LocalLlmPanelView({
             </Typography>
           </Paper>
         )}
-        {!hideActions && canRun && <LocalLlmActionButtons controls={controls} />}
+        {!hideActions && canRun && (
+          <LocalLlmActionButtons controls={controls} showPull={capabilities.supportsModelPull} />
+        )}
         <Stack direction="row" justifyContent="flex-end">
           <Chip
             size="small"
             label={config.manageLocalLlm ? 'Auto before session' : 'Manual only'}
             color={config.manageLocalLlm ? 'primary' : 'default'}
-            onClick={() => onManageChange(!config.manageLocalLlm)}
-            sx={{ cursor: 'pointer' }}
+            onClick={() => !backendUnavailable && !busy && onManageChange(!config.manageLocalLlm)}
+            sx={{ cursor: backendUnavailable || busy ? 'default' : 'pointer' }}
+            disabled={backendUnavailable || busy}
           />
         </Stack>
       </Stack>

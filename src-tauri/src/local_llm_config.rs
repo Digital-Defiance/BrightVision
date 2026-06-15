@@ -12,6 +12,7 @@ const KEYS: &[&str] = &[
     "EMBEDDING_MODEL",
     "INDEX_MODEL",
     "OLLAMA_HOST",
+    "BRIGHTVISION_LLM_BACKEND",
     "FAST_MODEL",
     "HEAVY_MODEL",
     "CODE_MODEL",
@@ -23,6 +24,9 @@ const KEYS: &[&str] = &[
     "MODEL_PRIORITY",
     "PREFER_WARM",
 ];
+
+/// Allowed local LLM backends (mirrors ``bright_vision_core.llm_backends.config``).
+pub const ALLOWED_BACKENDS: &[&str] = &["ollama", "llamacpp", "vllm", "tgi", "mlx-lm"];
 
 /// A numbered tier slot binding a model to a tier position.
 /// Slot 0 = the base key (e.g. `THINK_MODEL`); slots 1–9 = numbered keys.
@@ -79,6 +83,8 @@ pub struct LocalLlmSnapshot {
     pub warnings: Vec<String>,
     /// When true, prefer already-loaded models over cold-starting the highest-priority one.
     pub prefer_warm: Option<bool>,
+    /// Active local LLM backend (`BRIGHTVISION_LLM_BACKEND` → config.json → `ollama`).
+    pub backend: String,
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -321,6 +327,117 @@ fn config_file_paths(hint_root: Option<&str>) -> Vec<PathBuf> {
     paths
 }
 
+fn brightvision_config_path() -> PathBuf {
+    home_dir()
+        .map(|h| h.join(".config").join("brightvision").join("config.json"))
+        .unwrap_or_else(|| PathBuf::from(".config/brightvision/config.json"))
+}
+
+/// Backends unsupported on the current OS (mirrors Python ``UNSUPPORTED_PLATFORMS``).
+fn unsupported_backends_on_platform() -> &'static [&'static str] {
+    if cfg!(target_os = "macos") {
+        &[]
+    } else if cfg!(target_os = "linux") {
+        &["mlx-lm"]
+    } else if cfg!(target_os = "windows") {
+        &["llamacpp", "vllm", "tgi", "mlx-lm"]
+    } else {
+        &[]
+    }
+}
+
+/// Validate backend name and OS compatibility. Invalid names or unsupported platforms return ``Err``.
+pub fn validate_backend(backend: &str) -> Result<String, String> {
+    let name = backend.trim();
+    if name.is_empty() {
+        return Err("backend name is empty".into());
+    }
+    if !ALLOWED_BACKENDS.contains(&name) {
+        return Err(format!(
+            "invalid backend '{name}'; allowed: {}",
+            ALLOWED_BACKENDS.join(", ")
+        ));
+    }
+    if unsupported_backends_on_platform().contains(&name) {
+        return Err(format!("backend '{name}' is not supported on this platform"));
+    }
+    Ok(name.to_string())
+}
+
+/// Read ``active_backend`` from persisted config. Panics when the file exists but is malformed.
+fn read_persisted_active_backend_at(path: &Path) -> Option<String> {
+    if !path.is_file() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!(
+            "malformed backend config at {}: read failed: {e}",
+            path.display()
+        );
+    });
+    let value: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|e| {
+        panic!(
+            "malformed backend config at {}: invalid JSON: {e}",
+            path.display()
+        );
+    });
+    let Some(obj) = value.as_object() else {
+        panic!(
+            "malformed backend config at {}: root must be a JSON object",
+            path.display()
+        );
+    };
+    match obj.get("active_backend") {
+        None => None,
+        Some(serde_json::Value::String(s)) if s.trim().is_empty() => None,
+        Some(serde_json::Value::String(s)) => Some(s.trim().to_string()),
+        Some(other) => panic!(
+            "malformed backend config at {}: active_backend must be a string, got {other}",
+            path.display()
+        ),
+    }
+}
+
+fn load_persisted_active_backend() -> Option<String> {
+    read_persisted_active_backend_at(&brightvision_config_path())
+}
+
+/// Resolve active backend: env → ``~/.config/brightvision/config.json`` → env files → ``ollama``.
+fn resolve_backend(vars: &HashMap<String, String>) -> String {
+    if let Ok(raw) = std::env::var("BRIGHTVISION_LLM_BACKEND") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return normalize_backend(trimmed);
+        }
+    }
+    if let Some(raw) = load_persisted_active_backend() {
+        return normalize_backend(&raw);
+    }
+    if let Some(raw) = vars.get("BRIGHTVISION_LLM_BACKEND") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return normalize_backend(trimmed);
+        }
+    }
+    "ollama".to_string()
+}
+
+fn normalize_backend(raw: &str) -> String {
+    match validate_backend(raw) {
+        Ok(name) => name,
+        Err(_) => "ollama".to_string(),
+    }
+}
+
+/// Active backend for IPC dispatch (same resolution as [`read_local_llm_config`]).
+pub fn active_backend(hint_root: Option<String>) -> String {
+    let mut vars: HashMap<String, String> = HashMap::new();
+    for path in config_file_paths(hint_root.as_deref()) {
+        parse_env_file(&path, &mut vars);
+    }
+    resolve_backend(&vars)
+}
+
 fn repo_local_llm_root() -> Option<String> {
     let root = app_root();
     if root.join("local-llm.env").is_file() {
@@ -357,6 +474,7 @@ pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {
     let mut warnings: Vec<String> = Vec::new();
     let priority_list = resolve_priority_list(model_priority_raw.as_deref(), &tier_slots, &mut warnings);
     let prefer_warm = vars.get("PREFER_WARM").and_then(|v| parse_bool_env(v));
+    let backend = resolve_backend(&vars);
 
     LocalLlmSnapshot {
         ollama_host: vars.get("OLLAMA_HOST").cloned(),
@@ -376,6 +494,7 @@ pub fn read_local_llm_config(hint_root: Option<String>) -> LocalLlmSnapshot {
         model_priority_raw,
         warnings,
         prefer_warm,
+        backend,
     }
 }
 
@@ -855,6 +974,7 @@ MODEL_PRIORITY=THINK,CODE,FAST,FAST_1,THINK_1,THINK_2
             model_priority_raw,
             warnings,
             prefer_warm: None,
+            backend: "ollama".to_string(),
         };
 
         // Serialize to JSON (this is what gets sent over IPC to TypeScript)
@@ -862,6 +982,8 @@ MODEL_PRIORITY=THINK,CODE,FAST,FAST_1,THINK_1,THINK_2
             .expect("snapshot should serialize to JSON");
         let json: serde_json::Value = serde_json::from_str(&json_str)
             .expect("JSON should re-parse");
+
+        assert_eq!(json["backend"].as_str().unwrap(), "ollama");
 
         // Verify tierSlots structure
         let tier_slots_json = json["tierSlots"].as_array()
@@ -981,12 +1103,15 @@ MODEL_ROUTER=1
             model_priority_raw,
             warnings,
             prefer_warm: None,
+            backend: "ollama".to_string(),
         };
 
         let json_str = serde_json::to_string_pretty(&snapshot)
             .expect("snapshot should serialize to JSON");
         let json: serde_json::Value = serde_json::from_str(&json_str)
             .expect("JSON should re-parse");
+
+        assert_eq!(json["backend"].as_str().unwrap(), "ollama");
 
         // tierSlots should have exactly 3 entries (one per tier, all slot 0)
         let tier_slots_json = json["tierSlots"].as_array()
@@ -1019,6 +1144,84 @@ MODEL_ROUTER=1
 
         // Cleanup
         let _ = std::fs::remove_file(&env_path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn validate_backend_accepts_allowed_names() {
+        for name in ALLOWED_BACKENDS {
+            if unsupported_backends_on_platform().contains(name) {
+                assert!(
+                    validate_backend(name).is_err(),
+                    "{name} should be unsupported on this platform"
+                );
+            } else {
+                assert_eq!(validate_backend(name).unwrap(), *name);
+            }
+        }
+    }
+
+    #[test]
+    fn validate_backend_rejects_unknown_name() {
+        assert!(validate_backend("not-a-backend").is_err());
+        assert!(validate_backend("").is_err());
+    }
+
+    #[test]
+    fn normalize_backend_falls_back_to_ollama() {
+        assert_eq!(normalize_backend("bad-backend"), "ollama");
+        if cfg!(target_os = "linux") {
+            assert_eq!(normalize_backend("mlx-lm"), "ollama");
+        }
+    }
+
+    #[test]
+    fn read_persisted_active_backend_panics_on_invalid_json() {
+        use std::panic;
+
+        let dir = std::env::temp_dir().join("bv_test_backend_config_panic");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("config.json");
+        std::fs::write(&path, "{not json").expect("write bad json");
+
+        let result = panic::catch_unwind(|| {
+            let _ = read_persisted_active_backend_at(&path);
+        });
+        assert!(result.is_err(), "malformed JSON should panic");
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn read_persisted_active_backend_panics_on_wrong_type() {
+        use std::panic;
+
+        let dir = std::env::temp_dir().join("bv_test_backend_config_type");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"active_backend": 42}"#).expect("write config");
+
+        let result = panic::catch_unwind(|| {
+            let _ = read_persisted_active_backend_at(&path);
+        });
+        assert!(result.is_err(), "non-string active_backend should panic");
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn read_persisted_active_backend_reads_string() {
+        let dir = std::env::temp_dir().join("bv_test_backend_config_ok");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("config.json");
+        std::fs::write(&path, r#"{"active_backend": "vllm"}"#).expect("write config");
+
+        let got = read_persisted_active_backend_at(&path);
+        assert_eq!(got.as_deref(), Some("vllm"));
+
+        let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
     }
 }

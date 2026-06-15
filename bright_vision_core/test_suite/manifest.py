@@ -39,6 +39,11 @@ _BASE_STEPS: tuple[SuiteStep, ...] = (
         ("yarn", "verify:cecli-spec"),
     ),
     SuiteStep(
+        "llm:backends",
+        "yarn test:llm-backends (config/registry/clients/router — mocked, no vLLM)",
+        ("yarn", "test:llm-backends"),
+    ),
+    SuiteStep(
         "test-local:release",
         "sh scripts/test-local.sh release",
         ("sh", "scripts/test-local.sh", "release"),

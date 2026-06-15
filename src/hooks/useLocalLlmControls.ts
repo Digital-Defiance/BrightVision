@@ -1,18 +1,21 @@
-import { invoke } from '@tauri-apps/api/core'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisionConfig } from '../ipc/config'
 import {
+  capabilitiesForBackend,
   formatLlmPingHint,
   formatLlmPingSummary,
   llmPingAlertSeverity,
   llmPingNeedsSessionStart,
   isOllamaVisionModel,
   resolveLocalLlmForConfig,
+  type BackendCapabilities,
   type LlmPingResult,
   type LocalLlmRuntimeStatus,
+  type LocalLlmSnapshot,
   type OllamaModelsSnapshot,
 } from '../ipc/localLlm'
 import { isTauriRuntime } from '../ipc/isTauri'
+import { invokeWithTimeout } from './invokeWithTimeout'
 
 export function useLocalLlmControls(
   config: VisionConfig,
@@ -21,51 +24,122 @@ export function useLocalLlmControls(
   const [status, setStatus] = useState<LocalLlmRuntimeStatus | null>(null)
   const [modelsSnapshot, setModelsSnapshot] = useState<OllamaModelsSnapshot | null>(null)
   const [pingResult, setPingResult] = useState<LlmPingResult | null>(null)
+  const [backendSnapshot, setBackendSnapshot] = useState<LocalLlmSnapshot | null>(null)
+  const [backendUnavailable, setBackendUnavailable] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const prevBackendRef = useRef<string | undefined>(undefined)
 
   const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config)
   const ollamaModel = isOllamaVisionModel(config.model)
-  const canRun = isTauriRuntime() && Boolean(modelTag) && ollamaModel
+  const backend = backendSnapshot?.backend ?? 'ollama'
+  const capabilities: BackendCapabilities = capabilitiesForBackend(backend)
+  const canRun =
+    isTauriRuntime() &&
+    Boolean(modelTag) &&
+    ollamaModel &&
+    !backendUnavailable
+
+  const resetRuntimeState = useCallback(() => {
+    setStatus(null)
+    setModelsSnapshot(null)
+    setPingResult(null)
+    setError(null)
+  }, [])
+
+  const loadBackendConfig = useCallback(async () => {
+    if (!isTauriRuntime()) {
+      setBackendSnapshot(null)
+      setBackendUnavailable(false)
+      return
+    }
+    try {
+      const snap = await invokeWithTimeout<LocalLlmSnapshot>('read_local_llm_config', {
+        localLlmRoot: config.localLlmRoot.trim() || null,
+      })
+      setBackendSnapshot(snap)
+      setBackendUnavailable(false)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('IPC timeout')) {
+        setBackendUnavailable(true)
+        setBackendSnapshot(null)
+      }
+    }
+  }, [config.localLlmRoot])
+
+  useEffect(() => {
+    void loadBackendConfig()
+  }, [loadBackendConfig])
+
+  useEffect(() => {
+    const nextBackend = backendSnapshot?.backend ?? 'ollama'
+    if (
+      prevBackendRef.current !== undefined &&
+      prevBackendRef.current !== nextBackend
+    ) {
+      resetRuntimeState()
+    }
+    prevBackendRef.current = nextBackend
+  }, [backendSnapshot?.backend, resetRuntimeState])
 
   const refresh = useCallback(async () => {
-    if (!isTauriRuntime() || !modelTag) {
-      setStatus(null)
-      setModelsSnapshot(null)
+    if (!isTauriRuntime() || !modelTag || backendUnavailable) {
+      if (!backendUnavailable) {
+        resetRuntimeState()
+      }
       return
     }
     setError(null)
     try {
-      try {
-        const keepLogs = await invoke<string[]>('local_llm_refresh_keep_alive', {
-          ollamaHost,
-          modelTag,
-        })
-        onLogLines?.(keepLogs.map((l) => `[local-llm] ${l}`))
-      } catch {
-        // Ollama may be stopped; status fetch below still runs.
+      if (capabilities.supportsModelPull) {
+        try {
+          const keepLogs = await invokeWithTimeout<string[]>('local_llm_refresh_keep_alive', {
+            ollamaHost,
+            modelTag,
+          })
+          onLogLines?.(keepLogs.map((l) => `[local-llm] ${l}`))
+        } catch {
+          // Ollama may be stopped; status fetch below still runs.
+        }
       }
       const [s, models] = await Promise.all([
-        invoke<LocalLlmRuntimeStatus>('local_llm_status', { ollamaHost, modelTag }),
-        invoke<OllamaModelsSnapshot>('ollama_models_snapshot', { ollamaHost, modelTag }),
+        invokeWithTimeout<LocalLlmRuntimeStatus>('local_llm_status', { ollamaHost, modelTag }),
+        invokeWithTimeout<OllamaModelsSnapshot>('ollama_models_snapshot', {
+          ollamaHost,
+          modelTag,
+        }),
       ])
       setStatus(s)
       setModelsSnapshot(models)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.includes('IPC timeout')) {
+        setBackendUnavailable(true)
+        resetRuntimeState()
+      } else {
+        setError(msg)
+      }
     }
-  }, [ollamaHost, modelTag, onLogLines])
+  }, [
+    backendUnavailable,
+    capabilities.supportsModelPull,
+    modelTag,
+    ollamaHost,
+    onLogLines,
+    resetRuntimeState,
+  ])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
   const runStart = async () => {
-    if (!modelTag) return
+    if (!modelTag || !capabilities.supportsModelPull) return
     setBusy(true)
     setError(null)
     try {
-      const s = await invoke<LocalLlmRuntimeStatus>('local_llm_start_plain', {
+      const s = await invokeWithTimeout<LocalLlmRuntimeStatus>('local_llm_start_plain', {
         ollamaHost,
         modelTag,
       })
@@ -86,7 +160,7 @@ export function useLocalLlmControls(
     setError(null)
     setPingResult(null)
     try {
-      const r = await invoke<LlmPingResult>('llm_ping', {
+      const r = await invokeWithTimeout<LlmPingResult>('llm_ping', {
         ollamaHost,
         modelTag,
         coreApiUrl: config.coreApiUrl?.trim() || null,
@@ -112,7 +186,7 @@ export function useLocalLlmControls(
     setBusy(true)
     setError(null)
     try {
-      const logs = await invoke<string[]>('local_llm_stop_plain', {
+      const logs = await invokeWithTimeout<string[]>('local_llm_stop_plain', {
         ollamaHost,
         modelTag,
         keepOllama,
@@ -134,6 +208,10 @@ export function useLocalLlmControls(
     ollamaHost,
     modelTag,
     ollamaModel,
+    backend,
+    backendSnapshot,
+    capabilities,
+    backendUnavailable,
     canRun,
     status,
     modelsSnapshot,

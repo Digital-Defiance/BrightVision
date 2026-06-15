@@ -81,9 +81,9 @@ python -m pytest \
   tests/core/test_http_session_persistence.py -q
 ```
 
-Or `yarn test:bright-core` (BrightVision `tests/core/*` modules, including `test_spec_progress.py`, `test_implement_progress.py`, `test_implement_verify.py`, `test_http_steering_files.py`). Before cecli upstream PRs, run **`yarn verify:cecli-spec`** (143 cecli `tests/spec/` unit tests) and **`yarn verify:ears`** (cecli unit + HTTP EARS/steering routes) — see [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md).
+Or `yarn test:bright-core` (BrightVision `tests/core/*` modules, including spec/implement/steering HTTP tests). **`yarn test:llm-backends`** (config/registry/clients, prefix mapping, preload/warmup; mocked only, no live vLLM) runs as its own Test Lab step **`llm:backends`** and standalone via `yarn test:llm-backends`. Before cecli upstream PRs, run **`yarn verify:cecli-spec`** (143 cecli `tests/spec/` unit tests) and **`yarn verify:ears`** (cecli unit + HTTP EARS/steering routes) — see [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md).
 
-**Test Lab unit tests:** `yarn test:lab` (`apps/test-lab` Vitest — suite resume, progress parser). Included in `yarn dogfood:check`.
+**Test Lab unit tests:** `yarn test:lab` (`apps/test-lab` Vitest — suite resume, progress parser). Included in `yarn dogfood:check`. Default Lab plan includes **`llm:backends`** after **`verify:cecli-spec`**.
 
 **Spec implementation progress** (checklist ↔ `tasks_md` ↔ agent todo): cecli `tests/spec/test_progress.py`; BrightVision `tests/core/test_spec_progress.py`, `test_implement_progress.py`, `test_session_implement_auto_mark.py`, `test_http_implementation_progress.py`, `test_http_agent_todo_import.py`; mocked e2e `e2e/implement-progress.spec.ts`; real-core `e2e/integration/implement-progress.spec.ts` (`yarn test:e2e:integration`). Headless CLI: `bright-vision-tasks materialize|progress|sync-agent|repair-pubspec` (after `pip install -e .`). Test Lab default suite runs `verify:cecli-spec` on every run.
 

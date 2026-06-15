@@ -134,6 +134,36 @@ export interface LocalLlmSnapshot {
   warnings?: string[]
   /** When true, prefer already-loaded models over cold-starting the highest-priority one. */
   preferWarm?: boolean | null
+  /** Active local LLM backend from Rust config resolver (defaults to `ollama`). */
+  backend?: string
+  /** Derived UI capabilities; optional when computed client-side from `backend`. */
+  capabilities?: BackendCapabilities
+}
+
+/** Lifecycle features exposed by the active local LLM backend. */
+export interface BackendCapabilities {
+  supportsVramQuery: boolean
+  supportsModelPull: boolean
+  supportsContextWindowQuery: boolean
+}
+
+const OLLAMA_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: true,
+  supportsModelPull: true,
+  supportsContextWindowQuery: true,
+}
+
+const EXTERNAL_BACKEND_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: false,
+  supportsModelPull: false,
+  supportsContextWindowQuery: false,
+}
+
+/** Map backend name → UI capabilities (REQ-004). */
+export function capabilitiesForBackend(backend: string | null | undefined): BackendCapabilities {
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'ollama') return OLLAMA_CAPABILITIES
+  return EXTERNAL_BACKEND_CAPABILITIES
 }
 
 /** Map an Ollama tag from `local-llm.env` to a LiteLLM model id for Vision. */

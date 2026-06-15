@@ -11,14 +11,18 @@ interface LocalLlmActionButtonsProps {
   controls: LocalLlmControls
   /** Show Unload model + Refresh (Terminal-style full row). */
   showSecondary?: boolean
+  /** Show Start Local LLM (pull/preload) — hidden for external backends. */
+  showPull?: boolean
 }
 
 export function LocalLlmActionButtons({
   controls,
   showSecondary = true,
+  showPull = true,
 }: LocalLlmActionButtonsProps) {
   const {
     busy,
+    backendUnavailable,
     pingResult,
     error,
     runStart,
@@ -32,20 +36,24 @@ export function LocalLlmActionButtons({
     llmPingAlertSeverity,
   } = controls
 
+  const disabled = busy || backendUnavailable
+
   return (
     <Stack spacing={1}>
       <Stack direction="row" flexWrap="wrap" gap={1} alignItems="center">
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <ChipAiStartIcon />}
-          disabled={busy}
-          data-testid="local-llm-start"
-          onClick={() => void runStart()}
-        >
-          Start Local LLM
-        </Button>
+        {showPull && (
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <ChipAiStartIcon />}
+            disabled={disabled}
+            data-testid="local-llm-start"
+            onClick={() => void runStart()}
+          >
+            Start Local LLM
+          </Button>
+        )}
         <Tooltip
           title={`Checks Ollama (generate probe) and ${DISPLAY_VISION_API} /health. Does not start the API — use Settings → Start Vision API or Terminal → Start.`}
         >
@@ -54,7 +62,7 @@ export function LocalLlmActionButtons({
               size="small"
               variant="outlined"
               startIcon={<NetworkPingIcon />}
-              disabled={busy}
+              disabled={disabled}
               data-testid="local-llm-ping"
               onClick={() => void runPing()}
             >
@@ -69,7 +77,7 @@ export function LocalLlmActionButtons({
               variant="outlined"
               color="error"
               startIcon={<StopIcon />}
-              disabled={busy}
+              disabled={disabled}
               data-testid="local-llm-stop"
               onClick={() => void runStop(true)}
             >
@@ -79,7 +87,7 @@ export function LocalLlmActionButtons({
               size="small"
               variant="text"
               startIcon={<RefreshIcon />}
-              disabled={busy}
+              disabled={disabled}
               onClick={() => void refresh()}
             >
               Refresh

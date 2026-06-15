@@ -201,6 +201,23 @@ async def test_preload_skips_whitespace_only_entries():
 
 
 @pytest.mark.asyncio
+async def test_preload_uses_backend_registry_when_no_ollama_client():
+    """Registry path uses BackendClient.preload_models (vLLM is a no-op)."""
+    from unittest.mock import AsyncMock, patch
+
+    from bright_vision_core.llm_backends.registry import BackendRegistry
+
+    mock_client = AsyncMock()
+    mock_client.preload_models = AsyncMock(return_value=[])
+
+    with patch.object(BackendRegistry, "get_active", return_value=mock_client):
+        result = await preload_priority_list(["model-a:7b"])
+
+    assert result == []
+    mock_client.preload_models.assert_called_once_with(["model-a:7b"])
+
+
+@pytest.mark.asyncio
 async def test_preload_show_failure_skips_budget_check():
     """When show_model fails, skip budget check and preload anyway."""
     client = MockOllamaClient(show_failures={"model-a:7b"})
