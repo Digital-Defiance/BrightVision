@@ -366,6 +366,23 @@ class SpecIndexResponse(BaseModel):
     issues: list[EarsIssueModel] = Field(default_factory=list)
 
 
+class SteeringFileModel(BaseModel):
+    relpath: str
+    size_bytes: int
+    nonempty: bool
+
+
+class SteeringFilesResponse(BaseModel):
+    has_content: bool
+    file_count: int
+    main: SteeringFileModel | None = None
+    fragments: list[SteeringFileModel] = Field(default_factory=list)
+
+
+class SteeringScaffoldResponse(SteeringFilesResponse):
+    created: list[str] = Field(default_factory=list)
+
+
 class TraceSpecRequest(BaseModel):
     """Optional draft layers; omitted fields use the task's stored markdown."""
 
@@ -791,6 +808,33 @@ def _spec_index_response(api: WorkspaceTodos) -> SpecIndexResponse:
     return SpecIndexResponse.model_validate(result.to_dict())
 
 
+def _steering_files_response(workspace: str) -> SteeringFilesResponse:
+    from bright_vision_core.spec_steering import scan_steering_files
+
+    snapshot = scan_steering_files(workspace)
+    return SteeringFilesResponse(
+        has_content=snapshot.has_content,
+        file_count=snapshot.file_count,
+        main=(
+            SteeringFileModel(
+                relpath=snapshot.main.relpath,
+                size_bytes=snapshot.main.size_bytes,
+                nonempty=snapshot.main.nonempty,
+            )
+            if snapshot.main
+            else None
+        ),
+        fragments=[
+            SteeringFileModel(
+                relpath=fragment.relpath,
+                size_bytes=fragment.size_bytes,
+                nonempty=fragment.nonempty,
+            )
+            for fragment in snapshot.fragments
+        ],
+    )
+
+
 def _trace_todo_spec(
     api: WorkspaceTodos,
     todo_id: str,
@@ -1173,6 +1217,22 @@ def export_workspace_spec_files(workspace: str, todo_id: str):
 def get_workspace_spec_index(workspace: str):
     """Scan ``.cecli/specs/**`` vs workspace task ids (roadmap #22)."""
     return _spec_index_response(_todos_for_workspace(workspace))
+
+
+@app.get("/workspaces/steering-files", response_model=SteeringFilesResponse)
+def get_workspace_steering_files(workspace: str):
+    """List project steering markdown (``.cecli/STEERING.md``, ``.cecli/steering/*.md``)."""
+    return _steering_files_response(workspace)
+
+
+@app.post("/workspaces/steering-files/scaffold", response_model=SteeringScaffoldResponse)
+def scaffold_workspace_steering_files(workspace: str):
+    """Create ``.cecli/STEERING.md`` from template when missing."""
+    from bright_vision_core.spec_steering import scaffold_steering_files
+
+    created = scaffold_steering_files(workspace)
+    base = _steering_files_response(workspace)
+    return SteeringScaffoldResponse(created=created, **base.model_dump())
 
 
 class RepairSpecFoldersResponse(BaseModel):

@@ -116,7 +116,7 @@ Rules are **regex + structure**, not LLM — suitable for CI and pre-commit late
 ## Cecli extraction checklist (E7 — done)
 
 - [x] No imports from `bright_vision_core.*` inside `cecli/spec/`
-- [x] Tests run as `cecli/tests/spec/` (124 unit tests; `yarn verify:cecli-spec`)
+- [x] Tests run as `cecli/tests/spec/` (143 unit tests; `yarn verify:cecli-spec`)
 - [x] JSON schema for `EarsLintResult` documented in [IPC.md](./IPC.md)
 - [x] Single PR to cecli-dev — [cecli-dev/cecli#574](https://github.com/cecli-dev/cecli/pull/574)
 - [x] Parent submodule pin on `dev-integration` (`e9a01c10c`); shims in `bright_vision_core/`

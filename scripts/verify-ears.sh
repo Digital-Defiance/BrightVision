@@ -28,4 +28,5 @@ exec "$PY" -m pytest \
   tests/core/test_http_ears_lint.py \
   tests/core/test_http_ears_index_trace.py \
   tests/core/test_http_generate_spec_mock.py \
+  tests/core/test_http_steering_files.py \
   -q

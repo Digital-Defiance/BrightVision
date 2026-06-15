@@ -17,7 +17,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | **#12** `/add` Tab paths | Done (Tauri) | `path-completion.spec.ts` (mock Tauri) |
 | **#16** Images/PDF | Done | `file-upload.spec.ts` |
 | **#17** Prompt before commit | Done | `settings-config.spec.ts` |
-| **#18** Tasks / generate-spec | Done | `tasks-workspace.spec.ts`, `tasks-generate-spec.spec.ts` (activity bar, ears_blocked) |
+| **#18** Tasks / generate-spec | Done | `tasks-workspace.spec.ts`, `tasks-generate-spec.spec.ts` (activity bar, ears_blocked), `tasks-steering.spec.ts` |
 | **#23** Phased spec wizard | Done | `tasks-spec-wizard.spec.ts` (tab gates, nudges, per-section POST, All layers) |
 | **#19** Submodule / superproject | Done (automated) | `yarn dogfood:agent`, `test_superproject_dogfood.py`, `release-hygiene.spec.ts`, `test_git_workspace.py`, `test_superproject_integration.py`, `yarn verify:submodule`; LLM: `superproject-llm` (opt-in); **optional GUI:** [SUBMODULE_VERIFICATION.md](../docs/SUBMODULE_VERIFICATION.md) A–D |
 | **#23–24** Process + chat | Done | lifecycle + chat suites |

@@ -3575,6 +3575,10 @@ function AppShell({
               onAttachFolderPath={
                 !isTauriRuntime() ? (path) => void handleAttachFolderPath(path) : undefined
               }
+              projectPath={savedConfig.workingDir}
+              steeringClient={workspaceTodosApi.client}
+              steeringHttpReady={todosHttpReady}
+              onSteeringNotify={(message, severity) => setSnackbar({ message, severity })}
               onGenerateSpec={
                 activeTodo && isRunning
                   ? (prompt, section = 'requirements') =>
@@ -3752,6 +3756,8 @@ function AppShell({
               specIndexRefreshToken={specIndexRefreshToken}
               projectPath={savedConfig.workingDir}
               sessionWorkspaceMismatch={sessionWorkspaceMismatch}
+              steeringClient={workspaceTodosApi.client}
+              onSteeringNotify={(message, severity) => setSnackbar({ message, severity })}
               onGenerateSpec={(id, prompt, mode, opts) => handleGenerateSpec(id, prompt, mode, opts)}
               contextPaths={sessionFiles}
               contextUsage={contextUsage}

@@ -179,7 +179,7 @@ _OPTIONAL_CLOUD_LLM = SuiteStep(
 
 _OPTIONAL_VERIFY_EARS = SuiteStep(
     "verify:ears",
-    "yarn verify:ears (cecli/tests/spec + HTTP EARS)",
+    "yarn verify:ears (cecli/tests/spec + HTTP EARS/steering)",
     ("yarn", "verify:ears"),
 )
 

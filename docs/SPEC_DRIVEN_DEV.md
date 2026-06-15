@@ -90,8 +90,9 @@ bright-vision-tasks --workspace /path/to/repo sync-agent
 bright-vision-tasks --workspace /path/to/repo repair-pubspec --apply
 ```
 
-HTTP: `GET …/implementation-progress`, `POST …/materialize-checklist`, `POST …/repair-pubspec`.
-| Steering files | `.cecli/STEERING.md`, `.cecli/steering/*.md` in spec-focus **and generate-spec** prompts | Expand defaults / UI editor |
+HTTP: `GET …/implementation-progress`, `POST …/materialize-checklist`, `POST …/repair-pubspec`, `GET …/steering-files`, `POST …/steering-files/scaffold`.
+
+| Steering files | `.cecli/STEERING.md`, `.cecli/steering/*.md` in spec-focus **and generate-spec** prompts; **Tasks + Spec** tabs show status, **Open STEERING.md**, **Create template** (`bright-vision-tasks steering scan|scaffold`) | Fragment editor / multi-file wizard (longer-term) |
 | Repo-grounded spec | **`spec_gen_agent.py`** — repo map, `/agent` read-only explore, auto deepen pass (#53) | Longer: multi-review workflows (EARS E7+) |
 | Vibe vs Spec session | **Spec tab → Session mode** (`Vibe` \| `Spec`); spec opens this tab on Start | Per-turn override via Spec focus toggle on Tasks |
 | Save → EARS check | `PATCH` returns `ears_*` fields; UI snackbar on regression | Optional file-watcher hook (longer-term) |

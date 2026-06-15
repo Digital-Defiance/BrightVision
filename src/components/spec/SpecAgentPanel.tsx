@@ -34,6 +34,8 @@ import { layerHasContent, type SpecLayerSection } from '../../utils/specWizard'
 import { specGenerateBlockedReason } from '../../utils/specGenerateGate'
 import type { RecentSpecJob } from '../../utils/recentSpecJob'
 import { SessionContextChip } from '../session/SessionContextChip'
+import { SteeringFilesHint } from './SteeringFilesHint'
+import type { CoreHttpClient } from '../../ipc/httpClient'
 import type { SessionContextUsage } from '../../utils/contextUsage'
 import { isTauriRuntime } from '../../ipc/isTauri'
 import {
@@ -82,6 +84,10 @@ export interface SpecAgentPanelProps {
   onOpenContextInEditor?: (path: string) => void
   onAttachContextDirectory?: () => void
   onAttachFolderPath?: (path: string) => void
+  projectPath?: string
+  steeringClient?: CoreHttpClient | null
+  steeringHttpReady?: boolean
+  onSteeringNotify?: (message: string, severity: 'info' | 'warning' | 'error') => void
 }
 
 export function SpecAgentPanel({
@@ -125,6 +131,10 @@ export function SpecAgentPanel({
   onOpenContextInEditor,
   onAttachContextDirectory,
   onAttachFolderPath,
+  projectPath,
+  steeringClient,
+  steeringHttpReady = false,
+  onSteeringNotify,
 }: SpecAgentPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const { onKeyDown, onPickPath } = useFileCommandKeyboard({
@@ -241,6 +251,16 @@ export function SpecAgentPanel({
           : 'Vibe session: use Chat for implementation. Switch to Spec mode before Start for spec-first work.'}
         {' '}Layer edits on Tasks. Attach files with <strong>/add path</strong> in the prompt below (Enter).
       </Alert>
+
+      {projectPath && steeringClient ? (
+        <SteeringFilesHint
+          workspace={projectPath}
+          client={steeringClient}
+          httpReady={steeringHttpReady}
+          onOpenInEditor={onOpenContextInEditor}
+          onNotify={onSteeringNotify}
+        />
+      ) : null}
 
       {!activeTodo && (
         <Alert severity="warning">

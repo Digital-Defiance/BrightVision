@@ -36,6 +36,8 @@ export interface MockCoreOptions {
   messageEventDelayMs?: number
   filesInChat?: string[]
   onSessionCreate?: (body: Record<string, unknown>) => void
+  /** When set, GET steering-files reports nonempty main file. */
+  steeringHasMain?: boolean
 }
 
 function cloneStore(store: TodoStore): TodoStore {
@@ -65,6 +67,17 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   let sessionAutoCommits = true
   let messageTurnIndex = 0
   const turns = opts.messageTurns ?? [defaultTurnEvents(), confirmTurnEvents()]
+  let steeringHasMain = opts.steeringHasMain ?? false
+
+  const steeringFilesJson = () =>
+    JSON.stringify({
+      has_content: steeringHasMain,
+      file_count: steeringHasMain ? 1 : 0,
+      main: steeringHasMain
+        ? { relpath: '.cecli/STEERING.md', size_bytes: 256, nonempty: true }
+        : null,
+      fragments: [],
+    })
 
   const nextTurn = () => {
     const events = turns[messageTurnIndex % turns.length] ?? defaultTurnEvents()
@@ -373,6 +386,46 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
           layout: null,
           raw: null,
         }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/steering-files/scaffold'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url) || route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      const created = steeringHasMain ? [] : ['.cecli/STEERING.md']
+      steeringHasMain = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          created,
+          has_content: true,
+          file_count: 1,
+          main: { relpath: '.cecli/STEERING.md', size_bytes: 256, nonempty: true },
+          fragments: [],
+        }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/steering-files'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url) || route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: steeringFilesJson(),
       })
     }
   )

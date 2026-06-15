@@ -15,6 +15,7 @@ export {
 } from './httpClient'
 export * from './todos/types'
 export * from './todos/earsTypes'
+export * from './todos/steeringTypes'
 export { normalizeStore, normalizeTodo } from './todos/storage'
 export {
   buildLanPairingPayload,

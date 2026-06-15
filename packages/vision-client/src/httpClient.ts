@@ -4,6 +4,7 @@
  */
 
 import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from './todos/earsTypes'
+import type { SteeringFilesResult, SteeringScaffoldResult } from './todos/steeringTypes'
 import type { PatchTodoResult, TodoItem, TodoStore } from './todos/types'
 import { normalizeStore, normalizeTodo } from './todos/storage'
 import type { CoreEventBase } from './events'
@@ -460,6 +461,24 @@ export class CoreHttpClient {
     )
     if (!res.ok) throw new Error(`spec index: ${res.status} ${await res.text()}`)
     return (await res.json()) as SpecIndexResult
+  }
+
+  async getWorkspaceSteeringFiles(workspace: string): Promise<SteeringFilesResult> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/steering-files?${this.workspaceQs(workspace)}`,
+      { headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`steering files: ${res.status} ${await res.text()}`)
+    return (await res.json()) as SteeringFilesResult
+  }
+
+  async scaffoldWorkspaceSteeringFiles(workspace: string): Promise<SteeringScaffoldResult> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/steering-files/scaffold?${this.workspaceQs(workspace)}`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`steering scaffold: ${res.status} ${await res.text()}`)
+    return (await res.json()) as SteeringScaffoldResult
   }
 
   async repairWorkspaceSpecFolders(

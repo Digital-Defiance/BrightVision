@@ -68,6 +68,8 @@ PUT    /sessions/{session_id}/todos/active   {"activeId": "…" | null}
 POST   /workspaces/todos/{id}/lint-requirements?workspace=…   optional {"requirements": "draft markdown"}
 POST   /sessions/{session_id}/todos/{id}/lint-requirements   same body — deterministic EARS lint (`bright_vision_core/ears`)
 GET    /workspaces/spec-index?workspace=…   scan `.cecli/specs/**` vs `todos.json` task ids
+GET    /workspaces/steering-files?workspace=…   list `.cecli/STEERING.md` + `.cecli/steering/*.md`
+POST   /workspaces/steering-files/scaffold?workspace=…   create `.cecli/STEERING.md` from template when missing
 GET    /sessions/{session_id}/spec-index   same for session workspace
 POST   /workspaces/todos/{id}/trace-spec?workspace=…   optional {"requirements","design","tasks_md"} drafts
 POST   /sessions/{session_id}/todos/{id}/trace-spec   REQ ↔ design ↔ tasks traceability report

@@ -62,6 +62,8 @@ import {
 } from '../../todos/earsTypes'
 import { TODO_TEMPLATES } from '../../todos/types'
 import { SessionContextHint } from '../session/SessionContextHint'
+import { SteeringFilesHint } from '../spec/SteeringFilesHint'
+import type { CoreHttpClient } from '../../ipc/httpClient'
 import type { SessionContextUsage } from '../../utils/contextUsage'
 import {
   defaultPromptForSection,
@@ -158,6 +160,8 @@ interface TodoPanelProps {
   projectPath?: string
   /** Active chat session uses a different repo than the open project. */
   sessionWorkspaceMismatch?: boolean
+  steeringClient?: CoreHttpClient | null
+  onSteeringNotify?: (message: string, severity: 'info' | 'warning' | 'error') => void
 }
 
 export function TodoPanel({
@@ -205,6 +209,8 @@ export function TodoPanel({
   tauriLocal,
   projectPath,
   sessionWorkspaceMismatch,
+  steeringClient,
+  onSteeringNotify,
 }: TodoPanelProps) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const importMergeRef = useRef(false)
@@ -725,6 +731,15 @@ export function TodoPanel({
         <Box component="code">UpdateTodoList</Box> syncs into Tasks when a chat turn finishes or when
         you open this tab.
       </Typography>
+      {projectPath && steeringClient ? (
+        <SteeringFilesHint
+          workspace={projectPath}
+          client={steeringClient}
+          httpReady={httpReady}
+          onOpenInEditor={onOpenContextInEditor}
+          onNotify={onSteeringNotify}
+        />
+      ) : null}
       {(specGenerating || recentSpecJob?.id) && (
         <Alert
           severity={

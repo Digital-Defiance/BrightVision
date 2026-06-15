@@ -19,6 +19,7 @@ Map every **Done** roadmap slice to automated verification. Add a row when you s
 | Phased spec wizard | `tasks-spec-wizard.spec.ts` (mock) | — | `test_todo_spec_phased.py`, `specWizard.test.ts` |
 | Spec generate LLM | `spec-generate-all-llm.spec.ts` (default); `spec-generate-phased-llm.spec.ts` (opt-in) | hello-workspace | `test_generate_spec_llm.py` (all-layers + optional phased) |
 | EARS validate (Tasks) | `tasks-ears.spec.ts` | — | `yarn verify:ears`, `test_http_ears_lint.py`, `test_ears_lint.py` |
+| Project steering (Tasks) | `tasks-steering.spec.ts` | — | `test_http_steering_files.py`, `cecli/tests/spec/test_spec_steering.py` |
 | Spec index & trace (Tasks) | `tasks-ears-index.spec.ts` | — | `test_ears_index.py`, `test_ears_trace.py`, `test_http_ears_index_trace.py` |
 | Spec agent rail | `spec-agent.spec.ts` | — | E6 / #20 |
 | Submodule verify | `release-hygiene.spec.ts` | — | `yarn verify:submodule` |
