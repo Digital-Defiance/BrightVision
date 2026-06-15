@@ -14,7 +14,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="BrightVision — a lightweight, cross-platform desktop app for AI-assisted coding. Native Tauri + React, built in partnership with the Cecli team."
+      content="BrightVision — a lightweight, cross-platform desktop app for AI-assisted coding. Built in close partnership with the Cecli team to ship new features and high quality across both products. BrightVision Test Lab is central to that process."
     />
     <link rel="canonical" href="https://bright-vision.digitaldefiance.org/" />
     <meta
@@ -23,7 +23,7 @@
     />
     <meta
       property="og:description"
-      content="Cursor-like AI coding in a lightweight Tauri desktop app. Built in partnership with the Cecli team."
+      content="Cursor-like AI coding in a lightweight Tauri desktop app. We work closely with the Cecli team on shared engine work, features, and quality — with BrightVision Test Lab and rigorous testing at the center."
     />
     <meta
       property="og:url"
@@ -1007,6 +1007,10 @@
                 >Aider</a
               >
               → Cecli → BrightVision.
+              We work <strong>closely with the Cecli team</strong> to improve both products — shared
+              spec/EARS engine, agent behavior, and quality gates that land in Cecli and BrightVision
+              together. <strong>Testing</strong> (including
+              <a href="#lab">BrightVision Test Lab</a>) is a key part of that loop.
               <a href="#lineage">Details ↓</a>
             </p>
             <div class="hero-actions">
@@ -1430,8 +1434,10 @@
           <p class="section-label">Lineage</p>
           <h2 class="section-title">Lineage — Aider → Cecli → BrightVision</h2>
           <p class="section-desc">
-            <strong>BrightVision is built in partnership with the Cecli team.</strong>
-            The coding agent is
+            <strong>BrightVision is built in close partnership with the Cecli team.</strong>
+            We collaborate daily on the shared coding agent, spec-driven workflows, and HTTP
+            integration — shipping new features and raising quality for <em>both</em> Cecli and
+            BrightVision rather than forking in silence. The coding agent is
             <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer"
               ><strong>Cecli</strong></a
             >
@@ -1483,7 +1489,9 @@
           <p class="section-desc">
             BrightVision <em>beheads</em> the Cecli terminal UX for this product. The
             <strong>Cecli</strong> engine still runs every turn; users interact only through
-            the Vision HTTP API — not the interactive CLI.
+            the Vision HTTP API — not the interactive CLI. Engine improvements flow both ways:
+            Cecli upstream and the <code>cecli/</code> submodule in this repo are kept aligned
+            through shared development and automated testing.
           </p>
           <div
             class="arch-flow"
@@ -2035,8 +2043,37 @@ source activate.sh</code></pre>
           <div class="feature-img">
             <img src="BrightVision-Lab-screenshot.png" title="BrightVision Lab screenshot" alt="BrightVision Lab screenshot" />
           </div>
-          <p>
-            BrightVision has its own test harness which runs a full series of tests including GPU heavy E2E tests that exercise the full gamut of BrightVision's capabilities.
+          <p class="section-desc">
+            <strong>BrightVision Test Lab</strong> is an integral part of how we build
+            <em>both</em> BrightVision and Cecli. It is a separate desktop app
+            (<code>apps/test-lab</code>) that runs the full confidence suite — mocked Playwright,
+            Python core pytest, optional real-LLM lanes, and GPU timing — with live progress,
+            step logs, and resume. The same manifest powers
+            <code>yarn test:everything</code> on the CLI.
+          </p>
+          <p class="section-desc">
+            <strong>Testing is not an afterthought.</strong> Spec engine work (EARS, tasks,
+            steering, implement progress) lands in <code>cecli/spec/</code> with
+            <code>yarn verify:cecli-spec</code> and <code>yarn verify:ears</code>; BrightVision
+            adds HTTP, UI, and e2e coverage before we pin the submodule. Test Lab is the daily
+            loop for dogfooding that shared stack and catching regressions before release.
+          </p>
+          <p class="section-desc">
+            Docs:
+            <a
+              href="https://github.com/Digital-Defiance/BrightVision/blob/main/docs/TESTING.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              ><strong>TESTING.md</strong></a
+            >
+            ·
+            <a
+              href="https://github.com/Digital-Defiance/BrightVision/blob/main/apps/test-lab/README.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              ><strong>Test Lab README</strong></a
+            >
+            · from source: <code>yarn lab</code> or <code>yarn test-lab:dev</code>
           </p>
         </div>
       </section>
@@ -2046,10 +2083,12 @@ source activate.sh</code></pre>
       <div class="wrap footer-stack">
         <div class="footer-inner">
           <p>
-            © 2026 Digital Defiance, Jessica Mulein · MIT License · Built in partnership with the
-            <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer">Cecli</a> team
+            © 2026 Digital Defiance, Jessica Mulein · MIT License · Built in close partnership with the
+            <a href="https://cecli.dev" target="_blank" rel="noopener noreferrer">Cecli</a> team —
+            shared features, shared quality, Test Lab–driven testing for both products
           </p>
           <div class="footer-links">
+          <a href="#lab">Test Lab</a>
           <a
             href="https://github.com/Digital-Defiance/BrightVision/issues"
             target="_blank"
