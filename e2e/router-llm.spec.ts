@@ -22,12 +22,15 @@ test.describe('LLM auto-router @router', () => {
   test.skip(!isLlmE2eEnabled(), 'Run with E2E_LLM=1')
   test.skip(!isRouterLlmE2eEnabled(), 'Run with E2E_MODEL_ROUTER=1')
 
+  test.beforeEach(() => {
+    // Spec-gen / todo-list share hello-workspace; session start re-imports agent todo.txt
+    // and re-activates tasks unless the whole `.cecli/` tree is removed.
+    clearLlmE2eWorkspaceTodos()
+  })
+
   test.beforeAll(async () => {
     await assertOllamaForLlmE2e()
     ensureLlmE2eWorkspace()
-    // Drop any active todo left by spec-gen suites — an active task auto-injects its spec
-    // on the next chat turn, which forces the think tier and breaks router-tier routing.
-    clearLlmE2eWorkspaceTodos()
     const { fastTag, codeTag, thinkTag } = resolveRouterModelTags()
     if (!fastTag) {
       throw new Error(

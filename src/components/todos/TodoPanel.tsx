@@ -48,7 +48,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTodoBlocked } from '../../todos/layers'
 import { shouldResumeWork } from '../../todos/formatContext'
-import { parseImplementationSteps, type ImplementationStep } from '../../todos/tasksMd'
+import {
+  firstOpenImplementationStep,
+  mergedImplementationSteps,
+  type ImplementationStep,
+} from '../../todos/tasksMd'
 import type { ChecklistItem, TodoItem, TodoStatus } from '../../todos/types'
 import {
   earsIssueLabel,
@@ -240,9 +244,10 @@ export function TodoPanel({
 
   const depOptions = todos.filter((t) => t.id !== selected?.id)
   const implSteps = useMemo(
-    () => (selected ? parseImplementationSteps(tasksMd) : []),
-    [selected?.id, tasksMd]
+    () => (selected ? mergedImplementationSteps(tasksMd, checklist) : []),
+    [selected?.id, tasksMd, checklist]
   )
+  const nextImplStep = useMemo(() => firstOpenImplementationStep(implSteps), [implSteps])
   const workTodoDraft = useMemo(() => {
     if (!selected) return null
     return {
@@ -1155,9 +1160,14 @@ export function TodoPanel({
                   />
                   {implSteps.length > 0 && onImplementStep && (
                     <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Steered implementation
-                      </Typography>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2">Steered implementation</Typography>
+                        {nextImplStep && (
+                          <Typography variant="caption" color="text.secondary">
+                            Next: {nextImplStep.number}. {nextImplStep.text}
+                          </Typography>
+                        )}
+                      </Stack>
                       <Stack spacing={0.5}>
                         {implSteps.map((step) => (
                           <Stack
@@ -1169,7 +1179,11 @@ export function TodoPanel({
                           >
                             <Typography
                               variant="body2"
-                              sx={{ flex: 1, opacity: step.done ? 0.6 : 1 }}
+                              sx={{
+                                flex: 1,
+                                opacity: step.done ? 0.6 : 1,
+                                fontWeight: nextImplStep?.number === step.number ? 600 : 400,
+                              }}
                             >
                               {step.number}. {step.text}
                               {step.done ? ' ✓' : ''}

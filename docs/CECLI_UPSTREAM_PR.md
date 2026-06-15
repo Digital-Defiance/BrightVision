@@ -16,6 +16,7 @@ origin/main  →  pr/<topic>  →  push  →  open PR (GraphQL script)  →  che
 |------|----------------|
 | Fix remotes (once) | `sh scripts/fix-cecli-submodule-remote.sh` |
 | Branch + commit | §1 below — **always from `origin/main`**, never `dev-integration` |
+| Pre-commit parity | `yarn verify:cecli-pre-commit` (or `--fix` to apply) before push |
 | Open PR to cecli-dev | `sh scripts/cecli-open-upstream-pr.sh pr/<topic> "title" "body"` |
 | Dogfood on fork | `git cherry-pick <sha>` onto `dev-integration` (§4) |
 | Ship in BrightVision | `git add cecli` in parent repo (§5) |
@@ -67,11 +68,17 @@ python -m pytest cecli/tests/tools/test_<relevant>.py -q
 cd cecli
 git add …
 git commit -m "fix(tools): …"
+cd ..
+source activate.sh
+yarn verify:cecli-pre-commit
 ```
 
 ### 2. Push PR branch to the fork
 
 ```bash
+cd cecli
+# If verify failed, apply fixes and amend or add a style commit:
+#   cd .. && yarn verify:cecli-pre-commit --fix && cd cecli && git add -A && git commit -m "style: pre-commit"
 git push -u origin pr/<topic>
 ```
 
@@ -163,8 +170,18 @@ Restart Vision API after engine changes: **Terminal → Stop / Start**.
 
 ```bash
 source activate.sh
+# Same isort/black/flake8 pins as cecli-dev CI (needs Python >= 3.10 — use .venv):
+sh scripts/verify-cecli-pre-commit.sh
+# Apply hook fixes when verify fails:
+sh scripts/verify-cecli-pre-commit.sh --fix
+git -C cecli add -A && git -C cecli commit -m "style: pre-commit"
+
 python -m pytest cecli/tests/tools/test_<relevant>.py -q
+# Spec/EARS/todos surface:
+yarn verify:cecli-spec
 ```
+
+`scripts/cecli-open-upstream-pr.sh` runs `verify-cecli-pre-commit.sh` automatically before opening the PR. Set `CECLI_SKIP_PRE_COMMIT=1` only to bypass in an emergency.
 
 Upstream PR should be **one logical commit** on top of `upstream/main`, not a merge from `dev-integration`.
 
@@ -181,6 +198,8 @@ Upstream PR should be **one logical commit** on top of `upstream/main`, not a me
 | Fix not active after pull | Parent on old submodule SHA — `git add cecli`, `pip install -e cecli`, restart `:8741` |
 | Wrong submodule remote | `sh scripts/fix-cecli-submodule-remote.sh` |
 | Branched from `dev-integration` by mistake | `git checkout -B pr/<topic> origin/main` then cherry-pick your commit |
+| CI pre-commit fails (isort/black/flake8) | `source activate.sh && yarn verify:cecli-pre-commit --fix` then commit and push |
+| Local black differs from CI | Use `.venv` (Python ≥ 3.10); system `python3` 3.9 cannot run black 26.3.1 |
 
 ---
 

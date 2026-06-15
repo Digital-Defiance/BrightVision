@@ -155,11 +155,16 @@ def run_verify_command(
 # ---------------------------------------------------------------------------
 
 
-def parse_open_steps(tasks_md: str) -> list[str]:
-    """Parse all open (unchecked) step numbers from tasks_md.
+def parse_open_steps(tasks_md: str, *, item: Any | None = None) -> list[str]:
+    """Parse all open (unchecked) step numbers.
 
-    Returns step numbers like ["1.3", "2.1", "2.2", "3.1"] in document order.
+    When ``item`` is provided, uses unified checklist + tasks_md progress.
     """
+    if item is not None:
+        from cecli.spec.progress import parse_open_step_ids
+
+        return parse_open_step_ids(item)
+
     steps: list[str] = []
     for m in _STEP_CHECKBOX_RE.finditer(tasks_md or ""):
         done = m.group(2).lower() == "x"
@@ -169,16 +174,23 @@ def parse_open_steps(tasks_md: str) -> list[str]:
     return steps
 
 
-def next_step_after(tasks_md: str, completed_step: str) -> str | None:
-    """Find the next open step after a completed one.
+def next_step_after(
+    tasks_md: str,
+    completed_step: str,
+    *,
+    item: Any | None = None,
+) -> str | None:
+    """Find the next open step after a completed one."""
+    if item is not None:
+        from cecli.spec.progress import next_open_implementation_step
 
-    Returns the step number or None if no more open steps exist.
-    """
+        nxt = next_open_implementation_step(item, completed_step)
+        return nxt.step_id if nxt else None
+
     open_steps = parse_open_steps(tasks_md)
     if not open_steps:
         return None
 
-    # Find the next step that comes after the completed one (by sort key)
     from bright_vision_core.implement_workspace import step_sort_key
 
     completed_key = step_sort_key(completed_step)
@@ -186,8 +198,6 @@ def next_step_after(tasks_md: str, completed_step: str) -> str | None:
         if step_sort_key(step) > completed_key:
             return step
 
-    # No steps after the completed one — check if there are any open at all
-    # (might be earlier steps that were skipped)
     return open_steps[0] if open_steps else None
 
 
@@ -204,28 +214,9 @@ def build_auto_advance_message(step: str, step_text: str = "") -> str:
 
 def extract_step_text(tasks_md: str, step: str) -> str:
     """Extract the full text of a step from tasks_md."""
-    lines = tasks_md.splitlines()
-    collecting = False
-    step_indent: int | None = None
-    collected: list[str] = []
+    from cecli.spec.progress import extract_step_text_from_tasks_md
 
-    for line in lines:
-        stripped = line.lstrip()
-        indent = len(line) - len(stripped)
-
-        if not collecting:
-            m = re.match(r"-\s*\[[ xX]\]\s+" + re.escape(step) + r"\s+(.*)", stripped)
-            if m:
-                collecting = True
-                step_indent = indent
-                collected.append(m.group(1))
-                continue
-        else:
-            if stripped and indent <= step_indent:  # type: ignore[operator]
-                break
-            collected.append(stripped)
-
-    return "\n".join(collected).strip()
+    return extract_step_text_from_tasks_md(tasks_md, step)
 
 
 # ---------------------------------------------------------------------------

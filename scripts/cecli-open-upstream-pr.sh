@@ -58,6 +58,13 @@ if ! git -C "$CECLI" rev-parse --verify "origin/${BRANCH}" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [ "${CECLI_SKIP_PRE_COMMIT:-}" != "1" ]; then
+  echo "Running cecli pre-commit parity (isort/black/flake8)…" >&2
+  sh "${ROOT}/scripts/verify-cecli-pre-commit.sh"
+else
+  echo "skip: CECLI_SKIP_PRE_COMMIT=1" >&2
+fi
+
 FORK_ID="$(gh api repos/Digital-Defiance/cecli --jq .node_id)"
 UPSTREAM_ID="$(gh api repos/cecli-dev/cecli --jq .node_id)"
 

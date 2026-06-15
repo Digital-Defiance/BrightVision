@@ -94,8 +94,8 @@ def test_llm_core_step_env_longer_timeouts_in_suite(monkeypatch):
     assert env["VISION_AGENT_PREPROC_TIMEOUT_S"] == "0"
     assert env["OLLAMA_WARMUP_EXCLUSIVE"] == "1"
     assert env["BV_COMPACT_SPEC_GEN"] == "1"
-    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "1800"
-    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "1800"
+    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "3600"
+    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "3600"
 
 
 def test_llm_core_step_env_pins_default_model_in_suite(monkeypatch):
@@ -124,6 +124,17 @@ def test_llm_core_step_env_respects_explicit_timeout_override(monkeypatch):
     assert env["LLM_TEST_TURN_TIMEOUT_S"] == "1200"
 
 
+def test_llm_core_step_env_floors_spec_gen_when_env_lower(monkeypatch):
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    monkeypatch.setenv("BV_SUITE_USE_ENV_TIMEOUTS", "1")
+    monkeypatch.setenv("LLM_SPEC_GEN_TIMEOUT_S", "1800")
+    monkeypatch.setenv("LLM_SPEC_GEN_TURN_TIMEOUT_S", "1800")
+    env = llm_core_step_env(suite_run=True)
+    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "3600"
+    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "3600"
+
+
 def test_llm_core_argv_uses_live_pytest():
     argv = llm_core_pytest_argv()
     assert argv[0] == ".venv/bin/python3"
@@ -137,6 +148,7 @@ def test_plan_steps_includes_base():
     steps = plan_steps(skip_llm=True)
     ids = [s.id for s in steps]
     assert "dogfood:check" in ids
+    assert "verify:cecli-spec" in ids
     assert "test-local:release" in ids
     assert "llm:core" not in ids
 

@@ -2183,7 +2183,6 @@ function AppShell({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(err)
-      process.idle()
       setSnackbar({ message: `Could not start: ${msg}`, severity: 'error' })
       setTerminalLines((prev) => [
         ...prev,

@@ -398,6 +398,28 @@ class TraceabilityResponse(BaseModel):
     issues: list[EarsIssueModel] = Field(default_factory=list)
 
 
+class ImplementationStepModel(BaseModel):
+    step_id: str | None = None
+    text: str = ""
+    done: bool = False
+    current: bool = False
+    verify_cmd: str | None = None
+
+
+class ImplementationProgressResponse(BaseModel):
+    todo_id: str
+    title: str = ""
+    steps: list[ImplementationStepModel] = Field(default_factory=list)
+    next_open: ImplementationStepModel | None = None
+
+
+class PubspecRepairResponse(BaseModel):
+    missing: list[str] = Field(default_factory=list)
+    added: list[str] = Field(default_factory=list)
+    applied: bool = False
+    message: str = ""
+
+
 class GenerateTodoSpecRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     mode: str = Field("generate", description="generate | refine")
@@ -794,6 +816,31 @@ def _trace_todo_spec(
     return TraceabilityResponse.model_validate(result.to_dict())
 
 
+def _implementation_progress_response(api: WorkspaceTodos, todo_id: str) -> ImplementationProgressResponse:
+    from bright_vision_core.implement_progress import implementation_progress_payload
+
+    store = api.load()
+    item = next((t for t in store.todos if t.id == todo_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    payload = implementation_progress_payload(item)
+    return ImplementationProgressResponse.model_validate(payload)
+
+
+def _materialize_todo_checklist(api: WorkspaceTodos, todo_id: str) -> TodoItemModel:
+    from cecli.spec.progress import materialize_checklist_from_tasks_md
+
+    store = api.load()
+    item = next((t for t in store.todos if t.id == todo_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    checklist = materialize_checklist_from_tasks_md(item)
+    if not checklist:
+        raise HTTPException(status_code=400, detail="No numbered steps in tasks_md to materialize")
+    item, _ = api.update(todo_id, checklist=checklist)
+    return _todo_item_model(item)
+
+
 def _lint_todo_requirements(
     api: WorkspaceTodos,
     todo_id: str,
@@ -1181,6 +1228,38 @@ def trace_workspace_spec(
 ):
     """REQ ↔ design ↔ tasks traceability for one task."""
     return _trace_todo_spec(_todos_for_workspace(workspace), todo_id, body)
+
+
+@app.get(
+    "/workspaces/todos/{todo_id}/implementation-progress",
+    response_model=ImplementationProgressResponse,
+)
+def get_workspace_implementation_progress(workspace: str, todo_id: str):
+    """Unified checklist + tasks_md progress (next open step, verify commands)."""
+    return _implementation_progress_response(_todos_for_workspace(workspace), todo_id)
+
+
+@app.post(
+    "/workspaces/todos/{todo_id}/materialize-checklist",
+    response_model=TodoItemModel,
+)
+def materialize_workspace_checklist(workspace: str, todo_id: str):
+    """Build checklist rows from numbered tasks_md lines."""
+    return _materialize_todo_checklist(_todos_for_workspace(workspace), todo_id)
+
+
+@app.post("/workspaces/repair-pubspec", response_model=PubspecRepairResponse)
+def repair_workspace_pubspec(workspace: str, apply: bool = False):
+    """Detect or add missing Dart package dependencies for Flutter workspaces."""
+    from cecli.spec.pubspec_repair import repair_pubspec_dependencies
+
+    result = repair_pubspec_dependencies(workspace, apply=apply)
+    return PubspecRepairResponse(
+        missing=list(result.missing),
+        added=list(result.added),
+        applied=result.applied,
+        message=result.message,
+    )
 
 
 @app.post("/sessions/{session_id}/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)

@@ -48,7 +48,13 @@ export function resetIntegrationCecliState(): void {
   }
 }
 
-export function readIntegrationTodoStore(): { todos?: { title?: string }[] } | null {
+export function readIntegrationTodoStore(): {
+  todos?: {
+    title?: string
+    tasks_md?: string
+    checklist?: { text?: string; done?: boolean }[]
+  }[]
+} | null {
   const p = integrationTodosPath()
   if (!fs.existsSync(p)) return null
   return JSON.parse(fs.readFileSync(p, 'utf8')) as { todos?: { title?: string }[] }
@@ -67,7 +73,26 @@ export function buildIntegrationAppConfig() {
   }
 }
 
+export function writeIntegrationTodoStore(store: unknown): void {
+  const p = integrationTodosPath()
+  fs.mkdirSync(path.dirname(p), { recursive: true })
+  fs.writeFileSync(p, `${JSON.stringify(store, null, 2)}\n`, 'utf8')
+}
+
 /** Direct HTTP to real Vision API (bypasses browser). */
+export async function patchIntegrationTodo(
+  workspace: string,
+  todoId: string,
+  body: Record<string, unknown>
+): Promise<Response> {
+  const qs = new URLSearchParams({ workspace })
+  return fetch(`http://127.0.0.1:8741/workspaces/todos/${encodeURIComponent(todoId)}?${qs}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 export async function postImportAgentPlan(workspace: string): Promise<Response> {
   const qs = new URLSearchParams({ workspace })
   return fetch(`http://127.0.0.1:8741/workspaces/todos/import-agent-plan?${qs}`, {

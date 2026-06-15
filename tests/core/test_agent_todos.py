@@ -186,6 +186,53 @@ def test_import_agent_plan_preserves_spec_tasks_md(tmp_path: Path):
     assert len(merged.checklist) == 2
 
 
+def test_import_agent_plan_merges_numbered_agent_done_into_spec_tasks_md(tmp_path: Path):
+    spec_tasks = (
+        "- [ ] 1. Wire generate-spec API for REQ-001 (depends: none)\n"
+        "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+    )
+    api = WorkspaceTodos(tmp_path)
+    store = api.load()
+    item = TodoItem(
+        id="user1",
+        title="My feature",
+        tasks_md=spec_tasks,
+        status="in_progress",
+        links=[],
+        checklist=[],
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+    )
+    store.todos.append(item)
+    store.active_id = item.id
+    api.save(store)
+
+    agents = tmp_path / ".cecli" / "agents" / "2026-06-03" / "sess"
+    agents.mkdir(parents=True)
+    rel = ".cecli/agents/2026-06-03/sess/todo.txt"
+    (agents / "todo.txt").write_text(
+        "\n".join(
+            [
+                "Done:",
+                "✓ 1. Wire generate-spec API for REQ-001 (depends: none)",
+                "",
+                "Remaining:",
+                "→ 2. Add tests for REQ-002 (depends: 1)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    store2 = import_agent_plan_for_workspace(tmp_path, agent_todo_relpath=rel)
+    merged = store2.todos[0]
+    assert "- [x] 1. Wire generate-spec" in merged.tasks_md
+    assert "REQ-001" in merged.tasks_md
+    assert "- [ ] 2. Add tests" in merged.tasks_md
+    assert merged.checklist[0].done is True
+    assert merged.checklist[1].done is False
+
+
 def test_export_roundtrip(tmp_path: Path):
     rows = [
         AgentTodoRow(text="Done step", done=True, current=False),

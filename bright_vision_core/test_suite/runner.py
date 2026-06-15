@@ -534,6 +534,10 @@ def run_step(
     else:
         try:
             step_argv = list(step.argv)
+            if step.id == "llm:core":
+                from bright_vision_core.test_suite.manifest import llm_core_pytest_argv
+
+                step_argv = list(llm_core_pytest_argv())
             if short_circuit and step.id == "llm:core" and "--maxfail=1" not in step_argv:
                 step_argv.append("--maxfail=1")
             if use_btime and use_gpu and gpu_bin:

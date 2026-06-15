@@ -126,3 +126,19 @@ def ollama_reachable() -> bool:
         return True
     except (urllib.error.URLError, TimeoutError, OSError):
         return False
+
+
+def warmup_ollama_for_tests() -> None:
+    """Run ``scripts/ollama-warmup-for-tests.sh`` (suite mid-run VRAM reset)."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    script = root / "scripts" / "ollama-warmup-for-tests.sh"
+    if not script.is_file():
+        return
+    subprocess.run(
+        ["sh", str(script)],
+        cwd=str(root),
+        check=False,
+        timeout=180,
+    )

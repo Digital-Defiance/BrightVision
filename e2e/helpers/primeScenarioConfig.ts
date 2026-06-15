@@ -4,6 +4,7 @@ import { getScenario, type ScenarioName } from './scenarios'
 import {
   ensureAgentTodoCharSplitWorkspace,
   ensureEditBlockWorkspace,
+  ensureSpecProgressWorkspace,
   ensureTasksSeededWorkspace,
 } from './fixtureWorkspaces'
 import { normalizeWorkspacePath } from './workspacePath'
@@ -14,6 +15,7 @@ export async function primeScenarioConfig(page: Page, scenario: ScenarioName) {
   if (def.workspace === 'edit-block') workingDir = ensureEditBlockWorkspace()
   if (def.workspace === 'tasks-seeded') workingDir = ensureTasksSeededWorkspace()
   if (def.workspace === 'agent-todo-char-split') workingDir = ensureAgentTodoCharSplitWorkspace()
+  if (def.workspace === 'spec-progress-merge') workingDir = ensureSpecProgressWorkspace()
   if (def.workspace) workingDir = normalizeWorkspacePath(workingDir)
   const cfg = {
     ...E2E_CONFIG,

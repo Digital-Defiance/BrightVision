@@ -1,15 +1,15 @@
 # EARS module — design & Kiro-depth ladder
 
-**Status:** E1–E5 shipped — lint, index, trace, Tasks UI, generate/refine EARS context + apply gate; **#20** spec-focus toggle + `.cecli/steering`.  
-**Roadmap:** [#21](./ROADMAP.md) (linter), [#22](./ROADMAP.md) (repo index), [#20](./ROADMAP.md) (spec-agent UX).  
+**Status:** E1–E7 shipped — lint, index, trace, Tasks UI, generate/refine EARS context + apply gate, spec-agent UX, **cecli lift** (`cecli/spec/`).  
+**Roadmap:** [#21](./ROADMAP.md) (linter), [#22](./ROADMAP.md) (repo index), [#20](./ROADMAP.md) (spec-agent UX), **#55** (E7 cecli lift).  
 **Related:** [SPEC_DRIVEN_DEV.md](./SPEC_DRIVEN_DEV.md), [CORE_FILE_MERGE.md](./CORE_FILE_MERGE.md) (cecli lift tier).
 
 ## Goal
 
 Deepen **EARS** (Easy Approach to Requirements Syntax) support toward **Kiro-level** spec discipline, without bolting logic into React or `http_api.py` blobs. All spec grammar, lint, indexing, and traceability live in a **standalone Python package** that:
 
-1. Ships inside **`bright_vision_core/ears/`** today (Vision / Tasks / HTTP).
-2. Moves to **`cecli/spec/ears/`** (or `cecli/ears/`) later with **zero** `bright_vision_core` imports.
+1. ~~Ships inside **`bright_vision_core/ears/`** today (Vision / Tasks / HTTP).~~ **Shipped in `cecli/spec/`** (upstream [cecli-dev/cecli#574](https://github.com/cecli-dev/cecli/pull/574)).
+2. BrightVision keeps thin HTTP/session shims (`bright_vision_core/ears/` re-exports, `todo_spec_jobs` worker).
 3. Exposes a **stable JSON report** for UI, CLI, and future cecli slash commands.
 
 Kiro parity is **immense**; we climb in phases and stop when dogfood value flattens.
@@ -20,7 +20,30 @@ Kiro parity is **immense**; we climb in phases and stop when dogfood value flatt
 - Owning `.cecli/todos.json` persistence (stays `workspace_todos`).
 - IDE-only UX (#20) — consumes EARS reports; not part of the package.
 
-## Package layout (now)
+## Package layout (E7 — current)
+
+```text
+cecli/spec/
+  __init__.py
+  paths.py         # .cecli/todos.json, specs/, attachments/
+  todos.py         # workspace todos + three-layer specs
+  markdown.py      # import/export spec markdown
+  layers.py        # richness + traceability normalize
+  steering.py      # .cecli/steering preamble
+  focus.py         # spec-focus inject + implement turns
+  generate.py      # generate/refine prompts + parse
+  gen_agent.py     # repo-grounded multi-turn spec agent
+  implement.py     # implement-step workspace blocks
+  agent_todos.py   # cecli agent todo.txt ↔ workspace tasks
+  jobs.py          # SpecGenerationJob types + timeout helpers
+  job_debug.py     # debug export bundle
+  runtime.py       # SpecTurnRunner / AgentTodoSession protocols
+  ears/            # EARS lint, index, trace, repair, prompt
+```
+
+BrightVision re-exports via `bright_vision_core/{ears,workspace_todos,spec_*,todo_*}` shims; `Session.apply_spec_gen_route` + `todo_spec_jobs.SpecJobStore` stay in the HTTP layer.
+
+## Package layout (pre-E7)
 
 ```text
 bright_vision_core/ears/
@@ -34,7 +57,7 @@ bright_vision_core/ears/
   report.py        # JSON + human summary for HTTP/UI
 ```
 
-**Lift rule:** Only `cecli` + stdlib imports inside `ears/`. No `fastapi`, `session`, `TodoItem`.
+**Lift rule:** Only `cecli` + stdlib imports inside `cecli/spec/` (no `bright_vision_core`, FastAPI, or Session).
 
 ## Public API (stable for cecli)
 
@@ -45,10 +68,10 @@ result = analyze_requirements(markdown_text, *, path="requirements.md")
 # result.ok, result.issues[], result.clauses[], result.to_dict()
 ```
 
-Future:
+Future (same shapes, import path only):
 
 ```python
-from cecli.spec.ears import analyze_workspace_specs  # same shapes
+from cecli.spec.ears import analyze_workspace_specs  # when added
 ```
 
 ## Kiro-depth ladder (phases)
@@ -62,7 +85,7 @@ from cecli.spec.ears import analyze_workspace_specs  # same shapes
 | **E4** | Traceability | Map REQ-00n → design headings → `tasks_md` lines; gap report | **#21** (Partial) |
 | **E5** | LLM assist | Generate/refine prompts include lint/trace; `enforce_ears` skips apply on errors | **#21** (Partial) |
 | **E6** | Spec agent | **Spec** tab — dedicated transcript + quick generate/refine/EARS/trace | **#20** (Partial) |
-| **E7** | Cecli lift | Copy package to `cecli/spec/ears/`; BV pins cecli; thin HTTP wrapper | CECLI_PIN |
+| **E7** | **Cecli lift** | **`cecli/spec/`** package; BV shims + Session glue; upstream [cecli-dev#574](https://github.com/cecli-dev/cecli/pull/574) | **Done** (#55) |
 
 **Kiro “immense”** (longer-term, not all in E7): formal conflict detection, multi-spec workspaces, review workflows, versioning, export to external RM tools, rich spec-agent personas. Track as new roadmap rows when E4–E6 dogfood stalls.
 
@@ -90,15 +113,13 @@ Rules are **regex + structure**, not LLM — suitable for CI and pre-commit late
 | **Implement** | Soft warning if active task requirements have errors |
 | **Dogfood** | `pytest tests/core/test_ears_*.py`; optional gate in `dogfood:check` |
 
-## Cecli extraction checklist
+## Cecli extraction checklist (E7 — done)
 
-Before moving tree to cecli:
-
-- [ ] No imports from `bright_vision_core.*` inside `ears/`
-- [ ] Tests run as `tests/cecli/test_ears_*.py` or `cecli/tests/spec/`
-- [ ] JSON schema for `EarsLintResult` documented in [IPC.md](./IPC.md)
-- [ ] Single PR to Digital-Defiance/cecli `main` (not `dev-integration` merge)
-- [ ] Parent submodule pin + `test_cecli_tool_json`-style gate for `import cecli.spec.ears`
+- [x] No imports from `bright_vision_core.*` inside `cecli/spec/`
+- [x] Tests run as `cecli/tests/spec/` (124 unit tests; `yarn verify:cecli-spec`)
+- [x] JSON schema for `EarsLintResult` documented in [IPC.md](./IPC.md)
+- [x] Single PR to cecli-dev — [cecli-dev/cecli#574](https://github.com/cecli-dev/cecli/pull/574)
+- [x] Parent submodule pin on `dev-integration` (`e9a01c10c`); shims in `bright_vision_core/`
 
 ## Suggested fix order (EARS)
 
@@ -108,4 +129,4 @@ Before moving tree to cecli:
 4. **E4** — traceability matrix.
 5. **E5** — wire generate/refine.
 6. **E6** — spec-agent UX (#20).
-7. **E7** — cecli lift when E1–E4 stable.
+7. **E7** — ~~cecli lift when E1–E4 stable.~~ **Done** — see `cecli/spec/` + #55.

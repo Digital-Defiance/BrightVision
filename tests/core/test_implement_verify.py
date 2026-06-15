@@ -63,6 +63,23 @@ class TestNextStepAfter(unittest.TestCase):
         all_done = "- [x] 1.1 Done\n- [x] 1.2 Done\n"
         self.assertIsNone(next_step_after(all_done, "1.2"))
 
+    def test_item_uses_checklist_when_tasks_md_stale(self):
+        from cecli.spec.todos import ChecklistItem, TodoItem, _now_iso
+
+        item = TodoItem(
+            id="t1",
+            title="T",
+            tasks_md="- [ ] 1.3 Write unit tests\n- [ ] 2.1 Next\n",
+            checklist=[
+                ChecklistItem(id="a", text="1.3 Write unit tests", done=True),
+                ChecklistItem(id="b", text="2.1 Next", done=False),
+            ],
+            created_at=_now_iso(),
+            updated_at=_now_iso(),
+        )
+        self.assertEqual(next_step_after(item.tasks_md, "1.3"), "2.1")
+        self.assertEqual(next_step_after(item.tasks_md, "1.3", item=item), "2.1")
+
 
 class TestExtractVerifyForStep(unittest.TestCase):
     def test_extracts_verify_for_known_step(self):

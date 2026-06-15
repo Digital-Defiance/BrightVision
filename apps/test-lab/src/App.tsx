@@ -903,7 +903,7 @@ export default function App() {
               disabled={running}
             />
           }
-          label="verify:ears"
+          label="verify:ears (cecli spec + HTTP)"
         />
         <FormControlLabel
           control={

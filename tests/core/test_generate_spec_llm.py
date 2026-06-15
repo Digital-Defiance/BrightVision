@@ -21,7 +21,7 @@ except ImportError:
 
 from cecli.utils import GitTemporaryDirectory, make_repo
 
-from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model, warmup_ollama_for_tests
 from spec_layer_assertions import assess_generated_spec_layers
 
 
@@ -32,6 +32,8 @@ class TestGenerateSpecLlm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         ensure_ollama_for_llm_e2e()
+        if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1":
+            warmup_ollama_for_tests()
 
     def setUp(self):
         _sessions.clear()
@@ -42,6 +44,28 @@ class TestGenerateSpecLlm(unittest.TestCase):
         reset_auth_for_tests()
 
     def test_generate_spec_produces_sane_layers(self):
+        """HTTP background generate-spec with real Ollama.
+
+        Test Lab (``BV_TEST_SUITE_ACTIVE=1``): one requirements layer only — validates
+        the job store + poll path in ~1–3 min. Full three-layer merge is covered by
+        ``test_phased_generate_spec_produces_sane_layers`` in the same file.
+
+        ``yarn test:llm:core`` (no suite flag): all layers in one background job.
+        """
+        in_suite = os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+        if in_suite:
+            section = "requirements"
+            prompt = (
+                "Minimal health ping API. Only REQ-001 and REQ-002; each one short "
+                "WHEN/SHALL acceptance line. No introduction essay."
+            )
+        else:
+            section = "all"
+            prompt = (
+                "Ping counter API. Exactly REQ-001 and REQ-002 with WHEN and SHALL. "
+                "Keep each section short. Two numbered implementation tasks."
+            )
+
         model = resolve_vision_model()
         wait_s = spec_gen_timeout_s()
         with GitTemporaryDirectory() as temp_dir:
@@ -66,11 +90,9 @@ class TestGenerateSpecLlm(unittest.TestCase):
                 f"/workspaces/todos/{todo_id}/generate-spec"
                 f"?workspace={temp_dir}&session_id={session_id}",
                 json={
-                    "prompt": (
-                        "Ping counter API. Exactly REQ-001 and REQ-002 with WHEN and SHALL. "
-                        "Keep each section short. Two numbered implementation tasks."
-                    ),
+                    "prompt": prompt,
                     "mode": "generate",
+                    "section": section,
                     "apply": True,
                     "background": True,
                     "enforce_ears": True,
@@ -107,12 +129,17 @@ class TestGenerateSpecLlm(unittest.TestCase):
                     "Model output failed EARS enforce gate — tighten prompt or model: "
                     f"{body.get('ears_issues')}"
                 )
-            ok, issues = assess_generated_spec_layers(
-                body.get("requirements", ""),
-                body.get("design", ""),
-                body.get("tasks_md", ""),
-            )
-            self.assertTrue(ok, f"layer sanity: {issues}; raw_len={len(body.get('raw') or '')}")
+            if in_suite:
+                req = body.get("requirements") or ""
+                self.assertRegex(req, r"REQ-\d+", req[:500])
+                self.assertIn("SHALL", req)
+            else:
+                ok, issues = assess_generated_spec_layers(
+                    body.get("requirements", ""),
+                    body.get("design", ""),
+                    body.get("tasks_md", ""),
+                )
+                self.assertTrue(ok, f"layer sanity: {issues}; raw_len={len(body.get('raw') or '')}")
 
     def _todo_item(self, client: TestClient, temp_dir: str, todo_id: str) -> dict:
         listed = client.get(f"/workspaces/todos?workspace={temp_dir}")
@@ -125,9 +152,8 @@ class TestGenerateSpecLlm(unittest.TestCase):
     def test_phased_generate_spec_produces_sane_layers(self):
         """Phased layer merge with Ollama on one light spec session.
 
-        HTTP background jobs (three cold Session.create calls) are covered by
-        ``test_generate_spec_produces_sane_layers`` and mock e2e; this test
-        targets ``generate_todo_layers`` section= wiring without triple init.
+        In Test Lab this is the full three-layer LLM gate; the background job test
+        in the same class only generates requirements (fast job-store smoke).
         """
         from bright_vision_core.session import Session
         from bright_vision_core.workspace_todos import WorkspaceTodos

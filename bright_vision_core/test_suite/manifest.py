@@ -34,6 +34,11 @@ class SuiteStep:
 _BASE_STEPS: tuple[SuiteStep, ...] = (
     SuiteStep("dogfood:check", "yarn dogfood:check", ("yarn", "dogfood:check")),
     SuiteStep(
+        "verify:cecli-spec",
+        "yarn verify:cecli-spec (cecli/tests/spec — progress + EARS)",
+        ("yarn", "verify:cecli-spec"),
+    ),
+    SuiteStep(
         "test-local:release",
         "sh scripts/test-local.sh release",
         ("sh", "scripts/test-local.sh", "release"),
@@ -43,14 +48,16 @@ _BASE_STEPS: tuple[SuiteStep, ...] = (
 )
 
 # Same files as package.json ``test:llm:core``; suite uses live pytest flags (not ``-q``).
+# Spec-gen runs early (after hello) while Ollama is still warm from suite warmup — not after
+# ~4–6 other LLM tests that can slow all-layers background jobs past the wall cap.
 _LLM_CORE_TEST_FILES: tuple[str, ...] = (
     "tests/core/test_hello_llm.py",
+    "tests/core/test_generate_spec_llm.py",
     "tests/core/test_agent_llm.py",
     "tests/core/test_context_llm.py",
     "tests/core/test_todo_list_llm.py",
     "tests/core/test_edit_block_llm.py",
     "tests/core/test_transcript_llm.py",
-    "tests/core/test_generate_spec_llm.py",
     "tests/core/test_generate_spec_parse.py",
     "tests/core/test_http_generate_spec_mock.py",
 )
@@ -89,6 +96,18 @@ def llm_core_step_env(*, suite_run: bool = False) -> dict[str, str]:
             return default
         return os.environ.get(key, default)
 
+    def _spec_gen_timeout(key: str, suite_default: str) -> str:
+        """In suite, never run spec-gen below ``suite_default`` (even with env overrides)."""
+        cli_default = "900"
+        pick = suite_default if in_suite else cli_default
+        raw = _timeout(key, pick)
+        if not in_suite:
+            return raw
+        try:
+            return str(max(int(float(raw)), int(float(suite_default))))
+        except ValueError:
+            return suite_default
+
     use_env_model = os.environ.get("BV_SUITE_USE_ENV_MODEL") == "1"
     if in_suite and not use_env_model:
         e2e_model = "ollama_chat/llama3.2:3b"
@@ -106,11 +125,11 @@ def llm_core_step_env(*, suite_run: bool = False) -> dict[str, str]:
         ),
         "LLM_TEST_TURN_TIMEOUT_S": _timeout("LLM_TEST_TURN_TIMEOUT_S", pick_turn),
         "BV_COMPACT_SPEC_GEN": os.environ.get("BV_COMPACT_SPEC_GEN", "1"),
-        "LLM_SPEC_GEN_TURN_TIMEOUT_S": _timeout(
-            "LLM_SPEC_GEN_TURN_TIMEOUT_S", "1800" if in_suite else "900"
+        "LLM_SPEC_GEN_TURN_TIMEOUT_S": _spec_gen_timeout(
+            "LLM_SPEC_GEN_TURN_TIMEOUT_S", "3600" if in_suite else "900"
         ),
-        "LLM_SPEC_GEN_TIMEOUT_S": _timeout(
-            "LLM_SPEC_GEN_TIMEOUT_S", "1800" if in_suite else "900"
+        "LLM_SPEC_GEN_TIMEOUT_S": _spec_gen_timeout(
+            "LLM_SPEC_GEN_TIMEOUT_S", "3600" if in_suite else "900"
         ),
         "E2E_OLLAMA_MODEL": e2e_model,
         "E2E_LLM": "1",
@@ -160,7 +179,7 @@ _OPTIONAL_CLOUD_LLM = SuiteStep(
 
 _OPTIONAL_VERIFY_EARS = SuiteStep(
     "verify:ears",
-    "yarn verify:ears",
+    "yarn verify:ears (cecli/tests/spec + HTTP EARS)",
     ("yarn", "verify:ears"),
 )
 

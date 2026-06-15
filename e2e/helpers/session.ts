@@ -88,7 +88,8 @@ export async function openTasks(
     const importPlan = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().includes('/workspaces/todos/import-agent-plan') &&
+        (res.url().includes('/workspaces/todos/import-agent-plan') ||
+          res.url().includes('/todos/import-agent-plan')) &&
         res.ok(),
       { timeout: 30_000 }
     )

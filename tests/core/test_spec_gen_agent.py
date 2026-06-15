@@ -30,7 +30,7 @@ class TestSpecGenAgent(unittest.TestCase):
 
     def test_wrap_includes_steering_and_exploration(self):
         with patch(
-            "bright_vision_core.spec_gen_agent.build_spec_focus_preamble",
+            "cecli.spec.gen_agent.build_spec_focus_preamble",
             return_value="## Project steering\nUse SwiftUI.\n",
         ):
             out = wrap_spec_generate_message(
@@ -74,15 +74,14 @@ class TestSpecGenAgent(unittest.TestCase):
         from bright_vision_core.spec_gen_agent import run_spec_layer_llm
 
         item = TodoItem(id="a", title="T")
-        session = MagicMock()
-        session.coder.root = "/tmp/ws"
-        session._model_router = None
-        session.run_one_shot.return_value = "## Requirements\n### REQ-001\n**WHEN** a\n**THE** system **SHALL** b.\n"
+        runner = MagicMock()
+        runner.apply_spec_gen_route = MagicMock()
+        runner.run_one_shot.return_value = "## Requirements\n### REQ-001\n**WHEN** a\n**THE** system **SHALL** b.\n"
 
-        with patch("bright_vision_core.spec_gen_agent.spec_gen_agent_enabled", return_value=False):
-            with patch("bright_vision_core.spec_gen_agent.spec_gen_richness_gate_enabled", return_value=False):
+        with patch("cecli.spec.gen_agent.spec_gen_agent_enabled", return_value=False):
+            with patch("cecli.spec.gen_agent.spec_gen_richness_gate_enabled", return_value=False):
                 raw = run_spec_layer_llm(
-                    session,
+                    runner,
                     workspace="/tmp/ws",
                     prompt="Build it",
                     item=item,
@@ -92,15 +91,16 @@ class TestSpecGenAgent(unittest.TestCase):
                     total_turn_timeout_s=600.0,
                 )
         self.assertIn("REQ-001", raw)
-        session.run_one_shot.assert_called_once()
+        runner.run_one_shot.assert_called_once()
 
     def test_apply_spec_gen_model_route_forces_think(self):
         from bright_vision_core.model_router import RouteTurnContext
-        from bright_vision_core.spec_gen_agent import apply_spec_gen_model_route
+        from bright_vision_core.session import Session
 
-        session = MagicMock()
-        session._model_router = MagicMock(enabled=True)
-        apply_spec_gen_model_route(session, "Write requirements")
+        session = MagicMock(spec=Session)
+        session._route_and_apply = MagicMock(return_value=None)
+        session.apply_spec_gen_route = Session.apply_spec_gen_route.__get__(session, Session)
+        session.apply_spec_gen_route("Write requirements")
         session._route_and_apply.assert_called_once()
         _args, kwargs = session._route_and_apply.call_args
         self.assertEqual(kwargs.get("force_tier"), "think")

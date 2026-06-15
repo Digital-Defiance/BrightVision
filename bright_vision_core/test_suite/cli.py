@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verify-ears",
         action="store_true",
-        help="Add yarn verify:ears.",
+        help="Add yarn verify:ears (cecli/tests/spec unit + HTTP EARS routes).",
     )
     parser.add_argument(
         "--shipped-scenarios",

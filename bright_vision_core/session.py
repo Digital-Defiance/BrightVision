@@ -466,6 +466,14 @@ class Session:
         self._last_route = decision
         return decision
 
+    def apply_spec_gen_route(self, routing_text: str) -> None:
+        """Route spec-generation turns to the think tier when model router is enabled."""
+        self._route_and_apply(
+            routing_text,
+            force_tier="think",
+            turn=RouteTurnContext(spec_gen_turn=True),
+        )
+
     def run_message(
         self,
         message: str,
@@ -543,6 +551,7 @@ class Session:
             "exploration_aborted": False,
             "flutter_test_ok": None,
             "focus_step": None,
+            "verify_ok": None,
         }
         if item is not None:
             from bright_vision_core.spec_focus import is_implement_turn_message
@@ -810,13 +819,37 @@ class Session:
             yield self.io.tool_output(f"{header} ({', '.join(tests)}):\n{output}")
             if ok:
                 yield self.io.tool_warning(
-                    "Tests passed — mark the checklist item **done** in Tasks if this step is complete."
+                    "Tests passed — BrightVision will mark this checklist step done when the turn completes."
                 )
             else:
                 yield self.io.tool_warning(
                     "Fix failing tests with **ReadRange** + **EditText** on one file — "
                     "do not ls, resume, or mark test tasks done in UpdateTodoList."
                 )
+
+        def _maybe_auto_mark_implement_step() -> Iterator[dict[str, Any]]:
+            nonlocal item
+            from bright_vision_core.implement_progress import persist_auto_mark_implement_step
+            from bright_vision_core.spec_focus import is_implement_turn_message
+
+            if not is_implement_turn_message(message) or item is None:
+                return
+            focus_step = turn_context_state.get("focus_step")
+            if not focus_step:
+                return
+            persisted, changed = persist_auto_mark_implement_step(
+                self.coder.root,
+                item,
+                focus_step=focus_step,
+                flutter_test_ok=turn_context_state.get("flutter_test_ok"),
+                verify_ok=turn_context_state.get("verify_ok"),
+            )
+            if not changed or persisted is None:
+                return
+            item = persisted
+            yield self.io.tool_output(
+                f"✅ Marked implementation step **{focus_step}** done in Tasks."
+            )
 
         def _maybe_verify_step_and_auto_advance() -> Iterator[dict[str, Any]]:
             """Post-step: run verify command, detect duplicates, auto-advance to next step."""
@@ -857,8 +890,7 @@ class Session:
                             )
 
             # --- Verify gate ---
-            if not verify_enabled():
-                return
+            verify_ok: bool | None = True
             if item is None or not item.tasks_md.strip():
                 return
 
@@ -866,23 +898,29 @@ class Session:
             from bright_vision_core.implement_workspace import implement_step_from_message
             focus_step = implement_step_from_message(message)
             if not focus_step:
-                # Fall back to turn_context_state if available
                 focus_step = turn_context_state.get("focus_step")
             if not focus_step:
                 return
 
             verify_cmd = extract_verify_for_step(item.tasks_md, focus_step)
-            if verify_cmd:
+            if verify_cmd and verify_enabled():
                 yield self.io.tool_output(f"🔍 Running verify for step {focus_step}: `{verify_cmd}`")
                 ok, output = run_verify_command(self.coder.root, verify_cmd)
+                verify_ok = ok
                 status = "✅ Verify passed" if ok else "❌ Verify failed"
                 yield self.io.tool_output(f"{status} (step {focus_step}):\n{output}")
                 if not ok:
+                    turn_context_state["verify_ok"] = False
                     yield self.io.tool_warning(
                         f"Verify failed for step {focus_step}. "
                         f"The step is not complete — fix and retry."
                     )
-                    return  # Don't auto-advance on failed verify
+                    return
+            elif verify_cmd and not verify_enabled():
+                verify_ok = None
+            turn_context_state["verify_ok"] = verify_ok
+
+            yield from _maybe_auto_mark_implement_step()
 
             # --- Auto-advance ---
             if not auto_advance_enabled():
@@ -895,7 +933,7 @@ class Session:
                 )
                 return
 
-            next_step = next_step_after(item.tasks_md, focus_step)
+            next_step = next_step_after(item.tasks_md, focus_step, item=item)
             if not next_step:
                 yield self.io.tool_output(
                     "🎉 All implementation steps appear complete. No more open tasks."

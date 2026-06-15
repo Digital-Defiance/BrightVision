@@ -62,6 +62,10 @@ def _parse_tool_arguments(raw: Any) -> Any:
 def _messages_from_coder(coder) -> list[dict[str, Any]]:
     done = getattr(coder, "done_messages", None) or []
     cur = getattr(coder, "cur_messages", None) or []
+    if not isinstance(done, (list, tuple)):
+        done = []
+    if not isinstance(cur, (list, tuple)):
+        cur = []
     out: list[dict[str, Any]] = []
     for i, msg in enumerate(list(done) + list(cur)):
         if not isinstance(msg, dict):

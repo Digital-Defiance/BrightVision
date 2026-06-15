@@ -48,4 +48,20 @@ describe('isSessionRestartInFlight', () => {
       )
     ).toBe(true)
   })
+
+  it('is false during error phase after failed start', () => {
+    expect(
+      isSessionRestartInFlight(
+        {
+          active: true,
+          phase: 'error',
+          label: 'Error',
+          progress: null,
+          detail: 'Vision API not reachable',
+          error: 'Vision API not reachable',
+        },
+        false
+      )
+    ).toBe(false)
+  })
 })

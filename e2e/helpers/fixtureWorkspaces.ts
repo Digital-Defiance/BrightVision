@@ -4,7 +4,8 @@ import path from 'node:path'
 import type { TauriHandler } from './mockTauri'
 import { resolveFixturePackRoot } from './llmEnv'
 import { sampleTodoStore } from './fixtures'
-import { writeCharSplitCorruptedAgentTodoFile } from './agentTodoFixture'
+import { writeAgentTodoFile, writeCharSplitCorruptedAgentTodoFile } from './agentTodoFixture'
+import { agentTodoWithStep1Done, specProgressTodoStoreJson } from './specProgressFixture'
 
 const FIXTURE_PACK_ROOT = resolveFixturePackRoot()
 
@@ -17,6 +18,7 @@ export const HELLO_LLM_E2E_WORKSPACE = workspaceRoot('hello-workspace')
 export const EDIT_BLOCK_WORKSPACE = workspaceRoot('edit-block-workspace')
 export const TASKS_SEEDED_WORKSPACE = workspaceRoot('tasks-seeded-workspace')
 export const AGENT_TODO_CHAR_SPLIT_WORKSPACE = workspaceRoot('agent-todo-char-split-workspace')
+export const SPEC_PROGRESS_WORKSPACE = workspaceRoot('spec-progress-workspace')
 
 export const E2E_CONTEXT_MAGIC = 'bv-context-fixture-7f3a'
 export const E2E_CONTEXT_WIDGET_REL = 'src/e2e_widget.ts'
@@ -119,6 +121,26 @@ export function ensureAgentTodoCharSplitWorkspace(): string {
   if (fs.existsSync(cecli)) fs.rmSync(cecli, { recursive: true })
   writeCharSplitCorruptedAgentTodoFile(AGENT_TODO_CHAR_SPLIT_WORKSPACE, 'agent-char-split')
   return AGENT_TODO_CHAR_SPLIT_WORKSPACE
+}
+
+/** Rich tasks_md + agent todo with step 1 done (spec progress merge). */
+export function ensureSpecProgressWorkspace(): string {
+  fs.mkdirSync(SPEC_PROGRESS_WORKSPACE, { recursive: true })
+  const readme = path.join(SPEC_PROGRESS_WORKSPACE, 'README.md')
+  if (!fs.existsSync(readme)) {
+    fs.writeFileSync(readme, '# E2E spec progress workspace\n', 'utf8')
+  }
+  gitInitIfNeeded(SPEC_PROGRESS_WORKSPACE, ['README.md'], 'e2e spec-progress')
+  const cecli = path.join(SPEC_PROGRESS_WORKSPACE, '.cecli')
+  if (fs.existsSync(cecli)) fs.rmSync(cecli, { recursive: true })
+  fs.mkdirSync(cecli, { recursive: true })
+  fs.writeFileSync(
+    path.join(cecli, 'todos.json'),
+    JSON.stringify(specProgressTodoStoreJson(), null, 2),
+    'utf8'
+  )
+  writeAgentTodoFile(SPEC_PROGRESS_WORKSPACE, agentTodoWithStep1Done(), 'spec-progress')
+  return SPEC_PROGRESS_WORKSPACE
 }
 
 /** Tauri handlers that read/write real files under a fixture workspace. */

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 import type { TodoItem, TodoStore } from '../../src/todos/types'
 import {
   clearTurnEvents,
@@ -282,6 +282,47 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
 
   let agentPlanImportCount = 0
 
+  const fulfillAgentPlanImport = async (route: Route): Promise<boolean> => {
+    if (opts.agentPlanMissing) {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+      })
+      return true
+    }
+    agentPlanImportCount += 1
+    if (opts.agentTodoImportFromDisk && opts.workspacePath) {
+      try {
+        todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
+      } catch (err) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            detail: err instanceof Error ? err.message : String(err),
+          }),
+        })
+        return true
+      }
+    } else if (opts.agentPlanTodos) {
+      todoStore = cloneStore(opts.agentPlanTodos)
+    } else {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+      })
+      return true
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(todoStore),
+    })
+    return true
+  }
+
   await page.route(
     (url) => url.pathname.endsWith('/workspaces/todos/import-agent-plan'),
     async (route) => {
@@ -294,44 +335,21 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
         await route.continue()
         return
       }
-      if (opts.agentPlanMissing) {
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
-        })
+      await fulfillAgentPlanImport(route)
+    }
+  )
+
+  await page.route(
+    (url) =>
+      new RegExp(`/sessions/${sessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/todos/import-agent-plan$`).test(
+        url.pathname
+      ),
+    async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
         return
       }
-      agentPlanImportCount += 1
-      if (opts.agentTodoImportFromDisk && opts.workspacePath) {
-        try {
-          todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
-        } catch (err) {
-          await route.fulfill({
-            status: 500,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              detail: err instanceof Error ? err.message : String(err),
-            }),
-          })
-          return
-        }
-      } else if (opts.agentPlanTodos) {
-        todoStore = cloneStore(opts.agentPlanTodos)
-      } else {
-        // Real core: no agent todo.txt → 404; workspace todos.json unchanged.
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
-        })
-        return
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(todoStore),
-      })
+      await fulfillAgentPlanImport(route)
     }
   )
 
