@@ -72,6 +72,8 @@ python -m pytest \
 # python -m pytest cecli/tests/basic/test_session_*.py cecli/tests/basic/test_commands.py -q
 # Cecli spec/EARS/todos (upstream PR #574 — no BrightVision HTTP):
 yarn verify:cecli-spec
+# Cecli model hopper / router (fast/code/think tiers, pool, classify):
+yarn verify:cecli-hopper
 # Or: python -m pytest cecli/tests/spec/ -q
 # BrightVision integration
 python -m pytest \

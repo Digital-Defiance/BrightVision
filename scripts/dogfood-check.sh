@@ -35,6 +35,9 @@ if [ -x .venv/bin/python3 ]; then
   step "Cecli spec unit tests"
   yarn verify:cecli-spec
 
+  step "Cecli hopper unit tests"
+  yarn verify:cecli-hopper
+
   step "Bright core pytest"
   .venv/bin/python3 -m pytest \
     tests/core/test_workspace_paths.py \

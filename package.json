@@ -47,6 +47,7 @@
     "verify:submodule": "sh scripts/verify_submodule.sh",
     "verify:ears": "sh scripts/verify-ears.sh",
     "verify:cecli-spec": "sh scripts/verify-cecli-spec.sh",
+    "verify:cecli-hopper": "sh scripts/verify-cecli-hopper.sh",
     "verify:cecli-pre-commit": "sh scripts/verify-cecli-pre-commit.sh",
     "install-git-hooks": "sh scripts/install-git-hooks.sh",
     "install:bgpucap": "sh scripts/install-bgpucap.sh",

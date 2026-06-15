@@ -149,6 +149,7 @@ def test_plan_steps_includes_base():
     ids = [s.id for s in steps]
     assert "dogfood:check" in ids
     assert "verify:cecli-spec" in ids
+    assert "verify:cecli-hopper" in ids
     assert "llm:backends" in ids
     assert "test-local:release" in ids
     assert "llm:core" not in ids

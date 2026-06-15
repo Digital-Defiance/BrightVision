@@ -39,6 +39,11 @@ _BASE_STEPS: tuple[SuiteStep, ...] = (
         ("yarn", "verify:cecli-spec"),
     ),
     SuiteStep(
+        "verify:cecli-hopper",
+        "yarn verify:cecli-hopper (cecli/tests/hopper — pool + classify)",
+        ("yarn", "verify:cecli-hopper"),
+    ),
+    SuiteStep(
         "llm:backends",
         "yarn test:llm-backends (config/registry/clients/router — mocked, no vLLM)",
         ("yarn", "test:llm-backends"),
