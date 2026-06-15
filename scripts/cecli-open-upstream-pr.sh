@@ -60,9 +60,16 @@ fi
 
 if [ "${CECLI_SKIP_PRE_COMMIT:-}" != "1" ]; then
   echo "Running cecli pre-commit parity (isort/black/flake8)…" >&2
+  if ! git -C "$CECLI" rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
+    echo "error: local branch ${BRANCH} not found" >&2
+    exit 1
+  fi
+  PREV="$(git -C "$CECLI" branch --show-current)"
+  git -C "$CECLI" checkout "$BRANCH"
   sh "${ROOT}/scripts/verify-cecli-pre-commit.sh"
+  git -C "$CECLI" checkout "$PREV"
 else
-  echo "skip: CECLI_SKIP_PRE_COMMIT=1" >&2
+  echo "skip: CECLI_SKIP_PRE_COMMIT=1 (run verify-cecli-pre-commit on ${BRANCH} first)" >&2
 fi
 
 FORK_ID="$(gh api repos/Digital-Defiance/cecli --jq .node_id)"
