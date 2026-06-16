@@ -7,6 +7,7 @@ import {
   isLlmE2eEnabled,
   isRouterLlmE2eEnabled,
   resolveRouterModelTags,
+  warmLocalLlmModelTag,
 } from './helpers/llmEnv'
 import { expectOptimisticSend } from './helpers/chatSend'
 import { expectLatestAssistantReply } from './helpers/llmChat'
@@ -106,6 +107,9 @@ test.describe('LLM auto-router @router', () => {
   test('think tier routes to Architect when THINK_MODEL configured', async ({ page }) => {
     const { thinkTag } = resolveRouterModelTags()
     test.skip(!thinkTag, 'Set THINK_MODEL in local-llm.env for think-tier router e2e')
+
+    // LM Studio: global setup keeps fast+code resident; exclusive-load think so 70B fits in RAM.
+    warmLocalLlmModelTag(thinkTag, { exclusive: true })
 
     await primeLlmE2eApp(page)
     await startLlmE2eSession(page)

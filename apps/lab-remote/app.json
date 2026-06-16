@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "BrightVision Lab Remote",
+    "slug": "brightvision-lab-remote",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "brightvision-lab-remote",
+    "userInterfaceStyle": "automatic",
+    "autolinking": {
+      "searchPaths": ["../../node_modules", "node_modules"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Lab Remote to scan the Test Lab pairing QR code on your network."
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.digitaldefiance.brightvision.labremote"
+    },
+    "android": {
+      "package": "org.digitaldefiance.brightvision.labremote"
+    }
+  }
+}

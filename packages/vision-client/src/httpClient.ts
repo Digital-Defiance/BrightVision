@@ -14,6 +14,7 @@ import {
   sseEventResetsIdleTimer,
 } from './sseIdle'
 import { visionFetchError } from './networkError'
+import { readViteEnv } from './viteEnv'
 
 export interface ModelRouterPoolEntryApi {
   model: string
@@ -686,12 +687,7 @@ export class CoreHttpClient {
     if (wallTimeoutS != null && Number.isFinite(wallTimeoutS) && wallTimeoutS > 0) {
       return Math.max(90, Math.ceil(wallTimeoutS * 1.08))
     }
-    const meta =
-      typeof import.meta !== 'undefined'
-        ? (import.meta as ImportMeta & { env?: { VITE_LLM_SPEC_GEN_TIMEOUT_S?: string } }).env
-            ?.VITE_LLM_SPEC_GEN_TIMEOUT_S
-        : undefined
-    const raw = meta || '1200'
+    const raw = readViteEnv('VITE_LLM_SPEC_GEN_TIMEOUT_S') || '1200'
     const sec = Number(raw)
     const cap = Number.isFinite(sec) && sec > 0 ? sec : 1200
     return Math.max(90, Math.ceil(cap * 1.05))

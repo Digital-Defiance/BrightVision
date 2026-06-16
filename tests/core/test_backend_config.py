@@ -37,6 +37,19 @@ def _clean_persisted() -> None:
         _CONFIG_FILE.unlink()
 
 
+@pytest.fixture
+def no_local_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ignore repo ``local-llm.env`` so tests isolate env/persisted/default."""
+    monkeypatch.setattr(
+        "bright_vision_core.llm_backends.config._backend_from_local_llm_env_files",
+        lambda: "",
+    )
+    monkeypatch.setattr(
+        "bright_vision_core.llm_backends.config._load_local_llm_env_files",
+        lambda: {},
+    )
+
+
 # ---------------------------------------------------------------------------
 # REQ-001.1: Environment variable takes highest priority
 # ---------------------------------------------------------------------------
@@ -45,7 +58,7 @@ def _clean_persisted() -> None:
 class TestEnvVarPrecedence:
     """REQ-001.1: ``BRIGHTVISION_LLM_BACKEND`` env var overrides persisted config."""
 
-    def test_env_var_overrides_persisted_config(self) -> None:
+    def test_env_var_overrides_persisted_config(self, no_local_llm_env: None) -> None:
         _write_persisted({"active_backend": "vllm", "backend_url": "http://old:8000"})
         try:
             with patch.dict(os.environ, {"BRIGHTVISION_LLM_BACKEND": "llamacpp"}):
@@ -68,7 +81,7 @@ class TestEnvVarPrecedence:
         assert result["backend_url"] == "http://custom:8080"
         assert result["platform_supported"] is True
 
-    def test_env_var_empty_uses_persisted(self) -> None:
+    def test_env_var_empty_uses_persisted(self, no_local_llm_env: None) -> None:
         _write_persisted({"active_backend": "tgi", "backend_url": "http://tgi:3000"})
         try:
             with patch.dict(os.environ, {"BRIGHTVISION_LLM_BACKEND": ""}):
@@ -77,7 +90,7 @@ class TestEnvVarPrecedence:
         finally:
             _clean_persisted()
 
-    def test_env_var_unset_uses_persisted(self) -> None:
+    def test_env_var_unset_uses_persisted(self, no_local_llm_env: None) -> None:
         _write_persisted({"active_backend": "mlx-lm", "backend_url": "http://mlx:8000"})
         try:
             env_val = os.environ.pop("BRIGHTVISION_LLM_BACKEND", None)
@@ -90,14 +103,18 @@ class TestEnvVarPrecedence:
         finally:
             _clean_persisted()
 
-    def test_env_var_default_uses_default_config(self) -> None:
-        """When no persisted config exists and env is unset, defaults to ollama."""
+    def test_env_var_default_uses_default_config(self, no_local_llm_env: None) -> None:
+        """When no persisted config exists and env is unset, platform default."""
         env_val = os.environ.pop("BRIGHTVISION_LLM_BACKEND", None)
         try:
             _clean_persisted()
             result = resolve_backend_config()
-            assert result["active_backend"] == "ollama"
-            assert result["backend_url"] == "http://localhost:11434"
+            if platform.system().lower() == "darwin":
+                assert result["active_backend"] == "lmstudio"
+                assert result["backend_url"] == "http://127.0.0.1:1234"
+            else:
+                assert result["active_backend"] == "ollama"
+                assert result["backend_url"] == "http://localhost:11434"
             assert result["platform_supported"] is True
         finally:
             if env_val is not None:
@@ -112,7 +129,7 @@ class TestEnvVarPrecedence:
 class TestInvalidBackendFallback:
     """REQ-001.2: Unknown or misspelled backends fall back to ``ollama``."""
 
-    def test_invalid_persisted_backend_defaults_to_ollama(self) -> None:
+    def test_invalid_persisted_backend_defaults_to_ollama(self, no_local_llm_env: None) -> None:
         _write_persisted({"active_backend": "invalid_backend_xyz"})
         try:
             result = resolve_backend_config()
@@ -126,7 +143,7 @@ class TestInvalidBackendFallback:
         assert result["active_backend"] == "ollama"
 
     def test_allowed_backends_contains_expected_set(self) -> None:
-        expected = {"ollama", "llamacpp", "vllm", "tgi", "mlx-lm"}
+        expected = {"ollama", "lmstudio", "llamacpp", "vllm", "tgi", "mlx-lm"}
         assert ALLOWED_BACKENDS == frozenset(expected)
 
 
@@ -138,7 +155,7 @@ class TestInvalidBackendFallback:
 class TestPlatformCompatibility:
     """REQ-001.4: Unsupported backends on the current platform fall back to ollama."""
 
-    def test_unsupported_persisted_backend_falls_back(self) -> None:
+    def test_unsupported_persisted_backend_falls_back(self, no_local_llm_env: None) -> None:
         """Persisted mlx-lm on Linux should fall back to ollama."""
         _write_persisted({"active_backend": "mlx-lm", "backend_url": "http://mlx:8000"})
         try:
@@ -154,7 +171,7 @@ class TestPlatformCompatibility:
                 result = resolve_backend_config()
         assert result["active_backend"] == "ollama"
 
-    def test_supported_platform_returns_active(self) -> None:
+    def test_supported_platform_returns_active(self, no_local_llm_env: None) -> None:
         _write_persisted({"active_backend": "ollama"})
         try:
             with patch("platform.system", return_value="darwin"):
@@ -184,7 +201,7 @@ class TestPlatformCompatibility:
 class TestPersistRoundTrip:
     """REQ-001.3: ``persist_backend_config`` produces valid JSON read back by ``resolve_backend_config``."""
 
-    def test_persist_and_resolve_round_trip(self) -> None:
+    def test_persist_and_resolve_round_trip(self, no_local_llm_env: None) -> None:
         config = {
             "active_backend": "vllm",
             "backend_url": "http://test:8000",

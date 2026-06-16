@@ -2,6 +2,8 @@
 
 Phone companion for the Vision HTTP API on your laptop. See [docs/MOBILE_REMOTE.md](../../docs/MOBILE_REMOTE.md).
 
+**Requires Expo Go SDK 54** (matches `expo ~54` in this workspace).
+
 ## R0 dogfood (current)
 
 1. On desktop: **Settings → BrightVision Remote (LAN Link)** — enable, Start Vision API, scan QR.

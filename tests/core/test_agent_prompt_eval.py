@@ -80,7 +80,7 @@ def _ensure_eval_workspace() -> str:
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
 @unittest.skipIf(os.environ.get("E2E_LLM") != "1", "set E2E_LLM=1 to run real LLM tests")
-@unittest.skipIf(not ollama_reachable(), "Ollama not reachable")
+@unittest.skipIf(not ollama_reachable(), "Local LLM not reachable")
 class TestAgentPromptEval(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -7,7 +7,7 @@ Separate desktop app for running the full engine confidence suite with live prog
 - BrightVision repo with `source activate.sh` (editable `bright_vision_core`)
 - `btime` on PATH (required for step timing unless **Skip time**)
 - Optional: `bgpucap` on **Apple Silicon** for GPU/RAM/pressure (`sh scripts/install-bgpucap.sh`). On Linux/Intel Mac the suite uses **btime-only** dumb mode automatically. See [docs/BRIGHT_UTILS.md](../../docs/BRIGHT_UTILS.md).
-- **Ollama** reachable when **Skip LLM** is unchecked — the orchestrator sets `E2E_LLM=1` on `llm:core`, `e2e:llm`, and `e2e:llm:superproject` (logged as `suite env:` on stderr, including `BV_COMPACT_SPEC_GEN=1` and `LLM_SPEC_GEN_TIMEOUT_S=1800`). Same behavior as `yarn test:everything`; no separate Lab-only LLM path.
+- **Local LLM** reachable when **Skip LLM** is unchecked — **Ollama** or **LM Studio** via `local-llm.env` (`BRIGHTVISION_LLM_BACKEND=lmstudio`, model keys from `lms ls --json`). Lab warmup runs `scripts/local-llm-warmup-for-tests.sh` (`lms load -y` + chat probe on `:1234/v1` for LM Studio). The orchestrator sets `E2E_LLM=1` on `llm:core`, `e2e:llm`, and `e2e:llm:superproject` (logged as `suite env:` on stderr, including `BV_COMPACT_SPEC_GEN=1` and `LLM_SPEC_GEN_TIMEOUT_S=1800`). Same behavior as `yarn test:everything`; no separate Lab-only LLM path.
 - **LLM spec-gen in Lab:** shorter prompts (`BV_COMPACT_SPEC_GEN=1`). Default **Run suite** = all-layers only (~1 min on `e2e:llm`). **Optional diagnostic lanes** (checkboxes): phased spec-gen (`E2E_SPEC_GEN_PHASED=1`), model router e2e, cloud LLM smoke (`cloud-llm.env`), **`verify:ears`** (cecli unit + HTTP EARS/spec/**steering** routes — ~10s, no Ollama), shipped scenario matrix, strict phased pytest (fail instead of skip on EARS). **Default suite** always runs **`verify:cecli-spec`** (~1s, `cecli/tests/spec/`), **`verify:cecli-hopper`** (~2s, `cecli/tests/hopper/`), then **`llm:backends`** (`yarn test:llm-backends` — config/registry/clients/router; mocked vLLM/llama.cpp, ~10s). Plan/ETA refresh when toggles change. Fast cecli-only gate from repo root: `yarn verify:cecli-spec`. Lab Vitest: `yarn test:lab`.
 - **`test-local:release`** intentionally runs **mocked** Playwright only (`*-llm.spec.ts` and `integration/` excluded). Real LLM e2e runs in the later **`e2e:llm`** step — seeing ~18 “skipped” LLM tests in release used to mean “wrong step,” not missing env.
 
@@ -69,6 +69,8 @@ The digest collapses heartbeat lines, keeps pytest failures, and truncates to ~1
 
 **Mobile alerts (ntfy):** Expand **Mobile alerts (ntfy)** before a run. Enable notifications, scan the QR code with the [ntfy](https://ntfy.sh) Android app (or paste the topic). A push is sent when the **full suite** finishes (pass/fail, wall time, failed step ids — no log text). Use **Test ping** to verify delivery.
 
+**Lab Remote (phone progress):** Expand **Lab Remote (phone progress)** and enable **LAN proxy**. Scan the QR with **BrightVision Lab Remote** (`yarn lab-remote:dev` + Expo Go on the same Wi‑Fi). Shows live step and sub-step status — not log lines.
+
 **Resource chips:** Step summary uses heartbeat samples (ioreg/`nvidia-smi`, `vm.memory_pressure`) while running; `bgpucap` JSON at step end adds RAM %, **memory pressure** (0–2), and swap. End-of-step GPU can read 0% on macOS even when Ollama used the GPU — the UI prefers heartbeat GPU peaks when higher.
 
 **Dock icon:** Separate from main BrightVision. From repo root:
@@ -84,6 +86,7 @@ Writes into `apps/test-lab/src-tauri/icons/`. See `apps/test-lab/src-tauri/icons
 | Port | Service |
 |------|---------|
 | 8743 | Test suite orchestrator (default; `BV_TEST_ORCHESTRATOR_PORT`) |
+| 8744 | Lab Remote LAN proxy → :8743 (Test Lab settings) |
 | 8742 | Main app LAN remote proxy → :8741 (not Test Lab) |
 | 8741 | Main BrightVision Vision API (may be restarted by integration/LLM e2e steps) |
 | 1421 | Test Lab Vite dev UI (`apps/test-lab`; change in `package.json` if needed) |

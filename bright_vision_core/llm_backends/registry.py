@@ -52,7 +52,15 @@ class _Registry:
     def _get_host_for(self, name: str) -> str:
         """Return the host URL for a backend name."""
         cfg = resolve_backend_config()
-        return cfg["backend_url"]
+        url = (cfg.get("backend_url") or "").strip()
+        if url:
+            return url
+        defaults: dict[str, str] = {
+            "ollama": "http://localhost:11434",
+            "lmstudio": "http://localhost:1234",
+            "vllm": "http://localhost:8000",
+        }
+        return defaults.get(name, "")
 
 
 # Module-level singleton
@@ -62,7 +70,9 @@ BackendRegistry = _Registry()
 from bright_vision_core.llm_backends.ollama_client import OllamaBackendClient  # noqa: E402, I001
 from bright_vision_core.llm_backends.vllm_client import VLLMBackendClient  # noqa: E402, I001
 from bright_vision_core.llm_backends.llamacpp_client import LlamaCppBackendClient  # noqa: E402, I001
+from bright_vision_core.llm_backends.lmstudio_client import LmStudioBackendClient  # noqa: E402, I001
 
 BackendRegistry.register("ollama", OllamaBackendClient)
+BackendRegistry.register("lmstudio", LmStudioBackendClient)
 BackendRegistry.register("vllm", VLLMBackendClient)
 BackendRegistry.register("llamacpp", LlamaCppBackendClient)

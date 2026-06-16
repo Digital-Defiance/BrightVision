@@ -148,6 +148,7 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
         },
       ],
       tagsRows: [{ name: 'test/model', size: '4.0 GB', vram: null, expiresAt: null }],
+      backend: 'ollama',
     }),
     get_resource_snapshot: async () => ({
       cpuPct: 12.5,

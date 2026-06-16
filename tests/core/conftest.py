@@ -41,6 +41,24 @@ def _patch_webbrowser_open_globally() -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     _patch_webbrowser_open_globally()
+    if os.environ.get("E2E_LLM") == "1":
+        try:
+            from bright_vision_core.test_suite.local_llm import (
+                lmstudio_core_env,
+                resolve_backend,
+            )
+
+            if resolve_backend() == "lmstudio":
+                for key, value in lmstudio_core_env().items():
+                    os.environ.setdefault(key, value)
+        except ImportError:
+            pass
+        try:
+            from bright_vision_core.test_suite.manifest import _suite_litellm_extra_params
+
+            os.environ.setdefault("LITELLM_EXTRA_PARAMS", _suite_litellm_extra_params())
+        except ImportError:
+            pass
 
 
 @pytest.fixture(autouse=True)
@@ -86,3 +104,35 @@ def pytest_runtest_logreport(report) -> None:
             text = str(report.longrepr)
             snippet = text if len(text) <= 2000 else text[:2000] + "\n…"
             print(f"FAIL: {snippet}", file=sys.stderr, flush=True)
+
+
+_RECOVER_LLM_AFTER_TEST_FILES = (
+    "test_edit_block_llm.py",
+    "test_hello_llm.py",
+    "test_context_llm.py",
+    "test_agent_llm.py",
+    "test_todo_list_llm.py",
+    "test_transcript_llm.py",
+    "test_generate_spec_llm.py",
+)
+
+
+def _recover_llm_after_test(nodeid: str) -> bool:
+    return any(name in nodeid for name in _RECOVER_LLM_AFTER_TEST_FILES)
+
+
+@pytest.fixture(autouse=True)
+def _suite_recover_local_llm_after_heavy_test(request: pytest.FixtureRequest):
+    """Between LLM turns in Test Lab, reset LM Studio and Vision session state."""
+    yield
+    if os.environ.get("BV_TEST_SUITE_ACTIVE") != "1":
+        return
+    if not _recover_llm_after_test(request.node.nodeid):
+        return
+    try:
+        from llm_ollama import recover_local_llm_for_tests, reset_vision_sessions_for_tests
+
+        reset_vision_sessions_for_tests()
+        recover_local_llm_for_tests()
+    except Exception:
+        pass

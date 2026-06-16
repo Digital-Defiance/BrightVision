@@ -49,6 +49,41 @@ describe('effectiveRouterEnabled', () => {
       )
     ).toBe(false)
   })
+
+  it('default-on for LM Studio when hopper fast tier uses openai/', () => {
+    const lmStudioPrefs = {
+      ...DEFAULT_MODEL_ROUTER_PREFS,
+      enabled: true,
+      models: [
+        {
+          id: 'e2e-fast',
+          tier: 'fast' as const,
+          model: 'openai/llama-3.2-3b-instruct',
+          enabled: true,
+          label: 'fast',
+        },
+        {
+          id: 'e2e-code',
+          tier: 'code' as const,
+          model: 'openai/qwen2.5-coder-7b-instruct',
+          enabled: true,
+          label: 'code',
+        },
+      ],
+    }
+    expect(
+      effectiveRouterEnabled(lmStudioPrefs, 'openai/llama-3.2-3b-instruct')
+    ).toBe(true)
+  })
+
+  it('off for cloud openai/ when hopper is Ollama-only', () => {
+    expect(
+      effectiveRouterEnabled(
+        { ...DEFAULT_MODEL_ROUTER_PREFS, enabled: true, models: fastEnabledModels },
+        'openai/gpt-4'
+      )
+    ).toBe(false)
+  })
 })
 
 describe('modelRouterApiPayload', () => {
@@ -77,6 +112,32 @@ describe('modelRouterApiPayload', () => {
         'openai/gpt-4'
       )
     ).toBeUndefined()
+  })
+
+  it('returns payload for LM Studio session with openai/ hopper', () => {
+    const models = [
+      {
+        id: 'e2e-fast',
+        tier: 'fast' as const,
+        model: 'openai/llama-3.2-3b-instruct',
+        enabled: true,
+        label: 'fast',
+      },
+      {
+        id: 'e2e-code',
+        tier: 'code' as const,
+        model: 'openai/qwen2.5-coder-7b-instruct',
+        enabled: true,
+        label: 'code',
+      },
+    ]
+    const body = modelRouterApiPayload(
+      { ...DEFAULT_MODEL_ROUTER_PREFS, enabled: true, models },
+      'openai/llama-3.2-3b-instruct'
+    )
+    expect(body?.enabled).toBe(true)
+    expect(body?.fast_model).toBe('openai/llama-3.2-3b-instruct')
+    expect(body?.code_model).toBe('openai/qwen2.5-coder-7b-instruct')
   })
 
   it('returns undefined when no fast model enabled in hopper', () => {

@@ -22,6 +22,32 @@ def test_confirm_ask_uses_group_response_cache() -> None:
 
 
 @pytest.mark.asyncio
+async def test_confirm_ask_declines_shell_during_llm_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("E2E_LLM", "1")
+    io = EventIO(yes=False)
+    ok = await io.confirm_ask(
+        "Run shell command?",
+        subject="echo hello",
+        explicit_yes_required=True,
+    )
+    assert ok is False
+    confirms = [e for e in io.events if e.get("type") == "confirm"]
+    assert len(confirms) == 1
+    assert confirms[0].get("auto_answered") is True
+    assert confirms[0].get("default") is False
+
+
+@pytest.mark.asyncio
+async def test_confirm_ask_declines_add_file_during_llm_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("E2E_LLM", "1")
+    io = EventIO(yes=False)
+    ok = await io.confirm_ask("Add file to the chat?", subject="src/patchme.ts")
+    assert ok is False
+    confirms = [e for e in io.events if e.get("type") == "confirm"]
+    assert confirms[0].get("auto_answered") is True
+
+
+@pytest.mark.asyncio
 async def test_offer_url_blocked_during_llm_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("E2E_LLM", "1")
     opened: list[str] = []

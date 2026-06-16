@@ -19,6 +19,8 @@ type Props = {
   suiteLeft?: string
   /** Fixed finish instant for the suite (secondary Suite ETC line). */
   suiteFinishEtc?: string
+  /** Within-step test progress (e.g. ``2/23 tests``) — Step column only. */
+  substepLabel?: string | null
 }
 
 function HeaderCell({ children }: { children: string }) {
@@ -97,6 +99,7 @@ export default function SuiteProgressTable({
   stepEtc,
   suiteLeft,
   suiteFinishEtc,
+  substepLabel,
 }: Props) {
   const dash = '—'
   const stepActive = stepStartedAtMs != null
@@ -126,7 +129,7 @@ export default function SuiteProgressTable({
         columnGap: 2,
         rowGap: 0.35,
         alignItems: 'baseline',
-        mb: 0.75,
+        mb: 0.5,
       }}
     >
       <HeaderCell>Step</HeaderCell>
@@ -142,7 +145,12 @@ export default function SuiteProgressTable({
           my: 0.2,
         }}
       />
-      <ValueCell>{`${stepIndex}/${stepTotal}`}</ValueCell>
+      <ValueCell>
+        <TwoLineValue
+          primary={`${stepIndex}/${stepTotal}`}
+          secondary={substepLabel}
+        />
+      </ValueCell>
       <ValueCell>
         {showStepTime ? (
           <TwoLineValue primary={stepTimeLabel} secondary={stepStartLabel} />
@@ -153,7 +161,7 @@ export default function SuiteProgressTable({
       <ValueCell>{stepEtc ?? dash}</ValueCell>
       <ValueCell>
         {showSuiteEtc ? (
-          <TwoLineValue primary={suiteLeftLabel} secondary={suiteFinishLabel} />
+          <TwoLineValue primary={suiteLeftLabel!} secondary={suiteFinishLabel} />
         ) : (
           dash
         )}

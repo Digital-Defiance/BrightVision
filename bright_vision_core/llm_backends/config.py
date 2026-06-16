@@ -17,7 +17,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 ALLOWED_BACKENDS: frozenset[str] = frozenset(
-    ["ollama", "llamacpp", "vllm", "tgi", "mlx-lm"]
+    ["ollama", "lmstudio", "llamacpp", "vllm", "tgi", "mlx-lm"]
 )
 
 # Platforms where certain backends are not supported.
@@ -37,8 +37,9 @@ def resolve_backend_config() -> dict[str, Any]:
 
     Resolution hierarchy:
         1. ``BRIGHTVISION_LLM_BACKEND`` environment variable.
-        2. Persisted config at ``~/.config/brightvision/config.json``.
-        3. Default to ``"ollama"``.
+        2. ``local-llm.env`` (repo / XDG).
+        3. Persisted config at ``~/.config/brightvision/config.json``.
+        4. Default (``lmstudio`` on macOS, else ``ollama``).
 
     Returns a dict with keys: ``active_backend``, ``backend_url``,
     ``platform_supported``, and ``user_vram_override_mb``.
@@ -55,7 +56,7 @@ def resolve_backend_config() -> dict[str, Any]:
                 platform.system(),
             )
             default_config = _default_config()
-            return {**default_config, "active_backend": "ollama"}
+            return {**default_config, "active_backend": default_config["active_backend"]}
         return {
             "active_backend": backend,
             "backend_url": os.environ.get("BRIGHTVISION_LLM_BACKEND_URL", ""),
@@ -63,7 +64,21 @@ def resolve_backend_config() -> dict[str, Any]:
             "user_vram_override_mb": None,
         }
 
-    # 2. Persisted config.
+    # 2. Repo / XDG local-llm.env (same files as desktop Settings).
+    file_backend = _backend_from_local_llm_env_files()
+    if file_backend:
+        validated, supported = _validate_and_check_platform(file_backend)
+        if supported:
+            file_env = _load_local_llm_env_files()
+            return {
+                "active_backend": validated,
+                "backend_url": file_env.get("BRIGHTVISION_LLM_BACKEND_URL", "")
+                or file_env.get("OLLAMA_HOST", ""),
+                "platform_supported": True,
+                "user_vram_override_mb": None,
+            }
+
+    # 3. Persisted config.
     persisted = _load_persisted_config()
     if persisted and "active_backend" in persisted:
         backend = persisted["active_backend"]
@@ -82,8 +97,44 @@ def resolve_backend_config() -> dict[str, Any]:
             "platform_supported": True,
             "user_vram_override_mb": persisted.get("user_vram_override_mb"),
         }
-    # 3. Default.
+    # 4. Default.
     return _default_config()
+
+
+def _local_llm_env_paths() -> list[Path]:
+    paths: list[Path] = []
+    for key in ("BRIGHT_VISION_ROOT", "BV_ROOT"):
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            paths.append(Path(raw).expanduser() / "local-llm.env")
+    paths.append(Path.cwd() / "local-llm.env")
+    paths.append(Path.home() / ".config" / "local-llm" / "env")
+    paths.append(Path.home() / "local-llm" / "local-llm.env")
+    return paths
+
+
+def _load_local_llm_env_files() -> dict[str, str]:
+    out: dict[str, str] = {}
+    for path in _local_llm_env_paths():
+        if not path.is_file():
+            continue
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                trimmed = line.strip()
+                if not trimmed or trimmed.startswith("#") or "=" not in trimmed:
+                    continue
+                key, _, value = trimmed.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key:
+                    out[key] = value
+        except OSError:
+            continue
+    return out
+
+
+def _backend_from_local_llm_env_files() -> str:
+    return _load_local_llm_env_files().get("BRIGHTVISION_LLM_BACKEND", "").strip()
 
 
 def _validate_and_check_platform(
@@ -110,7 +161,14 @@ def _validate_and_check_platform(
 
 
 def _default_config() -> dict[str, Any]:
-    """Return the default configuration (ollama)."""
+    """Return the default configuration (LM Studio on macOS, else Ollama)."""
+    if platform.system().lower() == "darwin":
+        return {
+            "active_backend": "lmstudio",
+            "backend_url": "http://127.0.0.1:1234",
+            "platform_supported": True,
+            "user_vram_override_mb": None,
+        }
     return {
         "active_backend": "ollama",
         "backend_url": "http://localhost:11434",

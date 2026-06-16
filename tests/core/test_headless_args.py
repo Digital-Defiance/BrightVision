@@ -53,6 +53,11 @@ def test_default_headless_args_yes_flag():
     assert default_headless_args(yes=True).yes is True
 
 
+def test_default_headless_args_yes_always_commands_follows_yes():
+    assert default_headless_args(yes=False).yes_always_commands is False
+    assert default_headless_args(yes=True).yes_always_commands is True
+
+
 def test_default_headless_args_includes_agent_config_json():
     args = default_headless_args()
     parsed = json.loads(args.agent_config)

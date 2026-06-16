@@ -59,14 +59,23 @@ export function normalizeModelRouterPrefs(prefs: ModelRouterPrefs): ModelRouterP
   return { ...prefs, keepAliveHeavySec }
 }
 
-/** Router on when Ollama + enabled fast tier, unless user opted out or env disables. */
+/** Ollama or LM Studio (openai/ hopper aligned with session), not cloud-only models. */
+function isRouterEligibleSessionModel(sessionModel: string, prefs: ModelRouterPrefs): boolean {
+  if (isOllamaVisionModel(sessionModel)) return true
+  const m = sessionModel.trim().toLowerCase()
+  if (!m.startsWith('openai/')) return false
+  const { fast } = resolveHopperModels(prefs.models, sessionModel)
+  return Boolean(fast?.trim().toLowerCase().startsWith('openai/'))
+}
+
+/** Router on when local LLM + enabled fast tier, unless user opted out or env disables. */
 export function effectiveRouterEnabled(
   prefs: ModelRouterPrefs,
   sessionModel: string,
   modelRouterEnv?: boolean | null
 ): boolean {
   if (modelRouterEnv === false) return false
-  if (!isOllamaVisionModel(sessionModel)) return false
+  if (!isRouterEligibleSessionModel(sessionModel, prefs)) return false
   const { fast } = resolveHopperModels(prefs.models, sessionModel)
   if (!fast) return false
   if (modelRouterEnv === true) return true
@@ -218,7 +227,7 @@ export function applyLocalLlmHopperFromEnv(
     models = setHopperTierFromEnv(
       models,
       'fast',
-      ollamaChatModelFromTag(fastTag),
+      ollamaChatModelFromTag(fastTag, snap.backend),
       fastTag,
       'FAST_MODEL',
       snap.fastThink
@@ -229,7 +238,7 @@ export function applyLocalLlmHopperFromEnv(
     models = setHopperTierFromEnv(
       models,
       'code',
-      ollamaChatModelFromTag(codeTag),
+      ollamaChatModelFromTag(codeTag, snap.backend),
       codeTag,
       snap.codeModel?.trim() ? 'CODE_MODEL' : 'HEAVY_MODEL',
       snap.codeThink
@@ -242,7 +251,7 @@ export function applyLocalLlmHopperFromEnv(
     models = setHopperTierFromEnv(
       models,
       'think',
-      ollamaChatModelFromTag(thinkTag),
+      ollamaChatModelFromTag(thinkTag, snap.backend),
       thinkTag,
       'THINK_MODEL'
     )

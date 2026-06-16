@@ -32,10 +32,9 @@ def _load_local_llm_env() -> dict[str, str]:
 
 def _normalize_tag(raw: str) -> str:
     v = (raw or "").strip()
-    if v.startswith("ollama_chat/"):
-        return v[len("ollama_chat/") :]
-    if v.startswith("ollama/"):
-        return v[len("ollama/") :]
+    for prefix in ("ollama_chat/", "ollama/", "openai/"):
+        if v.startswith(prefix):
+            return v[len(prefix) :]
     return v
 
 

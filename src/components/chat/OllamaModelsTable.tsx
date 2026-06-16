@@ -23,10 +23,28 @@ interface OllamaModelsTableProps {
   highlightTag?: string
   /** Model name → hopper tier, for row color-coding by tier. */
   tierMap?: Record<string, ModelHopperTier>
+  /** LM Studio ps rows use status/variant columns differently from Ollama. */
+  variant?: 'ollama' | 'lmstudio'
+}
+
+function normalizeTag(tag: string): string {
+  return tag.replace(/^ollama_chat\//, '').replace(/^openai\//, '').trim()
 }
 
 function rowMatchesTag(name: string, tag: string): boolean {
-  return name === tag || name.startsWith(`${tag}:`)
+  const bare = normalizeTag(tag)
+  return name === bare || name.startsWith(`${bare}:`) || name.startsWith(`${bare}@`)
+}
+
+function resolveTier(
+  rowName: string,
+  tierMap?: Record<string, ModelHopperTier>
+): ModelHopperTier | undefined {
+  if (!tierMap) return undefined
+  if (tierMap[rowName]) return tierMap[rowName]
+  const bare = normalizeTag(rowName)
+  if (tierMap[bare]) return tierMap[bare]
+  return undefined
 }
 
 export function OllamaModelsTable({
@@ -36,8 +54,10 @@ export function OllamaModelsTable({
   emptyLabel = '(none)',
   highlightTag,
   tierMap,
+  variant = 'ollama',
 }: OllamaModelsTableProps) {
   const theme = useTheme()
+  const bareHighlight = highlightTag ? normalizeTag(highlightTag) : ''
   return (
     <Paper variant="outlined" sx={{ overflow: 'hidden', mb: 1.5 }} data-testid="ollama-models-table">
       <Typography
@@ -65,17 +85,16 @@ export function OllamaModelsTable({
               <TableRow>
                 <TableCell>Model</TableCell>
                 <TableCell>Size</TableCell>
-                <TableCell>Processor</TableCell>
+                <TableCell>{variant === 'lmstudio' ? 'Status' : 'Processor'}</TableCell>
                 <TableCell>Context</TableCell>
-                <TableCell>Expires</TableCell>
+                <TableCell>{variant === 'lmstudio' ? 'Variant' : 'Expires'}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map((row) => {
                 const highlighted =
-                  !!highlightTag && rowMatchesTag(row.name, highlightTag)
-                // Resolve tier color from hopper config
-                const tier = tierMap?.[row.name]
+                  !!bareHighlight && rowMatchesTag(row.name, bareHighlight)
+                const tier = resolveTier(row.name, tierMap)
                 const tierColor = tier
                   ? modelRouteAccentColor(theme, normalizeModelRouteRole(normalizeHopperTier(tier)))
                   : undefined

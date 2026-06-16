@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { VisionConfig } from './config'
-import { isOllamaVisionModel, ollamaTagFromVisionModel, resolveLocalLlmForConfig } from './localLlm'
+import { isLocalBackendVisionModel, localModelTagFromVisionModel, resolveLocalLlmForConfig } from './localLlm'
 import { isTauriRuntime } from './isTauri'
 import type { ModelRouterPrefs } from '../theme/modelRouterPrefs'
 import { effectiveRouterEnabled, normalizeKeepAliveHeavySec, normalizeModelRouteRole } from '../theme/modelRouterPrefs'
@@ -34,8 +34,18 @@ export interface ModelRouteSnapshot {
   enable_thinking?: boolean | null
 }
 
+function modelTagFromVisionModel(model: string): string | null {
+  return localModelTagFromVisionModel(model)
+}
+
+function isLocalLlmSessionModel(config: VisionConfig): boolean {
+  const backend = config.model.trim().startsWith('openai/') ? 'lmstudio' : 'ollama'
+  return isLocalBackendVisionModel(config.model, backend)
+}
+
 function ollamaHostForConfig(config: VisionConfig): string {
-  return config.ollamaApiBase.trim() || resolveLocalLlmForConfig(config).ollamaHost
+  const backend = config.model.trim().startsWith('openai/') ? 'lmstudio' : 'ollama'
+  return config.ollamaApiBase.trim() || resolveLocalLlmForConfig(config, backend).ollamaHost
 }
 
 function keepAliveForRole(
@@ -63,7 +73,7 @@ export function buildRouterRoutePullEntries(
     { role: 'think' as const, model: think },
   ]) {
     if (!spec.model) continue
-    const tag = ollamaTagFromVisionModel(spec.model)
+    const tag = modelTagFromVisionModel(spec.model)
     if (!tag || seen.has(tag)) continue
     seen.add(tag)
     entries.push({
@@ -85,7 +95,7 @@ export function buildHopperPrepareEntries(
   for (const row of prefs.models) {
     if (!row.enabled) continue
     const tier = normalizeHopperTier(row.tier)
-    const tag = ollamaTagFromVisionModel(
+    const tag = modelTagFromVisionModel(
       row.model.trim() || (tier === 'code' ? sessionModel : '')
     )
     if (!tag) continue
@@ -121,7 +131,7 @@ export async function prepareModelRouterForSessionStart(
   if (
     !isTauriRuntime() ||
     !effectiveRouterEnabled(prefs, config.model, modelRouterEnv) ||
-    !isOllamaVisionModel(config.model)
+    !isLocalLlmSessionModel(config)
   ) {
     return []
   }
@@ -137,7 +147,7 @@ export async function prepareModelRouterHopper(
   if (
     !isTauriRuntime() ||
     !effectiveRouterEnabled(prefs, config.model, modelRouterEnv) ||
-    !isOllamaVisionModel(config.model)
+    !isLocalLlmSessionModel(config)
   ) {
     return []
   }
@@ -153,7 +163,7 @@ export async function ensureRoutedOllamaModel(
   if (!isTauriRuntime() || !effectiveRouterEnabled(prefs, config.model, modelRouterEnv)) {
     return null
   }
-  const tag = ollamaTagFromVisionModel(route.model)
+  const tag = modelTagFromVisionModel(route.model)
   if (!tag) return null
   const role = normalizeModelRouteRole(route.role ?? route.tier)
   return invoke<OllamaEnsureModelResult>('ollama_ensure_model_loaded', {

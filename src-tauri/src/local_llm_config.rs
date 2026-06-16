@@ -13,6 +13,12 @@ const KEYS: &[&str] = &[
     "INDEX_MODEL",
     "OLLAMA_HOST",
     "BRIGHTVISION_LLM_BACKEND",
+    "BRIGHTVISION_LLM_BACKEND_URL",
+    "OPENAI_API_BASE",
+    "OPENAI_API_KEY",
+    "BRIGHTVISION_LLM_LOAD_CONTEXT_LENGTH",
+    "BRIGHTVISION_LLM_LOAD_PARALLEL",
+    "BRIGHTVISION_LLM_LOAD_TTL",
     "FAST_MODEL",
     "HEAVY_MODEL",
     "CODE_MODEL",
@@ -26,7 +32,7 @@ const KEYS: &[&str] = &[
 ];
 
 /// Allowed local LLM backends (mirrors ``bright_vision_core.llm_backends.config``).
-pub const ALLOWED_BACKENDS: &[&str] = &["ollama", "llamacpp", "vllm", "tgi", "mlx-lm"];
+pub const ALLOWED_BACKENDS: &[&str] = &["ollama", "lmstudio", "llamacpp", "vllm", "tgi", "mlx-lm"];
 
 /// A numbered tier slot binding a model to a tier position.
 /// Slot 0 = the base key (e.g. `THINK_MODEL`); slots 1–9 = numbered keys.
@@ -402,7 +408,7 @@ fn load_persisted_active_backend() -> Option<String> {
     read_persisted_active_backend_at(&brightvision_config_path())
 }
 
-/// Resolve active backend: env → ``~/.config/brightvision/config.json`` → env files → ``ollama``.
+/// Resolve active backend: env → ``~/.config/brightvision/config.json`` → env files → ``lmstudio`` (macOS) / ``ollama``.
 fn resolve_backend(vars: &HashMap<String, String>) -> String {
     if let Ok(raw) = std::env::var("BRIGHTVISION_LLM_BACKEND") {
         let trimmed = raw.trim();
@@ -419,7 +425,11 @@ fn resolve_backend(vars: &HashMap<String, String>) -> String {
             return normalize_backend(trimmed);
         }
     }
-    "ollama".to_string()
+    if cfg!(target_os = "macos") {
+        "lmstudio".to_string()
+    } else {
+        "ollama".to_string()
+    }
 }
 
 fn normalize_backend(raw: &str) -> String {
@@ -579,6 +589,31 @@ fn resolve_priority_list(
     }
 
     result
+}
+
+/// Env vars from local-llm files for the Vision API subprocess (LiteLLM routing).
+pub fn core_api_llm_env(hint_root: Option<&str>) -> HashMap<String, String> {
+    let mut vars: HashMap<String, String> = HashMap::new();
+    for path in config_file_paths(hint_root) {
+        parse_env_file(&path, &mut vars);
+    }
+    let keys = [
+        "BRIGHTVISION_LLM_BACKEND",
+        "BRIGHTVISION_LLM_BACKEND_URL",
+        "OPENAI_API_BASE",
+        "OPENAI_API_KEY",
+        "OLLAMA_HOST",
+    ];
+    let mut out: HashMap<String, String> = HashMap::new();
+    for key in keys {
+        if let Some(value) = vars.get(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                out.insert(key.to_string(), trimmed.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// Return all `BV_*` keys found in the local-llm env file chain.

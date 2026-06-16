@@ -19,6 +19,8 @@ export interface OllamaModelsSnapshot {
   psText: string
   psRows?: OllamaModelRow[]
   tagsRows?: OllamaModelRow[]
+  /** Active local LLM backend from Rust (`ollama`, `lmstudio`, …). */
+  backend?: string
 }
 
 export interface LocalLlmRuntimeStatus {
@@ -159,40 +161,134 @@ const EXTERNAL_BACKEND_CAPABILITIES: BackendCapabilities = {
   supportsContextWindowQuery: false,
 }
 
+const LMSTUDIO_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: false,
+  supportsModelPull: false,
+  supportsContextWindowQuery: true,
+}
+
 /** Map backend name → UI capabilities (REQ-004). */
 export function capabilitiesForBackend(backend: string | null | undefined): BackendCapabilities {
   const name = (backend ?? 'ollama').trim().toLowerCase()
   if (name === 'ollama') return OLLAMA_CAPABILITIES
+  if (name === 'lmstudio') return LMSTUDIO_CAPABILITIES
   return EXTERNAL_BACKEND_CAPABILITIES
 }
 
-/** Map an Ollama tag from `local-llm.env` to a LiteLLM model id for Vision. */
+/** Strip LiteLLM provider prefix → bare local model id (Ollama tag or LM Studio modelKey). */
+export function localModelTagFromVisionModel(model: string): string | null {
+  const m = model.trim()
+  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
+  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
+  if (m.startsWith('openai/')) return m.slice('openai/'.length)
+  return null
+}
+
+/** Map a local model id from env to a LiteLLM model id for the active backend. */
+export function visionModelFromLocalTag(tag: string, backend?: string | null): string {
+  const t = tag.trim()
+  if (!t) return DEFAULT_CONFIG.model
+  if (t.startsWith('ollama_chat/') || t.startsWith('ollama/') || t.startsWith('openai/')) {
+    return t
+  }
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'ollama') return `ollama_chat/${t}`
+  if (name === 'lmstudio' || name === 'vllm' || name === 'tgi' || name === 'llamacpp' || name === 'mlx-lm') {
+    return `openai/${t}`
+  }
+  return `ollama_chat/${t}`
+}
+
+export function localLlmListLabels(backend?: string | null): {
+  statusTitle: string
+  tagsTitle: string
+  psTitle: string
+  tagsHost: string
+  psHost: string
+  tagsEmpty: string
+  psEmpty: string
+  configuredInPs: string
+  configuredNotInPs: string
+  unreachable: string
+  loadedChipYes: string
+  loadedChipNo: string
+} {
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'lmstudio') {
+    return {
+      statusTitle: 'LM Studio status',
+      tagsTitle: 'lms ls — models on disk',
+      psTitle: 'lms ps — loaded in RAM',
+      tagsHost: 'lms ls --json',
+      psHost: 'lms ps --json',
+      tagsEmpty: 'No models on disk (download in LM Studio or run lms get)',
+      psEmpty: 'No models loaded (run lms load or Local LLM → Start)',
+      configuredInPs: 'in lms ps',
+      configuredNotInPs: 'not in lms ps',
+      unreachable:
+        'LM Studio CLI not reachable. Install lms and ensure it is on PATH.',
+      loadedChipYes: 'In lms ps',
+      loadedChipNo: 'Not in lms ps',
+    }
+  }
+  return {
+    statusTitle: 'Ollama status',
+    tagsTitle: '/api/tags — pulled models',
+    psTitle: '/api/ps — loaded in RAM',
+    tagsHost: 'GET /api/tags',
+    psHost: 'GET /api/ps',
+    tagsEmpty: 'No models in /api/tags (run ollama pull or Local LLM → Start)',
+    psEmpty: 'No models in /api/ps (empty — model may have unloaded; use Local LLM → Start)',
+    configuredInPs: 'in /api/ps',
+    configuredNotInPs: 'not in /api/ps',
+    unreachable: 'Ollama not reachable. Start Ollama or check Settings → Ollama API base.',
+    loadedChipYes: 'In /api/ps',
+    loadedChipNo: 'Not in /api/ps',
+  }
+}
+
+/** True when Settings model matches the active local backend provider prefix. */
+export function isLocalBackendVisionModel(model: string, backend?: string | null): boolean {
+  const m = model.trim().toLowerCase()
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'lmstudio') {
+    return m.startsWith('openai/')
+  }
+  return isOllamaVisionModel(model)
+}
+
 export function isOllamaVisionModel(model: string): boolean {
   const m = model.trim().toLowerCase()
   return m.startsWith('ollama_chat/') || m.startsWith('ollama/')
 }
 
+/** @deprecated Use {@link localModelTagFromVisionModel}. */
 export function ollamaTagFromVisionModel(model: string): string | null {
-  const m = model.trim()
-  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
-  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
-  return null
+  return localModelTagFromVisionModel(model)
 }
 
-export function resolveLocalLlmForConfig(cfg: VisionConfig): {
+/** Strip provider prefix for row matching against backend listings. */
+export function bareLocalModelId(model: string): string {
+  return localModelTagFromVisionModel(model) ?? model.trim()
+}
+
+export function resolveLocalLlmForConfig(
+  cfg: VisionConfig,
+  backend?: string | null
+): {
   ollamaHost: string
   modelTag: string | null
 } {
-  const host = cfg.ollamaApiBase.trim() || 'http://127.0.0.1:11434'
-  const modelTag = ollamaTagFromVisionModel(cfg.model)
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  const defaultHost =
+    name === 'lmstudio' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:11434'
+  const host = cfg.ollamaApiBase.trim() || defaultHost
+  const modelTag = localModelTagFromVisionModel(cfg.model)
   return { ollamaHost: host, modelTag }
 }
 
-export function ollamaChatModelFromTag(tag: string): string {
-  const t = tag.trim()
-  if (!t) return DEFAULT_CONFIG.model
-  if (t.includes('/')) return t
-  return `ollama_chat/${t}`
+export function ollamaChatModelFromTag(tag: string, backend?: string | null): string {
+  return visionModelFromLocalTag(tag, backend ?? 'ollama')
 }
 
 function isDefaultOllamaModel(model: string): boolean {
@@ -215,7 +311,7 @@ export function applyLocalLlmToConfig(
   }
   const tag = snap.dataModel?.trim()
   if (tag && (!fillEmpty || isDefaultOllamaModel(cfg.model))) {
-    next = { ...next, model: ollamaChatModelFromTag(tag) }
+    next = { ...next, model: visionModelFromLocalTag(tag, snap.backend) }
   }
   return next
 }

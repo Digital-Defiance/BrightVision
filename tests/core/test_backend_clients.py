@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from bright_vision_core.llm_backends.llamacpp_client import LlamaCppBackendClient
+from bright_vision_core.llm_backends.lmstudio_client import LmStudioBackendClient
 from bright_vision_core.llm_backends.ollama_client import OllamaBackendClient
 from bright_vision_core.llm_backends.vllm_client import VLLMBackendClient
 
@@ -204,10 +205,64 @@ class TestLlamaCppBackendClient:
         assert await client.list_available_models() == []
 
 
+class TestLmStudioBackendClient:
+    @pytest.mark.asyncio
+    async def test_list_available_models_from_lms_json(self):
+        payload = [
+            {"type": "llm", "modelKey": "qwen2.5-coder-7b-instruct"},
+            {"type": "embedding", "modelKey": "text-embedding-nomic-embed-text-v1.5"},
+        ]
+        with patch(
+            "bright_vision_core.llm_backends.lmstudio_client._run_lms_json",
+            new=AsyncMock(return_value=payload),
+        ):
+            client = LmStudioBackendClient()
+            names = await client.list_available_models()
+            assert names == ["qwen2.5-coder-7b-instruct"]
+
+    @pytest.mark.asyncio
+    async def test_get_context_window_from_lms_json(self):
+        payload = [
+            {"type": "llm", "modelKey": "llama-3.2-3b-instruct", "maxContextLength": 131072},
+        ]
+        with patch(
+            "bright_vision_core.llm_backends.lmstudio_client._run_lms_json",
+            new=AsyncMock(return_value=payload),
+        ):
+            client = LmStudioBackendClient()
+            ctx = await client.get_context_window("openai/llama-3.2-3b-instruct")
+            assert ctx == 131072
+
+    @pytest.mark.asyncio
+    async def test_preload_models_calls_lms_load(self):
+        with patch(
+            "bright_vision_core.llm_backends.lmstudio_client._lms_path",
+            return_value="/usr/bin/lms",
+        ), patch(
+            "bright_vision_core.llm_backends.lmstudio_client.asyncio.create_subprocess_exec",
+            new=AsyncMock(),
+        ) as mock_exec:
+            proc = AsyncMock()
+            proc.communicate.return_value = (b"", b"")
+            proc.returncode = 0
+            mock_exec.return_value = proc
+            client = LmStudioBackendClient()
+            loaded = await client.preload_models(["qwen/qwen3.6-27b"])
+            assert loaded == ["qwen/qwen3.6-27b"]
+            mock_exec.assert_called_once()
+            args = mock_exec.call_args.args
+            assert args[0] == "/usr/bin/lms"
+            assert args[1] == "load"
+            assert args[2] == "qwen/qwen3.6-27b"
+            assert "-y" in args
+            assert "--identifier" in args
+            assert "qwen/qwen3.6-27b" in args
+
+
 class TestProtocolCompliance:
     @pytest.mark.parametrize(
         "backend",
-        [OllamaBackendClient, VLLMBackendClient, LlamaCppBackendClient],
+        [OllamaBackendClient, LmStudioBackendClient, VLLMBackendClient, LlamaCppBackendClient],
     )
     def test_all_clients_satisfy_protocol(self, backend):
         client = backend()

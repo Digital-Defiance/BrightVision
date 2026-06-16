@@ -12,8 +12,15 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["process", "io-util", "sync", "time", "net"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "net", "rt-multi-thread"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+getrandom = "0.2"
+base64 = "0.22"
+axum = "0.7"
+futures-util = "0.3"
+if-addrs = "0.14"
+tower-http = { version = "0.5", features = ["cors"] }
+hostname = "0.4"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

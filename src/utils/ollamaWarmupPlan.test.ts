@@ -56,6 +56,23 @@ describe('buildOllamaWarmupPlan', () => {
     ])
   })
 
+  it('router lane defers think warmup when deferThinkWarmup (LM Studio / RAM)', () => {
+    const plan = buildOllamaWarmupPlan({
+      routerLane: true,
+      defaultModel: 'ollama_chat/llama3.2:3b',
+      routerTags: {
+        fastTag: 'qwen2.5-coder:7b',
+        codeTag: 'qwen3.6:27b',
+        thinkTag: 'deepseek-r1:70b',
+      },
+      deferThinkWarmup: true,
+    })
+    expect(plan).toEqual([
+      { tag: 'qwen2.5-coder:7b', exclusive: true },
+      { tag: 'qwen3.6:27b', exclusive: false },
+    ])
+  })
+
   it('router lane with no resolved tier tags falls back to the default model', () => {
     const plan = buildOllamaWarmupPlan({
       routerLane: true,

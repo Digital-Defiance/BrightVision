@@ -34,6 +34,14 @@ describe('useBackendCapabilities / capabilitiesForBackend', () => {
     })
   })
 
+  it('lmstudio enables context query only', () => {
+    expect(capabilitiesForBackend('lmstudio')).toEqual({
+      supportsVramQuery: false,
+      supportsModelPull: false,
+      supportsContextWindowQuery: true,
+    })
+  })
+
   it('tgi and mlx-lm are managed externally', () => {
     for (const backend of ['tgi', 'mlx-lm'] as const) {
       expect(capabilitiesForBackend(backend).supportsModelPull).toBe(false)

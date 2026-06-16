@@ -7,7 +7,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { VisionConfig } from '../../ipc/config'
-import { isOllamaVisionModel } from '../../ipc/localLlm'
+import { isLocalBackendVisionModel, localLlmListLabels } from '../../ipc/localLlm'
 import { isTauriRuntime } from '../../ipc/isTauri'
 import { useLocalLlmControls, type LocalLlmControls } from '../../hooks/useLocalLlmControls'
 import { LocalLlmActionButtons } from './LocalLlmActionButtons'
@@ -59,11 +59,20 @@ function LocalLlmPanelView({
     )
   }
 
-  if (!isOllamaVisionModel(config.model)) {
+  if (!isLocalBackendVisionModel(config.model, backend)) {
     return (
       <Alert severity="info" sx={{ mb: compact ? 0 : 2 }}>
-        LLM model is not an Ollama provider (<code>ollama_chat/…</code>). Local LLM controls apply
-        when using a local Ollama model.
+        LLM model does not match the active local backend (
+        {backend === 'lmstudio' ? (
+          <>
+            use <code>openai/&lt;modelKey&gt;</code> from <code>lms ls --json</code>
+          </>
+        ) : (
+          <>
+            use <code>ollama_chat/…</code>
+          </>
+        )}
+        ).
       </Alert>
     )
   }
@@ -71,6 +80,11 @@ function LocalLlmPanelView({
   if (!modelTag) {
     return null
   }
+
+  const labels = localLlmListLabels(backend)
+  const showModelSnapshot =
+    modelsSnapshot &&
+    (capabilities.supportsVramQuery || backend === 'lmstudio')
 
   return (
     <Paper variant="outlined" sx={{ p: compact ? 1.5 : 2, mb: compact ? 0 : 2 }}>
@@ -89,7 +103,7 @@ function LocalLlmPanelView({
           {backend !== 'ollama' && (
             <Chip size="small" label={backend} variant="outlined" color="info" />
           )}
-          {!capabilities.supportsVramQuery && (
+          {!capabilities.supportsVramQuery && backend !== 'lmstudio' && (
             <Chip
               size="small"
               label="Managed externally"
@@ -100,40 +114,44 @@ function LocalLlmPanelView({
           )}
         </Stack>
         <Typography variant="caption" color="text.secondary">
-          {capabilities.supportsModelPull
-            ? 'Starts Ollama if needed, pulls your tag, and preloads with '
-            : 'Model lifecycle is managed by your external runtime ('}
-          {capabilities.supportsModelPull ? (
+          {backend === 'lmstudio' ? (
             <>
+              Uses <code>lms load</code> to preload when the model is not already in{' '}
+              <code>lms ps</code>. Model keys come from env files and Settings above.
+            </>
+          ) : capabilities.supportsModelPull ? (
+            <>
+              Starts Ollama if needed, pulls your tag, and preloads with{' '}
               <code>keep_alive: -1</code> only when the model is not already in{' '}
               <code>/api/ps</code>. Host and model tag come from env files and Settings above.
             </>
           ) : (
             <>
-              <code>{backend}</code>). VRAM and model lists are not queried from BrightVision.
+              Model lifecycle is managed by your external runtime (<code>{backend}</code>).
             </>
           )}
         </Typography>
         <Stack direction="row" flexWrap="wrap" gap={0.75} alignItems="center">
-          {statusChip(status?.ollamaRunning ?? false, 'Ollama up', 'Ollama down')}
-          {statusChip(status?.modelPulled ?? false, 'Pulled', 'Not pulled')}
+          {statusChip(status?.ollamaRunning ?? false, backend === 'lmstudio' ? 'lms up' : 'Ollama up', backend === 'lmstudio' ? 'lms down' : 'Ollama down')}
+          {statusChip(status?.modelPulled ?? false, 'On disk', 'Not on disk')}
           {statusChip(
             modelsSnapshot?.configuredInPs ?? status?.modelLoaded ?? false,
-            'In /api/ps',
-            'Not in /api/ps'
+            labels.loadedChipYes,
+            labels.loadedChipNo
           )}
           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
             {modelTag} @ {ollamaHost}
           </Typography>
         </Stack>
-        {modelsSnapshot && capabilities.supportsVramQuery && (
+        {showModelSnapshot && (
           <Paper
             variant="outlined"
             data-testid="ollama-models-snapshot"
             sx={{ p: 1.25, bgcolor: 'action.hover' }}
           >
             <Typography variant="caption" fontWeight={600} display="block" gutterBottom>
-              Ollama models (Settings tag: {modelsSnapshot.configuredTag})
+              {backend === 'lmstudio' ? 'LM Studio models' : 'Ollama models'} (Settings tag:{' '}
+              {modelsSnapshot.configuredTag})
             </Typography>
             <Typography
               variant="caption"
@@ -147,7 +165,7 @@ function LocalLlmPanelView({
                 wordBreak: 'break-word',
               }}
             >
-              {`/api/tags (pulled)\n${modelsSnapshot.tagsText}\n\n/api/ps (loaded in RAM)\n${modelsSnapshot.psText}`}
+              {`${labels.tagsTitle}\n${modelsSnapshot.tagsText}\n\n${labels.psTitle}\n${modelsSnapshot.psText}`}
             </Typography>
           </Paper>
         )}

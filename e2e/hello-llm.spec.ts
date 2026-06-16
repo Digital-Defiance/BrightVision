@@ -57,6 +57,9 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
 
 test.describe('Hello LLM metadata', () => {
   test('documents resolved model for operators', () => {
-    expect(resolveVisionModel() || 'ollama_chat/x').toMatch(/^ollama_chat\//)
+    const model = resolveVisionModel()
+    expect(model, 'E2E_OLLAMA_MODEL or local-llm.env should set a model').toBeTruthy()
+    // Local E2E: Ollama (ollama_chat/…) or LM Studio (openai/… via LiteLLM).
+    expect(model!).toMatch(/^(ollama_chat\/|openai\/)/)
   })
 })

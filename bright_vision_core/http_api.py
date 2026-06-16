@@ -104,6 +104,19 @@ _lock = threading.Lock()
 _sessions: dict[str, Session] = {}
 
 
+def reset_all_sessions_for_tests() -> int:
+    """Interrupt and drop all in-memory sessions (pytest / Test Lab isolation)."""
+    with _lock:
+        for sess in list(_sessions.values()):
+            try:
+                sess.interrupt_turn()
+            except Exception:
+                pass
+        count = len(_sessions)
+        _sessions.clear()
+    return count
+
+
 class ModelPoolEntryModel(BaseModel):
     model: str = ""
     tier: str = Field(description="fast | code | think (heavy → code)")
@@ -688,6 +701,14 @@ def delete_session(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found")
         del _sessions[session_id]
     return {"deleted": session_id}
+
+
+@app.post("/sessions/_test_reset")
+def test_reset_sessions():
+    """Clear every session on the live Vision API (``llm:core`` on :8741)."""
+    if _os.environ.get("BV_TEST_SUITE_ACTIVE") != "1" and _os.environ.get("E2E_LLM") != "1":
+        raise HTTPException(status_code=404, detail="Not available")
+    return {"cleared": reset_all_sessions_for_tests()}
 
 
 @app.get("/sessions/{session_id}/commands", response_model=CommandListResponse)

@@ -616,13 +616,14 @@ function AppShell({
   const [routerEscalateOffer, setRouterEscalateOffer] = useState<RouterEscalateOffer | null>(null)
   const turnHadToolErrorRef = useRef(false)
   const localLlmRef = useRef<LocalLlmSnapshot | null>(null)
-  const isLocalLlmModel = isOllamaVisionModel(savedConfig.model)
-  const modelRouterActive =
-    effectiveRouterEnabled(
-      modelRouterPrefs,
-      savedConfig.model,
-      localLlmRef.current?.modelRouter
-    ) && isLocalLlmModel
+  const isLocalLlmModel =
+    isOllamaVisionModel(savedConfig.model) ||
+    savedConfig.model.trim().toLowerCase().startsWith('openai/')
+  const modelRouterActive = effectiveRouterEnabled(
+    modelRouterPrefs,
+    savedConfig.model,
+    localLlmRef.current?.modelRouter
+  )
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
@@ -818,8 +819,8 @@ function AppShell({
       const tierMap: Record<string, ModelHopperTier> = {}
       for (const entry of modelRouterPrefs.models) {
         if (!entry.model?.trim()) continue
-        // Strip ollama_chat/ prefix to match Ollama /api/ps names
-        const raw = entry.model.trim().replace(/^ollama_chat\//, '')
+        // Strip provider prefix to match backend model listings
+        const raw = entry.model.trim().replace(/^ollama_chat\//, '').replace(/^openai\//, '')
         tierMap[raw] = entry.tier
       }
       setChatMessages((prev) =>
@@ -3110,7 +3111,10 @@ function AppShell({
         return
       }
       try {
-        const snapshot = await fetchOllamaModelsSnapshot(savedConfig)
+        const snapshot = await fetchOllamaModelsSnapshot(
+          savedConfig,
+          localLlmRef.current?.backend
+        )
         appendOllamaStatusToChat(clientCmd.id as Exclude<VisionClientCommandId, 'turns'>, snapshot, text)
       } catch (err) {
         setSnackbar({

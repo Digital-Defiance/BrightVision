@@ -368,6 +368,7 @@ class Session:
                     commands=commands,
                     use_git=repo is not None,
                     args=headless_args,
+                    suggest_shell_commands=False,
                     enable_context_compaction=True,
                     context_compaction_max_tokens=compaction_max,
                 )

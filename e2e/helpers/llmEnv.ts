@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,9 +24,11 @@ export const LLM_E2E_WORKSPACE = fixtureWorkspaceRoot('hello-workspace')
 
 const CORE_API_URL = 'http://127.0.0.1:8741'
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434'
+const DEFAULT_LMSTUDIO_HOST = 'http://127.0.0.1:1234'
 
 /** Fast local default for `yarn test:llm:core` / `yarn test:e2e:llm` (also set in package.json). */
 export const DEFAULT_E2E_OLLAMA_MODEL = 'ollama_chat/llama3.2:3b'
+export const DEFAULT_E2E_LMSTUDIO_MODEL = 'openai/llama-3.2-3b-instruct'
 
 export function isLlmE2eEnabled(): boolean {
   return process.env['E2E_LLM'] === '1'
@@ -95,7 +97,21 @@ function normalizeOllamaTag(raw: string): string {
   if (!v) return ''
   if (v.startsWith('ollama_chat/')) return v.slice('ollama_chat/'.length)
   if (v.startsWith('ollama/')) return v.slice('ollama/'.length)
+  if (v.startsWith('openai/')) return v.slice('openai/'.length)
   return v
+}
+
+export function resolveLocalLlmBackend(): string {
+  const fromEnv = process.env.BRIGHTVISION_LLM_BACKEND?.trim()
+  if (fromEnv) return fromEnv.toLowerCase()
+  const fromFile = loadLocalLlmEnv().BRIGHTVISION_LLM_BACKEND?.trim()
+  return (fromFile || 'lmstudio').toLowerCase()
+}
+
+function defaultE2eModel(): string {
+  return resolveLocalLlmBackend() === 'lmstudio'
+    ? DEFAULT_E2E_LMSTUDIO_MODEL
+    : DEFAULT_E2E_OLLAMA_MODEL
 }
 
 export function resolveRouterModelTags(): {
@@ -194,39 +210,45 @@ export function buildRouterPrefsForStorage():
 }
 
 export function resolveOllamaHost(): string {
+  const file = loadLocalLlmEnv()
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    const fromEnv =
+      process.env.BRIGHTVISION_LLM_BACKEND_URL?.trim() ||
+      process.env.OLLAMA_HOST?.trim() ||
+      file.BRIGHTVISION_LLM_BACKEND_URL?.trim() ||
+      file.OLLAMA_HOST?.trim()
+    return fromEnv || DEFAULT_LMSTUDIO_HOST
+  }
   const fromEnv =
     process.env.E2E_OLLAMA_HOST?.trim() ||
     process.env.OLLAMA_HOST?.trim() ||
-    loadLocalLlmEnv().OLLAMA_HOST?.trim()
+    file.OLLAMA_HOST?.trim()
   return fromEnv || DEFAULT_OLLAMA_HOST
 }
 
-/** Ollama tag without the `ollama_chat/` prefix. */
+function lmstudioApiBase(): string {
+  const file = loadLocalLlmEnv()
+  const explicit =
+    process.env.OPENAI_API_BASE?.trim() || file.OPENAI_API_BASE?.trim()
+  if (explicit) return explicit.replace(/\/$/, '')
+  return `${resolveOllamaHost().replace(/\/$/, '')}/v1`
+}
+
+/** Model tag / modelKey without provider prefix. */
 export function resolveOllamaTag(): string {
   const explicit = process.env.E2E_OLLAMA_MODEL?.trim()
-  if (explicit) {
-    if (explicit.startsWith('ollama_chat/')) return explicit.slice('ollama_chat/'.length)
-    if (explicit.startsWith('ollama/')) return explicit.slice('ollama/'.length)
-    return explicit
-  }
+  if (explicit) return normalizeOllamaTag(explicit)
   const fromFile =
     loadLocalLlmEnv().DATA_MODEL?.trim() ||
     loadLocalLlmEnv().LLM_MODEL?.trim() ||
     loadLocalLlmEnv().CHAT_MODEL?.trim()
-  if (fromFile) {
-    if (fromFile.startsWith('ollama_chat/')) return fromFile.slice('ollama_chat/'.length)
-    if (fromFile.startsWith('ollama/')) return fromFile.slice('ollama/'.length)
-    return fromFile
-  }
+  if (fromFile) return normalizeOllamaTag(fromFile)
   return ''
 }
 
-/** Bare Ollama tag for DEFAULT_E2E_OLLAMA_MODEL (`llama3.2:3b`). */
+/** Bare tag for suite default model. */
 export function defaultE2eOllamaTag(): string {
-  const m = DEFAULT_E2E_OLLAMA_MODEL.trim()
-  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
-  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
-  return m
+  return normalizeOllamaTag(defaultE2eModel())
 }
 
 export function isOllamaAutoPullEnabled(): boolean {
@@ -252,14 +274,52 @@ export function isTagPulled(names: string[], tag: string): boolean {
   return names.some((n) => n === tag || n.startsWith(`${tag}:`))
 }
 
+export function fetchLmStudioModelKeys(): string[] {
+  try {
+    const out = execSync('lms ls --json', { encoding: 'utf8', timeout: 20_000 })
+    const rows = JSON.parse(out) as unknown
+    if (!Array.isArray(rows)) return []
+    const keys: string[] = []
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const entry = row as { type?: string; modelKey?: string }
+      if (entry.type !== 'llm') continue
+      const key = entry.modelKey?.trim()
+      if (key) keys.push(key)
+    }
+    return keys
+  } catch {
+    return []
+  }
+}
+
+export function isLmStudioModelOnDisk(keys: string[], tag: string): boolean {
+  const bare = normalizeOllamaTag(tag)
+  return keys.includes(bare)
+}
+
+export async function ensureLmStudioModelAvailable(tag?: string): Promise<string> {
+  const resolved = tag?.trim() ? normalizeOllamaTag(tag) : await resolveOllamaTagWithFallback()
+  const keys = fetchLmStudioModelKeys()
+  if (isLmStudioModelOnDisk(keys, resolved)) return resolved
+  const hint = `Download it in LM Studio or run: lms get ${resolved}`
+  if (!isOllamaAutoPullEnabled()) {
+    throw new Error(`Model "${resolved}" is not installed in LM Studio. ${hint}`)
+  }
+  throw new Error(`Model "${resolved}" is not on disk (lms ls). LM Studio has no pull equivalent — ${hint}`)
+}
+
 export function ollamaPullModel(tag: string): void {
   // eslint-disable-next-line no-console
   console.log(`[llm e2e] ollama pull ${tag}…`)
   execSync(`ollama pull ${tag}`, { stdio: 'inherit', env: process.env })
 }
 
-/** Pull when missing; set E2E_OLLAMA_AUTO_PULL=0 to fail fast without downloading. */
+/** Pull when missing (Ollama); on LM Studio verify modelKey is on disk (`lms ls`). */
 export async function ensureOllamaModelPulled(tag?: string): Promise<string> {
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return ensureLmStudioModelAvailable(tag)
+  }
   const resolved = tag ?? (await resolveOllamaTagWithFallback())
   const host = resolveOllamaHost()
   let names = await fetchOllamaTagNames(host)
@@ -310,6 +370,9 @@ export function visionModelFromTag(tag: string): string {
   if (isProviderVisionModel(m) || m.startsWith('ollama_chat/') || m.startsWith('ollama/')) {
     return m
   }
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return `openai/${m}`
+  }
   return `ollama_chat/${m}`
 }
 
@@ -354,12 +417,24 @@ export function clearLlmE2eWorkspaceTodos(): void {
   }
 }
 
-/** Env vars the headless core needs for LiteLLM → Ollama (UI config does not reach the server process). */
+/** Env vars the headless core needs for LiteLLM → local backend. */
 export function ollamaEnvForCore(): Record<string, string> {
   const out: Record<string, string> = {}
-  const host = resolveOllamaHost()
-  if (host) out.OLLAMA_API_BASE = host
   const file = loadLocalLlmEnv()
+  const backend = resolveLocalLlmBackend()
+  const host = resolveOllamaHost()
+  if (backend === 'lmstudio') {
+    out.BRIGHTVISION_LLM_BACKEND = 'lmstudio'
+    out.BRIGHTVISION_LLM_BACKEND_URL = host
+    out.OPENAI_API_BASE = lmstudioApiBase()
+    out.OPENAI_API_KEY =
+      process.env.OPENAI_API_KEY?.trim() ||
+      file.OPENAI_API_KEY?.trim() ||
+      'lm-studio'
+    if (host) out.OLLAMA_HOST = host
+    return out
+  }
+  if (host) out.OLLAMA_API_BASE = host
   if (file.OLLAMA_API_KEY?.trim()) out.OLLAMA_API_KEY = file.OLLAMA_API_KEY.trim()
   if (file.OLLAMA_HOST?.trim() && !out.OLLAMA_API_BASE) {
     out.OLLAMA_API_BASE = file.OLLAMA_HOST.trim()
@@ -388,7 +463,27 @@ export function buildLlmE2eConfig() {
 }
 
 export async function assertOllamaForLlmE2e(): Promise<void> {
+  const backend = resolveLocalLlmBackend()
   const host = resolveOllamaHost()
+  if (backend === 'lmstudio') {
+    try {
+      const base = lmstudioApiBase()
+      const res = await fetch(`${base}/models`, {
+        headers: { Authorization: 'Bearer lm-studio' },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      throw new Error(
+        `LM Studio not reachable at ${host} (${err}). Start LM Studio and enable Local Server.`
+      )
+    }
+    const tag = await resolveOllamaTagWithFallback()
+    if (!tag) {
+      throw new Error('No E2E model configured (E2E_OLLAMA_MODEL or DATA_MODEL in local-llm.env)')
+    }
+    return
+  }
   try {
     await fetchOllamaTagNames(host)
   } catch (err) {
@@ -401,6 +496,39 @@ export async function assertOllamaForLlmE2e(): Promise<void> {
 
 export function coreHealthUrl(): string {
   return `${CORE_API_URL}/health`
+}
+
+const WARMUP_SCRIPT = path.join(REPO_ROOT, 'scripts', 'local-llm-warmup-for-tests.sh')
+
+/** Vision/LiteLLM id for a bare local model tag (router tier warmup). */
+export function visionWarmupModelId(bareTag: string): string {
+  const tag = bareTag.trim()
+  if (!tag) return tag
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return tag.startsWith('openai/') ? tag : `openai/${tag}`
+  }
+  if (tag.startsWith('ollama_chat/') || tag.startsWith('ollama/')) return tag
+  return `ollama_chat/${tag}`
+}
+
+/**
+ * Run ``scripts/local-llm-warmup-for-tests.sh`` for one model.
+ * Router think tier: ``exclusive: true`` unloads fast+code so a large THINK_MODEL fits.
+ */
+export function warmLocalLlmModelTag(
+  bareTag: string,
+  opts: { exclusive?: boolean } = {}
+): void {
+  const exclusive = opts.exclusive ?? true
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(bareTag),
+      OLLAMA_WARMUP_EXCLUSIVE: exclusive ? '1' : '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
 }
 
 /** Env for spawning Vision API — must not put repo root on PYTHONPATH (shadows `cecli`). */

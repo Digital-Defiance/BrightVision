@@ -653,6 +653,9 @@ async fn start_core_api(
     for (key, value) in local_llm_config::bv_env_vars(None) {
         cmd.env(&key, &value);
     }
+    for (key, value) in local_llm_config::core_api_llm_env(None) {
+        cmd.env(&key, &value);
+    }
     if !extra_params.trim().is_empty() {
         cmd.env("LITELLM_EXTRA_PARAMS", &extra_params);
     }

@@ -30,7 +30,7 @@ export function useLocalLlmControls(
   const [error, setError] = useState<string | null>(null)
   const prevBackendRef = useRef<string | undefined>(undefined)
 
-  const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config)
+  const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config, backendSnapshot?.backend)
   const ollamaModel = isOllamaVisionModel(config.model)
   const backend = backendSnapshot?.backend ?? 'ollama'
   const capabilities: BackendCapabilities = capabilitiesForBackend(backend)

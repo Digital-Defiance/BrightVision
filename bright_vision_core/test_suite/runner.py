@@ -15,11 +15,15 @@ from typing import Any
 
 from bright_vision_core.test_suite.cloud_preflight import cloud_llm_configured
 from bright_vision_core.test_suite.router_preflight import router_lane_ready
+from bright_vision_core.test_suite.local_llm import (
+    local_llm_reachable,
+    resolve_backend,
+    router_lane_step_env,
+)
 from bright_vision_core.test_suite.manifest import (
     SuiteRunOptions,
     SuiteStep,
     llm_core_step_env,
-    ollama_reachable,
     plan_steps,
 )
 from bright_vision_core.test_suite.resources import (
@@ -63,11 +67,64 @@ _LLM_GPU_STALL_ABORT_ENABLED = os.environ.get("BV_LLM_GPU_STALL_ABORT", "1").str
     "no",
     "off",
 )
+
+
+def _suite_turn_timeout_s(step_env: dict[str, str]) -> float:
+    try:
+        return float(step_env.get("BV_SUITE_LLM_TURN_TIMEOUT_S", "300"))
+    except (TypeError, ValueError):
+        return 300.0
+
+
+def resolve_gpu_stall_abort_s(step_env: dict[str, str] | None = None) -> float:
+    """Read stall cap from the step subprocess env (not import-time os.environ)."""
+    bag = step_env or os.environ
+    raw = bag.get("BV_LLM_GPU_STALL_ABORT_S", "240")
+    try:
+        base = float(raw)
+    except (TypeError, ValueError):
+        base = 240.0
+    if bag.get("BV_TEST_SUITE_ACTIVE") == "1" or step_env is not None:
+        turn = _suite_turn_timeout_s(bag)
+        return max(base, turn + 90.0)
+    return base
+
+
+def should_gpu_stall_abort(
+    *,
+    step: SuiteStep,
+    step_env: dict[str, str],
+    use_gpu: bool,
+    step_elapsed_s: float,
+    gpu_idle_s: float,
+    sse_wait_started_at: float | None,
+) -> tuple[bool, float]:
+    stall_s = resolve_gpu_stall_abort_s(step_env)
+    if not _LLM_GPU_STALL_ABORT_ENABLED or not step.requires_ollama or not use_gpu:
+        return False, stall_s
+    if step_elapsed_s < stall_s or gpu_idle_s < stall_s:
+        return False, stall_s
+    if sse_wait_started_at is not None and step.id == "llm:core":
+        turn_s = _suite_turn_timeout_s(step_env)
+        # Let pytest hit SSE timeout + recover retry before the suite kills llm:core.
+        if (time.time() - sse_wait_started_at) < (turn_s * 2.0 + 120.0):
+            return False, stall_s
+    return True, stall_s
 _TEST_FAIL_LINE_RES = [
     re.compile(r"^FAILED\s+\S", re.I),
+    re.compile(r"::\S+\s+FAILED\b", re.I),  # pytest -v stdout
     re.compile(r"^\s*✘\s+\d+\s+\S+\.(?:spec|test)\.", re.I),
     re.compile(r"^\s*×\s+\d+\s+\S+\.(?:spec|test)\.", re.I),
 ]
+# Pytest / llm_client heartbeats — must not reset GPU stall idle timers.
+_STDERR_IDLE_HEARTBEAT_MARKERS = (
+    "waiting for SSE",
+    "still running (",
+)
+
+
+def _stderr_line_counts_as_progress(line: str) -> bool:
+    return not any(m in line for m in _STDERR_IDLE_HEARTBEAT_MARKERS)
 
 
 def _line_indicates_test_fail(line: str) -> bool:
@@ -126,6 +183,7 @@ def build_step_env(
     if step.id == "e2e:llm:router":
         env["E2E_MODEL_ROUTER"] = "1"
         env["BV_ROUTER_LLM_E2E_ONLY"] = "1"
+        env.update(router_lane_step_env(suite_run=suite_run))
     if step.requires_cloud_config or step.id == "cloud-llm":
         env["E2E_CLOUD_LLM"] = "1"
     if step.id == "llm:core" and suite_run:
@@ -162,6 +220,8 @@ def run_step(
 ) -> tuple[bool, float, float | None, float | None, str]:
     """Run one step. Returns ok, seconds, gpu_avg, gpu_peak, combined capture text."""
     env = build_step_env(step, suite_run=suite_run, cwd=cwd)
+    if short_circuit:
+        env["BV_TEST_SUITE_SHORT_CIRCUIT"] = "1"
 
     if step.requires_ollama or step.id == "test-local:release":
         bits = [f"E2E_LLM={env.get('E2E_LLM', '(unset)')}"]
@@ -172,6 +232,10 @@ def run_step(
             bits.append(f"E2E_SPEC_GEN_PHASED={env.get('E2E_SPEC_GEN_PHASED', '(unset)')}")
         if env.get("E2E_MODEL_ROUTER") == "1":
             bits.append("E2E_MODEL_ROUTER=1")
+            from bright_vision_core.test_suite.router_preflight import resolve_router_tags
+
+            fast, code, think = resolve_router_tags()
+            bits.append(f"router fast={fast} code={code}" + (f" think={think}" if think else ""))
         if env.get("E2E_CLOUD_LLM") == "1":
             bits.append("E2E_CLOUD_LLM=1")
         if env.get("E2E_SUPERPROJECT_LLM"):
@@ -221,15 +285,20 @@ def run_step(
                 capture_output=True,
                 text=True,
             )
-        _warmup_script = cwd / "scripts" / "ollama-warmup-for-tests.sh"
+        _warmup_script = cwd / "scripts" / "local-llm-warmup-for-tests.sh"
         if _warmup_script.is_file() and not os.environ.get("SKIP_OLLAMA_WARMUP"):
+            backend = resolve_backend()
+            backend_label = "LM Studio" if backend == "lmstudio" else "Ollama"
             _emit(
                 on_event,
                 {
                     "type": "step_line",
                     "stepId": step.id,
                     "stream": "stderr",
-                    "line": f"Warming Ollama model ({env.get('E2E_OLLAMA_MODEL', 'default')})",
+                    "line": (
+                        f"Warming {backend_label} model "
+                        f"({env.get('E2E_OLLAMA_MODEL', 'default')})"
+                    ),
                 },
             )
             warm = subprocess.run(
@@ -264,17 +333,27 @@ def run_step(
                     )
             if warm.returncode != 0:
                 warmup_failed = True
+                backend = resolve_backend()
+                if backend == "lmstudio":
+                    hint = (
+                        "LM Studio warmup failed — skipping pytest LLM suite. "
+                        "Ensure LM Studio is running, model is on disk (`lms ls --json`), "
+                        "Local Server can start (`lms server start`), "
+                        "or run `sh scripts/lms-warmup-for-tests.sh` manually."
+                    )
+                else:
+                    hint = (
+                        "Ollama warmup failed — skipping pytest LLM suite. "
+                        "Unload other models (`ollama ps` / `ollama stop <name>`), "
+                        "or run `sh scripts/ollama-warmup-for-tests.sh` manually."
+                    )
                 _emit(
                     on_event,
                     {
                         "type": "step_line",
                         "stepId": step.id,
                         "stream": "stderr",
-                        "line": (
-                            "Ollama warmup failed — skipping pytest LLM suite. "
-                            "Unload other models (`ollama ps` / `ollama stop <name>`), "
-                            "or run `sh scripts/ollama-warmup-for-tests.sh` manually."
-                        ),
+                        "line": hint,
                     },
                 )
         if not warmup_failed:
@@ -286,7 +365,10 @@ def run_step(
                     "stream": "stdout",
                     "line": (
                         f"pytest LLM suite (turn timeout {env.get('LLM_TEST_TURN_TIMEOUT_S')}s, "
-                        f"agent {env.get('VISION_AGENT_PREPROC_TIMEOUT_S')}s); stderr shows START/PASS."
+                        f"suite SSE cap {env.get('BV_SUITE_LLM_TURN_TIMEOUT_S', '300')}s, "
+                        f"agent {env.get('VISION_AGENT_PREPROC_TIMEOUT_S')}s, "
+                        f"GPU stall cap {int(resolve_gpu_stall_abort_s(env))}s); "
+                        "pytest via live :8741 Vision HTTP; stderr shows START/PASS."
                     ),
                 },
             )
@@ -323,7 +405,10 @@ def run_step(
     live_mem_samples: list[float] = []
     gpu_stall_abort = False
     gpu_low_warned = False
+    last_gpu_active_at = step_start
+    sse_wait_started_at: float | None = None
     short_circuit_hit = False
+    short_circuit_abort_emitted = False
     proc: subprocess.Popen[str] | None = None
     gpu_baseline = gpu_baseline_for_step(step.id) if step.requires_ollama else {}
     expected_gpu_peak = float(gpu_baseline.get("medianGpuPeak") or 0)
@@ -333,8 +418,11 @@ def run_step(
         last_line_at = time.time()
 
     def _emit_live_util(sample: UtilizationSample, *, now: float) -> None:
+        nonlocal last_gpu_active_at
         if sample.gpu_pct is not None:
             live_gpu_samples.append(sample.gpu_pct)
+            if sample.gpu_pct > 0.5:
+                last_gpu_active_at = now
         if sample.cpu_pct is not None:
             live_cpu_samples.append(sample.cpu_pct)
         if sample.mem_pct is not None:
@@ -368,15 +456,16 @@ def run_step(
             },
         )
         step_elapsed = int(now - step_start)
-        if (
-            _LLM_GPU_STALL_ABORT_ENABLED
-            and step.requires_ollama
-            and use_gpu
-            and step_elapsed >= int(_LLM_GPU_STALL_ABORT_S)
-            and (now - last_line_at) >= _LLM_GPU_STALL_ABORT_S
-            and live_gpu_samples
-            and max(live_gpu_samples) <= 0.5
-        ):
+        gpu_idle_s = now - last_gpu_active_at
+        abort, stall_s = should_gpu_stall_abort(
+            step=step,
+            step_env=env,
+            use_gpu=use_gpu,
+            step_elapsed_s=float(step_elapsed),
+            gpu_idle_s=gpu_idle_s,
+            sse_wait_started_at=sse_wait_started_at,
+        )
+        if abort:
             nonlocal gpu_stall_abort
             gpu_stall_abort = True
             elapsed_label = (
@@ -391,9 +480,10 @@ def run_step(
                     "stepId": step.id,
                     "stream": "stderr",
                     "line": (
-                        f"GPU stall abort: {step.id} ran {elapsed_label} with GPU ~0% "
-                        f"and no subprocess output for {int(_LLM_GPU_STALL_ABORT_S)}s "
-                        f"(expected Ollama/LLM load). Unload other models or check `ollama ps`."
+                        f"GPU stall abort: {step.id} ran {elapsed_label} with no GPU load "
+                        f"for {int(stall_s)}s "
+                        f"(LM Studio/Ollama may be wedged). "
+                        f"Run: sh scripts/local-llm-warmup-for-tests.sh"
                     ),
                 },
             )
@@ -489,19 +579,54 @@ def run_step(
                 },
             )
 
+    def _note_sse_wait_line(line: str) -> None:
+        nonlocal sse_wait_started_at
+        if "waiting for SSE" in line:
+            if sse_wait_started_at is None:
+                sse_wait_started_at = time.time()
+            return
+        if any(
+            marker in line
+            for marker in (
+                "… token:",
+                "PASSED tests/core/",
+                "START tests/core/",
+                "… first SSE byte",
+                "… done",
+                "… Vision:",
+            )
+        ):
+            sse_wait_started_at = None
+
+    def _note_short_circuit_fail(line: str) -> None:
+        nonlocal short_circuit_hit, short_circuit_abort_emitted
+        if not short_circuit or not _line_indicates_test_fail(line):
+            return
+        short_circuit_hit = True
+        _terminate_step_process(proc)
+
     def _emit_step_line(stream: str, raw_line: str) -> None:
-        nonlocal short_circuit_hit
+        nonlocal short_circuit_hit, last_gpu_active_at
         line = strip_ansi(raw_line.rstrip("\n")) if suite_run else raw_line.rstrip("\n")
         if not line.strip():
+            return
+        if stream == "stderr":
+            if line.startswith("START tests/core/"):
+                last_gpu_active_at = time.time()
+            _note_sse_wait_line(line)
+        if stream == "stderr" and not _stderr_line_counts_as_progress(line):
+            _emit(
+                on_event,
+                {"type": "step_line", "stepId": step.id, "stream": stream, "line": line},
+            )
+            _note_short_circuit_fail(line)
             return
         touch_output()
         _emit(
             on_event,
             {"type": "step_line", "stepId": step.id, "stream": stream, "line": line},
         )
-        if short_circuit and _line_indicates_test_fail(line):
-            short_circuit_hit = True
-            _terminate_step_process(proc)
+        _note_short_circuit_fail(line)
 
     def drain_stdout() -> None:
         assert proc.stdout is not None
@@ -532,10 +657,30 @@ def run_step(
             "See stderr above (unload other models or fix E2E_OLLAMA_MODEL)."
         )
     else:
+        vision_proc: subprocess.Popen[str] | None = None
         try:
             step_argv = list(step.argv)
             if step.id == "llm:core":
                 from bright_vision_core.test_suite.manifest import llm_core_pytest_argv
+                from bright_vision_core.test_suite.vision_spawn import (
+                    spawn_vision_api,
+                    terminate_vision_api,
+                    vision_base_url,
+                )
+
+                def _vision_line(line: str) -> None:
+                    _emit(
+                        on_event,
+                        {
+                            "type": "step_line",
+                            "stepId": step.id,
+                            "stream": "stderr",
+                            "line": line,
+                        },
+                    )
+
+                vision_proc = spawn_vision_api(cwd, env, on_line=_vision_line)
+                env["BV_LLM_PYTEST_VISION_URL"] = vision_base_url()
 
                 step_argv = list(llm_core_pytest_argv())
             if short_circuit and step.id == "llm:core" and "--maxfail=1" not in step_argv:
@@ -585,7 +730,8 @@ def run_step(
                 if gpu_stall_abort or short_circuit_hit:
                     _terminate_step_process(proc)
                     ok = False
-                    if short_circuit_hit:
+                    if short_circuit_hit and not short_circuit_abort_emitted:
+                        short_circuit_abort_emitted = True
                         _emit(
                             on_event,
                             {
@@ -600,6 +746,20 @@ def run_step(
                 time.sleep(0.1)
             for t in threads:
                 t.join(timeout=5)
+            if short_circuit and short_circuit_hit:
+                _terminate_step_process(proc)
+                ok = False
+                if not short_circuit_abort_emitted:
+                    short_circuit_abort_emitted = True
+                    _emit(
+                        on_event,
+                        {
+                            "type": "step_line",
+                            "stepId": step.id,
+                            "stream": "stderr",
+                            "line": "short-circuit: aborting step after test failure",
+                        },
+                    )
             rc = proc.wait(timeout=30)
             if step_cancelled or (cancel_check and cancel_check()):
                 ok = False
@@ -612,6 +772,11 @@ def run_step(
             _emit(on_event, {"type": "step_line", "stepId": step.id, "stream": "stderr", "line": str(err)})
             combined = str(err)
             stdout_text = ""
+        finally:
+            if vision_proc is not None:
+                from bright_vision_core.test_suite.vision_spawn import terminate_vision_api
+
+                terminate_vision_api(vision_proc)
 
     capture = (
         capture_from_outputs(
@@ -770,14 +935,20 @@ def run_suite(
             return False
         start_index = step_ids.index(start_from_step_id)
     needs_ollama = any(s.requires_ollama for s in steps[start_index:])
-    if needs_ollama and not ollama_reachable() and os.environ.get("SKIP_LLM") != "1":
+    if needs_ollama and not local_llm_reachable() and os.environ.get("SKIP_LLM") != "1":
+        backend = resolve_backend()
+        backend_hint = (
+            "Start LM Studio (Local Server + `lms` on PATH)"
+            if backend == "lmstudio"
+            else "Start Ollama"
+        )
         _emit(
             on_event,
             {
                 "type": "error",
                 "text": (
-                    "Ollama not reachable but this plan includes LLM steps "
-                    "(start Ollama, enable Skip LLM tiers, or uncheck router/LLM lanes)"
+                    f"Local LLM ({backend}) not reachable but this plan includes LLM steps "
+                    f"({backend_hint}, enable Skip LLM tiers, or uncheck router/LLM lanes)"
                 ),
             },
         )
@@ -910,18 +1081,20 @@ def run_suite(
                 break
             if fail_fast or short_circuit:
                 remaining = [s.id for s in steps[idx:] if s.id not in ran_ids]
+                label = "short-circuit" if short_circuit else "fail-fast"
                 if remaining:
-                    _emit(
-                        on_event,
-                        {
-                            "type": "step_line",
-                            "stepId": step.id,
-                            "stream": "stderr",
-                            "line": (
-                                f"{'short-circuit' if short_circuit else 'fail-fast'}: stopping suite ({len(remaining)} step(s) skipped)"
-                            ),
-                        },
-                    )
+                    stop_line = f"{label}: stopping suite ({len(remaining)} step(s) skipped)"
+                else:
+                    stop_line = f"{label}: suite stopped (last step failed)"
+                _emit(
+                    on_event,
+                    {
+                        "type": "step_line",
+                        "stepId": step.id,
+                        "stream": "stderr",
+                        "line": stop_line,
+                    },
+                )
                 break
 
     skipped_ids = [s.id for s in steps[:start_index]] + [

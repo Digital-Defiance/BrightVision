@@ -19,6 +19,10 @@ from rich.console import Console
 from cecli.io import InputOutput
 
 
+def _headless_llm_test_mode() -> bool:
+    return os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1"
+
+
 class EventIO(InputOutput):
     """
     InputOutput that records tool/assistant activity as JSON-serializable events.
@@ -188,6 +192,18 @@ class EventIO(InputOutput):
         ):
             auto_yes = True
             use_yes = True
+
+        if not auto_yes and not agent_auto and _headless_llm_test_mode():
+            # llm:core pytest has no UI to answer confirms (shell, add-file, lint, …).
+            self.emit(
+                "confirm",
+                confirm_id=None,
+                question=str(question),
+                subject=subject,
+                default=False,
+                auto_answered=True,
+            )
+            return False
 
         if auto_yes:
             self.emit(

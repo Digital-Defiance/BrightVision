@@ -21,11 +21,28 @@ class TestRegistryDefaults:
     def teardown_method(self) -> None:
         BackendRegistry.clear()
 
-    def test_default_active_backend_is_ollama(self):
-        """Default backend should be ollama when no env var is set."""
+    def test_default_active_backend_is_ollama(self, monkeypatch, tmp_path):
+        """Default backend follows platform when no env var is set."""
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._backend_from_local_llm_env_files",
+            lambda: "",
+        )
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._load_local_llm_env_files",
+            lambda: {},
+        )
         with patch.dict(os.environ, {}, clear=True):
             client = BackendRegistry.get_active()
-            assert isinstance(client, OllamaBackendClient)
+            import platform
+
+            if platform.system().lower() == "darwin":
+                from bright_vision_core.llm_backends.lmstudio_client import (
+                    LmStudioBackendClient,
+                )
+
+                assert isinstance(client, LmStudioBackendClient)
+            else:
+                assert isinstance(client, OllamaBackendClient)
 
     def test_get_active_returns_singleton(self):
         """Multiple get_active calls should return the same instance."""
@@ -94,13 +111,30 @@ class TestClear:
             assert BackendRegistry._client is None
             assert BackendRegistry._active_name is None
 
-    def test_get_active_after_clear_reinstantiate(self):
+    def test_get_active_after_clear_reinstantiate(self, monkeypatch):
         """get_active() after clear should create a new client."""
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._backend_from_local_llm_env_files",
+            lambda: "",
+        )
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._load_local_llm_env_files",
+            lambda: {},
+        )
         with patch.dict(os.environ, {}, clear=True):
             BackendRegistry.get_active()
             BackendRegistry.clear()
             client = BackendRegistry.get_active()
-            assert isinstance(client, OllamaBackendClient)
+            import platform
+
+            if platform.system().lower() == "darwin":
+                from bright_vision_core.llm_backends.lmstudio_client import (
+                    LmStudioBackendClient,
+                )
+
+                assert isinstance(client, LmStudioBackendClient)
+            else:
+                assert isinstance(client, OllamaBackendClient)
 
 
 class TestEnvOverride:
@@ -124,8 +158,25 @@ class TestEnvOverride:
             client = BackendRegistry.get_active()
             assert isinstance(client, LlamaCppBackendClient)
 
-    def test_empty_env_var_falls_back_to_default(self):
-        """Empty env var should fall back to default (ollama)."""
+    def test_empty_env_var_falls_back_to_default(self, monkeypatch):
+        """Empty env var should fall back to platform default."""
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._backend_from_local_llm_env_files",
+            lambda: "",
+        )
+        monkeypatch.setattr(
+            "bright_vision_core.llm_backends.config._load_local_llm_env_files",
+            lambda: {},
+        )
         with patch.dict(os.environ, {"BRIGHTVISION_LLM_BACKEND": ""}):
             client = BackendRegistry.get_active()
-            assert isinstance(client, OllamaBackendClient)
+            import platform
+
+            if platform.system().lower() == "darwin":
+                from bright_vision_core.llm_backends.lmstudio_client import (
+                    LmStudioBackendClient,
+                )
+
+                assert isinstance(client, LmStudioBackendClient)
+            else:
+                assert isinstance(client, OllamaBackendClient)

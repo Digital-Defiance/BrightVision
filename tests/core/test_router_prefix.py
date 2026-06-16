@@ -23,6 +23,7 @@ class TestResolveProviderPrefix:
             ("vllm", "openai/"),
             ("tgi", "openai/"),
             ("llamacpp", "openai/"),
+            ("lmstudio", "openai/"),
             ("mlx-lm", "openai/"),
             ("unknown", "ollama_chat/"),
             ("", "ollama_chat/"),

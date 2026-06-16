@@ -8,10 +8,11 @@
  * `OLLAMA_WARMUP_EXCLUSIVE=1` (unloads other resident models first); non-exclusive steps
  * keep previously warmed models resident.
  *
- * Router lane: warm all configured tier models (fast/code/think) and keep them resident
- * together — only the first step is exclusive (frees VRAM from non-tier models), the rest
- * are additive. Warming a single model exclusively would evict the router's tier models, so
- * the first fast-tier turn would cold-load, stall, and escalate fast→code→think (wrong tier).
+ * Router lane (Ollama): warm all configured tier models (fast/code/think) and keep them
+ * resident together — only the first step is exclusive, the rest are additive.
+ *
+ * Router lane (LM Studio / limited RAM): set `deferThinkWarmup` so global setup warms only
+ * fast+code; the think-tier Playwright test exclusive-loads THINK_MODEL before it runs.
  */
 export interface WarmupStep {
   tag: string
@@ -22,14 +23,20 @@ export interface WarmupPlanInput {
   routerLane: boolean
   defaultModel: string
   routerTags?: { fastTag?: string; codeTag?: string; thinkTag?: string }
+  /** Omit think from global warmup (loaded exclusively before the think-tier e2e). */
+  deferThinkWarmup?: boolean
 }
 
 export function buildOllamaWarmupPlan(input: WarmupPlanInput): WarmupStep[] {
   if (input.routerLane) {
     const { fastTag, codeTag, thinkTag } = input.routerTags ?? {}
-    const ordered = [fastTag, codeTag, thinkTag].filter(
+    const thinkBare = thinkTag?.trim() ?? ''
+    let ordered = [fastTag, codeTag, thinkTag].filter(
       (t): t is string => Boolean(t && t.trim())
     )
+    if (input.deferThinkWarmup && thinkBare) {
+      ordered = ordered.filter((t) => t.trim() !== thinkBare)
+    }
     const unique = [...new Set(ordered)]
     if (unique.length === 0) {
       // No tier tags resolved — fall back to the default model so the lane still warms.

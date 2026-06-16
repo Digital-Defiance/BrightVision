@@ -1,17 +1,25 @@
 import { Alert, Stack, Typography } from '@mui/material'
 import type { VisionClientCommandId } from '../../ipc/visionClientCommands'
-import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
+import { localLlmListLabels, type OllamaModelsSnapshot } from '../../ipc/localLlm'
 import type { ModelHopperTier } from '../../theme/modelHopper'
 import { OllamaModelsTable } from './OllamaModelsTable'
 
 interface OllamaStatusMessageProps {
   command: VisionClientCommandId
   snapshot: OllamaModelsSnapshot
+  /** Active local LLM backend (defaults to Ollama labels). */
+  backend?: string | null
   /** Model name → hopper tier, for row color-coding. */
   tierMap?: Record<string, ModelHopperTier>
 }
 
-export function OllamaStatusMessage({ command, snapshot, tierMap }: OllamaStatusMessageProps) {
+export function OllamaStatusMessage({
+  command,
+  snapshot,
+  backend,
+  tierMap,
+}: OllamaStatusMessageProps) {
+  const labels = localLlmListLabels(backend ?? snapshot.backend)
   const tag = snapshot.configuredTag?.trim() ?? ''
   const showPs = command === 'ps' || command === 'models'
   const showTags = command === 'tags' || command === 'models'
@@ -19,41 +27,44 @@ export function OllamaStatusMessage({ command, snapshot, tierMap }: OllamaStatus
   return (
     <Stack spacing={1} data-testid="ollama-status-message" sx={{ pr: 3 }}>
       <Typography variant="subtitle2" fontWeight={700}>
-        Ollama status
+        {labels.statusTitle}
         {tag ? (
           <>
             {' '}
             <Typography component="span" variant="caption" color="text.secondary">
               (Settings tag: {tag}
-              {snapshot.configuredInPs ? ', in /api/ps' : ', not in /api/ps'})
+              {snapshot.configuredInPs
+                ? `, ${labels.configuredInPs}`
+                : `, ${labels.configuredNotInPs}`}
+              )
             </Typography>
           </>
         ) : null}
       </Typography>
       {!snapshot.reachable && (
         <Alert severity="warning" variant="outlined">
-          Ollama not reachable at {snapshot.ollamaHost}. Start Ollama or check Settings → Ollama
-          API base.
+          {labels.unreachable}
         </Alert>
       )}
       {showTags && (
         <OllamaModelsTable
-          title="/api/tags — pulled models"
-          host={`${snapshot.ollamaHost}/api/tags`}
+          title={labels.tagsTitle}
+          host={labels.tagsHost}
           rows={snapshot.tagsRows ?? []}
-          emptyLabel="No models in /api/tags (run ollama pull or Local LLM → Start)"
+          emptyLabel={labels.tagsEmpty}
           highlightTag={tag || undefined}
           tierMap={tierMap}
         />
       )}
       {showPs && (
         <OllamaModelsTable
-          title="/api/ps — loaded in RAM"
-          host={`${snapshot.ollamaHost}/api/ps`}
+          title={labels.psTitle}
+          host={labels.psHost}
           rows={snapshot.psRows ?? []}
-          emptyLabel="No models in /api/ps (empty — model may have unloaded; use Local LLM → Start)"
+          emptyLabel={labels.psEmpty}
           highlightTag={tag || undefined}
           tierMap={tierMap}
+          variant={(backend ?? snapshot.backend) === 'lmstudio' ? 'lmstudio' : 'ollama'}
         />
       )}
     </Stack>

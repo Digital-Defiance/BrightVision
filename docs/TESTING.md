@@ -223,9 +223,9 @@ Optional env:
 | `E2E_CODE_MODEL` | Router code/implement tier (falls back to `CODE_MODEL`, then `HEAVY_MODEL`) |
 | `E2E_THINK_MODEL` | Router think/reasoning tier (falls back to `THINK_MODEL`; think-tier LLM test skips when unset) |
 | `E2E_HEAVY_MODEL` | Legacy alias for code tier |
-| Router lane (Test Lab / suite) | Requires **distinct** `FAST_MODEL` and `CODE_MODEL`/`HEAVY_MODEL` in `local-llm.env`. `THINK_MODEL` optional (enables Architect chip LLM test). `router-llm.spec.ts`: fast→Fighter pilot, implement→Engineer, architect→Architect+`think:on`. `model-router-roles.spec.ts`: mocked SSE for all three roles without GPU. |
+| Router lane (Test Lab / suite) | Requires **distinct** fast and code tags. **Suite default** (unless `BV_SUITE_USE_ENV_MODEL=1`): small tiers only — Ollama `llama3.2:3b` / `qwen2.5-coder:7b` / `llama3.2:1b`; LM Studio `llama-3.2-3b-instruct` / `qwen2.5-coder-7b-instruct` / `llama-3.2-1b-instruct`. Dogfood `local-llm.env` (27B code, 70B think) is for daily use, not CI. `router-llm.spec.ts` checks routing chips only. **LM Studio:** global setup warms fast+code; think-tier test exclusive-loads `THINK_MODEL`. `model-router-roles.spec.ts`: mocked SSE. |
 | `BV_SUITE_STRICT_PHASED_PYTEST` | `1` on `llm:core`: phased pytest fails on EARS gate instead of skip. With `BV_COMPACT_SPEC_GEN=1`, deterministic repair adds SHALL to any parsed EARS clause missing normative text (bullets, WHEN/IF/WHERE/WHILE prose) before the gate runs. |
-| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar) |
+| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar). Same flag: use your `FAST_MODEL` / `CODE_MODEL` / `THINK_MODEL` for `e2e:llm:router` instead of suite pins (`llama3.2:3b` + `qwen2.5-coder:7b` + `llama3.2:1b`, or LM Studio `openai/…` equivalents). |
 | `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |
 | `BV_SUITE_USE_ENV_TIMEOUTS` | `1`: keep your shell `LLM_*_TIMEOUT_S` values instead of suite defaults |
 | `BV_SUITE_USE_BRIGHTDATE` | `1`: step/run durations and ETC in BrightDate (BD/md); `btime --no-color`. BD wall bounds (`start_bd`/`end_bd`) are always parsed from `btime` and saved in timing history; Test Lab shows a BD interval chip when present |
@@ -247,7 +247,7 @@ Optional env:
 | `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
 | `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
 | `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |
-| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/ollama-warmup-for-tests.sh` before suite `llm:core` |
+| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/local-llm-warmup-for-tests.sh` before suite `llm:core` (dispatches to Ollama or LM Studio via `BRIGHTVISION_LLM_BACKEND`) |
 | `OLLAMA_WARMUP_EXCLUSIVE` | `1` (default in Test Lab / suite `llm:core`): `ollama stop` other loaded models before warmup so a pinned heavy model (e.g. `qwen3.6:27b` with `keep_alive=-1`) does not block `llama3.2:3b`. Set `0` to keep all models loaded. |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |

@@ -9,11 +9,11 @@ export interface VisionClientCommand {
 }
 
 export const VISION_CLIENT_COMMANDS: VisionClientCommand[] = [
-  { name: '/ps', summary: 'Ollama /api/ps — models loaded in RAM (table)', id: 'ps' },
-  { name: '/tags', summary: 'Ollama /api/tags — pulled models (table)', id: 'tags' },
+  { name: '/ps', summary: 'Loaded models in RAM (Ollama /api/ps or lms ps --json)', id: 'ps' },
+  { name: '/tags', summary: 'Models on disk (Ollama /api/tags or lms ls --json)', id: 'tags' },
   {
     name: '/models',
-    summary: 'Ollama /api/tags + /api/ps (both tables)',
+    summary: 'On-disk + loaded model tables (tags + ps)',
     id: 'models',
   },
   {

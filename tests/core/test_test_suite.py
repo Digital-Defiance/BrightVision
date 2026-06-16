@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from pathlib import Path
 
 from bright_vision_core.test_suite.manifest import (
@@ -98,12 +99,50 @@ def test_llm_core_step_env_longer_timeouts_in_suite(monkeypatch):
     assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "3600"
 
 
+def test_llm_core_step_env_lmstudio_injects_openai_env(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text(
+        "BRIGHTVISION_LLM_BACKEND=lmstudio\n"
+        "BRIGHTVISION_LLM_BACKEND_URL=http://127.0.0.1:1234\n"
+        "OPENAI_API_BASE=http://127.0.0.1:1234/v1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    env = llm_core_step_env(suite_run=True)
+    assert env["E2E_OLLAMA_MODEL"] == "openai/llama-3.2-3b-instruct"
+    assert env["OPENAI_API_BASE"] == "http://127.0.0.1:1234/v1"
+    assert env["OPENAI_API_KEY"] == "lm-studio"
+
+
 def test_llm_core_step_env_pins_default_model_in_suite(monkeypatch):
     from bright_vision_core.test_suite.manifest import llm_core_step_env
 
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "ollama")
     monkeypatch.setenv("E2E_OLLAMA_MODEL", "ollama_chat/qwen3.6:27b-q4_K_M")
     env = llm_core_step_env(suite_run=True)
     assert env["E2E_OLLAMA_MODEL"] == "ollama_chat/llama3.2:3b"
+
+
+def test_router_lane_step_env_pins_small_tiers_in_suite(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import router_lane_step_env
+
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    env = router_lane_step_env(suite_run=True)
+    assert env["E2E_FAST_MODEL"] == "llama-3.2-3b-instruct"
+    assert env["E2E_CODE_MODEL"] == "qwen2.5-coder-7b-instruct"
+    assert env["E2E_THINK_MODEL"] == "llama-3.2-1b-instruct"
+
+
+def test_router_lane_step_env_empty_when_use_env_model(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import router_lane_step_env
+
+    monkeypatch.setenv("BV_SUITE_USE_ENV_MODEL", "1")
+    assert router_lane_step_env(suite_run=True) == {}
 
 
 def test_llm_core_step_env_uses_env_model_when_flag_set(monkeypatch):
@@ -142,6 +181,16 @@ def test_llm_core_argv_uses_live_pytest():
     assert "-v" in argv
     assert "-s" in argv
     assert "-q" not in argv
+
+
+def test_llm_core_argv_edit_block_runs_before_spec_and_context():
+    """Edit-block must stay early — LM Studio wedges on late-suite plain LLM turns."""
+    files = [a for a in llm_core_pytest_argv() if a.endswith(".py")]
+    edit = files.index("tests/core/test_edit_block_llm.py")
+    hello = files.index("tests/core/test_hello_llm.py")
+    spec = files.index("tests/core/test_generate_spec_llm.py")
+    context = files.index("tests/core/test_context_llm.py")
+    assert edit < hello < spec < context
 
 
 def test_plan_steps_includes_base():
@@ -451,6 +500,10 @@ def test_line_indicates_test_fail():
     from bright_vision_core.test_suite.runner import _line_indicates_test_fail
 
     assert _line_indicates_test_fail("FAILED tests/core/test_foo.py::test_bar")
+    assert _line_indicates_test_fail(
+        "tests/core/test_foo.py::TestFoo::test_bar FAILED [100%]"
+    )
+    assert _line_indicates_test_fail("FAILED short-circuit: SSE timed out after 3.5 md")
     assert _line_indicates_test_fail("  ✘  3 e2e/foo.spec.ts:1:1 › title")
     assert not _line_indicates_test_fail("[ FAIL ] yarn test:llm:core")
     assert not _line_indicates_test_fail("FAIL: tests/core/test_foo.py:12: in test_bar")
@@ -470,3 +523,44 @@ def test_gpu_stall_abort_can_disable(monkeypatch):
     importlib.reload(runner_mod)
     assert runner_mod._LLM_GPU_STALL_ABORT_ENABLED is False
     importlib.reload(runner_mod)
+
+
+def test_resolve_gpu_stall_abort_s_uses_step_env_turn_cap():
+    from bright_vision_core.test_suite.runner import resolve_gpu_stall_abort_s
+
+    stall = resolve_gpu_stall_abort_s(
+        {
+            "BV_TEST_SUITE_ACTIVE": "1",
+            "BV_LLM_GPU_STALL_ABORT_S": "360",
+            "BV_SUITE_LLM_TURN_TIMEOUT_S": "300",
+        }
+    )
+    assert stall == 390.0
+
+
+def test_should_gpu_stall_abort_defers_during_pytest_sse_wait():
+    from bright_vision_core.test_suite.manifest import SuiteStep
+    from bright_vision_core.test_suite.runner import should_gpu_stall_abort
+
+    step = SuiteStep("llm:core", "llm", ("pytest",), requires_ollama=True)
+    env = {
+        "BV_TEST_SUITE_ACTIVE": "1",
+        "BV_LLM_GPU_STALL_ABORT_S": "360",
+        "BV_SUITE_LLM_TURN_TIMEOUT_S": "300",
+    }
+    abort, _ = should_gpu_stall_abort(
+        step=step,
+        step_env=env,
+        use_gpu=True,
+        step_elapsed_s=400.0,
+        gpu_idle_s=400.0,
+        sse_wait_started_at=time.time() - 60.0,
+    )
+    assert abort is False
+
+
+def test_stderr_start_resets_gpu_stall_budget():
+    from bright_vision_core.test_suite.runner import _stderr_line_counts_as_progress
+
+    assert not _stderr_line_counts_as_progress("… waiting for SSE (30s / 300s cap)")
+    assert _stderr_line_counts_as_progress("START tests/core/test_edit_block_llm.py::TestEditBlockLlm::test_foo")
