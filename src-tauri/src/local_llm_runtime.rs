@@ -511,10 +511,6 @@ impl LmStudioCli {
         }
     }
 
-    async fn load(model_key: &str) -> Result<(), String> {
-        Self::load_with_options(model_key, LmStudioLoadOptions::persistent(model_key)).await
-    }
-
     async fn unload_all() -> Result<(), String> {
         let output = Command::new("lms")
             .args(["unload", "--all"])
