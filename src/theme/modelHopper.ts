@@ -1,4 +1,5 @@
 import type { LocalLlmSnapshot, TierSlotEntry } from '../ipc/localLlm'
+import { ollamaChatModelFromTag } from '../ipc/localLlm'
 
 /** A model in the router hopper (Settings pool). */
 
@@ -286,8 +287,9 @@ export function buildHopperFromSnapshot(
 
   const entries: ModelHopperEntry[] = tierSlots.map((slot) => {
     const priorityIdx = priorityList.indexOf(slot.modelTag)
-    const liteLlmModel =
-      slot.modelTag.trim() ? `ollama_chat/${slot.modelTag}` : ''
+    const liteLlmModel = slot.modelTag.trim()
+      ? ollamaChatModelFromTag(slot.modelTag, snap.backend)
+      : ''
     // Build capabilities from env-declared vision/maxContext
     const capabilities: ModelCapabilities | undefined =
       (slot.vision || slot.maxContext)

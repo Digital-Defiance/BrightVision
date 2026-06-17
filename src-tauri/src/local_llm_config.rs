@@ -29,6 +29,7 @@ const KEYS: &[&str] = &[
     "DATA_THINK",
     "MODEL_PRIORITY",
     "PREFER_WARM",
+    "LITELLM_EXTRA_PARAMS",
 ];
 
 /// Allowed local LLM backends (mirrors ``bright_vision_core.llm_backends.config``).
@@ -603,6 +604,7 @@ pub fn core_api_llm_env(hint_root: Option<&str>) -> HashMap<String, String> {
         "OPENAI_API_BASE",
         "OPENAI_API_KEY",
         "OLLAMA_HOST",
+        "LITELLM_EXTRA_PARAMS",
     ];
     let mut out: HashMap<String, String> = HashMap::new();
     for key in keys {

@@ -7,6 +7,7 @@ import json
 from cecli.models import MODEL_SETTINGS
 
 from bright_vision_core.litellm_extra_params import (
+    configure_litellm_local_privacy,
     parse_litellm_extra_params_env,
     register_litellm_extra_params,
 )
@@ -35,3 +36,21 @@ def test_register_keeps_think_without_router(monkeypatch):
     extra = next(ms for ms in MODEL_SETTINGS if ms.name == "cecli/extra_params")
     assert extra.extra_params["think"] is False
     MODEL_SETTINGS[:] = MODEL_SETTINGS[:before]
+
+
+def test_configure_litellm_local_privacy_disables_hf_tokenizer(monkeypatch):
+    import litellm
+
+    monkeypatch.delenv("BV_ALLOW_HF_TOKENIZER", raising=False)
+    litellm.disable_hf_tokenizer_download = None
+    configure_litellm_local_privacy()
+    assert litellm.disable_hf_tokenizer_download is True
+
+
+def test_configure_litellm_local_privacy_opt_in(monkeypatch):
+    import litellm
+
+    monkeypatch.setenv("BV_ALLOW_HF_TOKENIZER", "1")
+    litellm.disable_hf_tokenizer_download = None
+    configure_litellm_local_privacy()
+    assert litellm.disable_hf_tokenizer_download is None

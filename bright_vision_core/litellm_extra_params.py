@@ -20,6 +20,28 @@ def parse_litellm_extra_params_env() -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def configure_litellm_local_privacy() -> None:
+    """Avoid Hugging Face Hub HTTP for LiteLLM token counting (local-first default).
+
+    LiteLLM otherwise downloads public tokenizer files (e.g. ``Xenova/llama-3-tokenizer``)
+    when the session model name contains ``llama-3``. That does **not** upload prompts,
+    but it does contact huggingface.co without surfacing in Settings. Token counts fall
+    back to local tiktoken instead.
+
+    Opt in with ``BV_ALLOW_HF_TOKENIZER=1``.
+    """
+    if os.environ.get("BV_ALLOW_HF_TOKENIZER", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return
+    import litellm
+
+    litellm.disable_hf_tokenizer_download = True
+
+
 def register_litellm_extra_params(*, exclude_think: bool = False) -> dict[str, Any]:
     """
     Merge ``LITELLM_EXTRA_PARAMS`` into cecli ``MODEL_SETTINGS`` as ``cecli/extra_params``.

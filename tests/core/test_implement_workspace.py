@@ -74,18 +74,22 @@ class TestImplementWorkspace(unittest.TestCase):
         )
         self.assertEqual(focus.text, checklist[0].text)
 
-    def test_test_paths_for_focus_matches_name(self):
+    def test_test_paths_for_focus_requires_named_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            test_dir = root / "test" / "core" / "network"
-            test_dir.mkdir(parents=True)
-            (test_dir / "network_interceptor_test.dart").write_text("", encoding="utf-8")
-            (test_dir / "other_test.dart").write_text("", encoding="utf-8")
-            focus = ChecklistItem(id="c1", text="1.3 Write unit tests for NetworkInterceptor", done=False)
+            (root / "pubspec.yaml").write_text("name: x\n", encoding="utf-8")
+            test_path = root / "test" / "core" / "network" / "network_interceptor_test.dart"
+            test_path.parent.mkdir(parents=True)
+            test_path.write_text("", encoding="utf-8")
+            focus = ChecklistItem(
+                id="c1",
+                text="1.3 Write unit tests in `test/core/network/network_interceptor_test.dart`",
+                done=False,
+            )
             paths = dart_test_paths_for_focus(root, focus)
-            self.assertIn("test/core/network/network_interceptor_test.dart", paths)
+            self.assertEqual(paths, ["test/core/network/network_interceptor_test.dart"])
 
-    def test_snapshot_lists_lib_and_test(self):
+    def test_snapshot_lists_top_level_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "pubspec.yaml").write_text("name: x\n", encoding="utf-8")
@@ -96,21 +100,24 @@ class TestImplementWorkspace(unittest.TestCase):
             test.mkdir(parents=True)
             (test / "a_test.dart").write_text("", encoding="utf-8")
             checklist = [
-                ChecklistItem(id="c1", text="1.3 Write unit tests for NetworkInterceptor", done=False),
+                ChecklistItem(
+                    id="c1",
+                    text="1.3 Write unit tests in `test/core/network/a_test.dart`",
+                    done=False,
+                ),
             ]
             block = build_implement_workspace_block(
                 root,
                 checklist,
                 resume=True,
-                active_task_title="1.3 Write unit tests for NetworkInterceptor",
+                active_task_title="1.3 Write unit tests in `test/core/network/a_test.dart`",
             )
             self.assertIn("Workspace snapshot", block)
-            self.assertIn("lib/core/network/a.dart", block)
+            self.assertIn("`lib/`", block)
+            self.assertIn("`test/`", block)
+            self.assertNotIn("lib/core/network/a.dart", block)
             self.assertIn("test/core/network/a_test.dart", block)
-            self.assertIn("1.3 Write unit tests", block)
-            self.assertIn("Do not batch UpdateTodoList", block)
             self.assertIn("flutter test", block)
-            self.assertNotIn("1.2 Implement NetworkInterceptor", block)
 
     def test_continuation_block_is_trimmed(self):
         with tempfile.TemporaryDirectory() as tmp:

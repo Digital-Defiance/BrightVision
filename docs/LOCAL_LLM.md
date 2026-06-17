@@ -42,6 +42,8 @@ On **Terminal → Start** with the router enabled, BrightVision pulls only the r
 
 **Routing rules (Vision):** Turn context drives role choice — implement/`/agent` → **code**; spec inject / architect / debug keywords → **think**; UI wording → **fast**. When live session context plus a completion reserve would exceed the **fast model’s `max_input_tokens`**, the router picks **code** even for short messages. Middle-band code tasks default **code** when context fits (auto-escalate fast→code→think on failure if enabled).
 
+**Implement / `/agent` coding turns** always use the **code** tier (not think — tool calling). On machines with ample RAM (e.g. 32–64 GB), assign a **capable code model** to that tier (e.g. Qwen2.5-Coder **14B+**). **7B** coder models often loop on ContextManager without `EditText`; they are fine for fast chat, not reliable for spec-focus implement turns.
+
 **Per-model LiteLLM params:** Each hopper row can set **LiteLLM params (JSON)** — e.g. `{"top_p": 0.9}` — applied when that model is routed. The **Think** toggle still owns `think` (overrides any `think` key in the JSON). Global Settings **extraParams** apply to every model as a base; omit `think` there when the router is on.
 
 **Headless** (`bright-vision-core-serve` without the desktop UI): use `BRIGHT_VISION_MODEL_ROUTER=1`, `BRIGHT_VISION_FAST_MODEL=ollama_chat/…`, optional `BRIGHT_VISION_CODE_MODEL` / `BRIGHT_VISION_THINK_MODEL` (or legacy `BRIGHT_VISION_HEAVY_MODEL`) — see [ROADMAP.md](./ROADMAP.md#39--local-model-router).

@@ -2128,11 +2128,15 @@ function AppShell({
     }
     try {
       await ensureLocalLlm()
+      const snap = localLlmRef.current
+      const routerPrefsForStart = snap
+        ? applyLocalLlmHopperFromEnv(modelRouterPrefs, snap, savedConfig.model, true)
+        : modelRouterPrefs
       const routerPayload = modelRouterApiPayload(
-        modelRouterPrefs,
+        routerPrefsForStart,
         savedConfig.model,
-        localLlmRef.current?.modelRouter,
-        localLlmRef.current
+        snap?.modelRouter,
+        snap ?? undefined
       )
       const { info, workingDir, transcript = [] } = await start(savedConfig, {
         modelRouter: routerPayload as ModelRouterApiConfig | undefined,
@@ -2776,7 +2780,7 @@ function AppShell({
         pr_url: todo.pr_url,
         checklist: todo.checklist,
       })
-      todoInjectedIdRef.current = null
+      todoInjectedIdRef.current = todo.id
       setActiveTab('chat')
       setInputValue(buildResumeWorkMessage(todo, todoStore?.todos ?? []))
       setSnackbar({

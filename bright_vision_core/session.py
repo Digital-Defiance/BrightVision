@@ -82,6 +82,20 @@ def _edited_files(coder) -> list[str]:
     return sorted(raw) if raw else []
 
 
+def _saved_workspace_edits(coder) -> list[str]:
+    """Paths written via EditText this turn — not ContextManager context churn."""
+    raw = getattr(coder, "files_edited_by_tools", None) or set()
+    return sorted(raw) if raw else []
+
+
+def _implement_yield_guard(*, message: str, agent_cmd: bool, item) -> bool:
+    from bright_vision_core.spec_focus import is_implement_turn_message, todo_has_spec_content
+
+    if is_implement_turn_message(message):
+        return True
+    return bool(agent_cmd and item is not None and todo_has_spec_content(item))
+
+
 def _done_commit_fields(coder) -> dict[str, Any]:
     payload: dict[str, Any] = {}
     last_hash = getattr(coder, "last_aider_commit_hash", None)
@@ -512,8 +526,25 @@ class Session:
         agent_cmd = resolve_slash_command_name(message, self.coder.commands) == "agent"
         implement_turn = is_implement_turn_message(message)
         effective_force_tier = force_tier
-        if agent_cmd and normalize_route_role(effective_force_tier) is None:
+        if (
+            (agent_cmd or implement_turn)
+            and normalize_route_role(effective_force_tier) is None
+        ):
             effective_force_tier = "code"
+
+        def _reject_yield_on_implement(coder, **_kwargs: object) -> str | None:
+            if _saved_workspace_edits(coder):
+                return None
+            return (
+                "Yield rejected: no file edits saved this implement turn. "
+                "Use ContextManager **create** on a missing path named in implementation tasks, "
+                "then ReadRange + EditText, then call Yield again."
+            )
+
+        guard_yield = _implement_yield_guard(
+            message=message, agent_cmd=agent_cmd, item=item
+        )
+        self.coder.reject_yield = _reject_yield_on_implement if guard_yield else None
 
         def _route_turn_context() -> RouteTurnContext:
             return RouteTurnContext(
@@ -835,6 +866,8 @@ class Session:
 
             if not is_implement_turn_message(message) or item is None:
                 return
+            if not _saved_workspace_edits(self.coder):
+                return
             focus_step = turn_context_state.get("focus_step")
             if not focus_step:
                 return
@@ -926,6 +959,11 @@ class Session:
             # --- Auto-advance ---
             if not auto_advance_enabled():
                 return
+            if not _saved_workspace_edits(self.coder):
+                yield self.io.tool_warning(
+                    "Skipped auto-advance — no successful file edits this turn."
+                )
+                return
             advance_count = turn_context_state.get("auto_advance_count", 0)
             if advance_count >= MAX_AUTO_ADVANCES:
                 yield self.io.tool_output(
@@ -957,9 +995,9 @@ class Session:
                 preproc=preproc if not agent_cmd else True,
                 skip_workspace_init=True,
                 active_todo_id=turn_todo_id,
-                inject_todo_spec=True,
+                inject_todo_spec=False,
                 spec_focus=True,
-                force_tier=effective_force_tier,
+                force_tier=effective_force_tier or "code",
                 agent_continuation=True,
             ):
                 yield event
@@ -1076,10 +1114,13 @@ class Session:
                 ring, model_context_tokens=model_ctx
             )
             if not agent_continuation and not turn_context_state["exploration_aborted"]:
-                if should_auto_continue_after_shell(
-                    had_tool_activity=turn_had_tool_activity,
-                    had_tool_call=turn_had_tool_call,
-                    events=ring,
+                if (
+                    not implement_turn
+                    and should_auto_continue_after_shell(
+                        had_tool_activity=turn_had_tool_activity,
+                        had_tool_call=turn_had_tool_call,
+                        events=ring,
+                    )
                 ):
                     yield from _maybe_continue_agent_after_shell()
                     return
@@ -1168,7 +1209,9 @@ class Session:
             if is_implement_turn_message(message) and agent_ran_flutter_via_shell(ring):
                 yield self.io.tool_warning(flutter_test_shell_blocked_warning())
 
-            msg = edit_failure_turn_warning(events=ring, edited_files=_edited_files(self.coder))
+            msg = edit_failure_turn_warning(
+                events=ring, edited_files=_saved_workspace_edits(self.coder)
+            )
             if msg:
                 yield self.io.tool_warning(msg)
 

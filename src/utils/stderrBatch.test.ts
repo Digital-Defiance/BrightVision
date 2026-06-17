@@ -6,6 +6,14 @@ describe('stderrBatch', () => {
     expect(shouldSkipStderrLine('Scanning repo: 42%')).toBe(true)
   })
 
+  it('skips huggingface hub rate-limit nudge', () => {
+    expect(
+      shouldSkipStderrLine(
+        'Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.'
+      )
+    ).toBe(true)
+  })
+
   it('joins rapid lines into one flush', () => {
     vi.useFakeTimers()
     const flushed: string[] = []

@@ -16,6 +16,7 @@ import {
 import {
   applyLocalLlmHopperFromEnv,
   DEFAULT_MODEL_ROUTER_PREFS,
+  effectiveRouterEnabled,
 } from '../theme/modelRouterPrefs'
 
 describe('integration: env→Rust parse→IPC→TypeScript snapshot flow', () => {
@@ -127,6 +128,27 @@ describe('integration: env→Rust parse→IPC→TypeScript snapshot flow', () =>
       for (const entry of entries) {
         expect(entry.model).toMatch(/^ollama_chat\//)
       }
+    })
+
+    it('uses openai/ prefix for LM Studio backend', () => {
+      const entries = buildHopperFromSnapshot(
+        { ...multiModelSnapshot, backend: 'lmstudio' },
+        'openai/llama-3.2-3b-instruct'
+      )
+      for (const entry of entries) {
+        expect(entry.model).toMatch(/^openai\//)
+      }
+      expect(
+        effectiveRouterEnabled(
+          {
+            ...DEFAULT_MODEL_ROUTER_PREFS,
+            enabled: true,
+            models: entries,
+          },
+          'openai/llama-3.2-3b-instruct',
+          true
+        )
+      ).toBe(true)
     })
 
     it('assigns priorityRank matching priorityList order', () => {
