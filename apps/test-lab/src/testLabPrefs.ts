@@ -15,6 +15,7 @@ export interface TestLabRunPrefs {
   verifyEars: boolean
   shippedScenarios: boolean
   strictPhasedPytest: boolean
+  implementAutoAdvanceLlm: boolean
 }
 
 export const DEFAULT_TEST_LAB_RUN_PREFS: TestLabRunPrefs = {
@@ -30,6 +31,24 @@ export const DEFAULT_TEST_LAB_RUN_PREFS: TestLabRunPrefs = {
   verifyEars: false,
   shippedScenarios: false,
   strictPhasedPytest: false,
+  implementAutoAdvanceLlm: false,
+}
+
+/** Turn on every optional diagnostic lane (respects router/cloud preflight). */
+export function fullSuiteRunPrefs(
+  prefs: TestLabRunPrefs,
+  opts: { cloudLlmConfigured: boolean; routerLaneReady: boolean }
+): TestLabRunPrefs {
+  return {
+    ...prefs,
+    skipLlm: false,
+    verifyEars: true,
+    shippedScenarios: true,
+    specGenPhased: true,
+    strictPhasedPytest: true,
+    llmRouter: opts.routerLaneReady,
+    cloudLlm: opts.cloudLlmConfigured,
+  }
 }
 
 export function loadTestLabRunPrefs(): TestLabRunPrefs {

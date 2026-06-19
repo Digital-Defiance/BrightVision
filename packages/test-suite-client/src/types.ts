@@ -14,6 +14,7 @@ export type SuiteLaneOptions = {
   verifyEars?: boolean
   shippedScenarios?: boolean
   strictPhasedPytest?: boolean
+  implementAutoAdvanceLlm?: boolean
 }
 
 export type TestSuiteEvent = {

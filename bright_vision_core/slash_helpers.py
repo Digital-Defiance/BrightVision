@@ -6,7 +6,7 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from cecli.commands import SwitchCoderSignal
+from cecli.commands import ReloadProgramSignal, SwitchCoderSignal
 
 from bright_vision_core.async_bridge import run
 
@@ -132,6 +132,15 @@ def is_switch_coder_signal(exc: BaseException) -> bool:
         return True
     if isinstance(exc, BaseExceptionGroup):
         return any(is_switch_coder_signal(e) for e in exc.exceptions)
+    return False
+
+
+def is_reload_program_signal(exc: BaseException) -> bool:
+    """True when *exc* is (or wraps) cecli's full configuration hot-reload signal."""
+    if isinstance(exc, ReloadProgramSignal):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(is_reload_program_signal(e) for e in exc.exceptions)
     return False
 
 

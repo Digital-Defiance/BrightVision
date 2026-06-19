@@ -442,12 +442,35 @@ def test_should_auto_continue_after_edit_failure():
     assert should_auto_continue_after_edit_failure(
         events=events, agent_cmd=False, edit_failure_continuation=False
     )
+    assert should_auto_continue_after_edit_failure(
+        events=events,
+        agent_cmd=True,
+        implement_turn=True,
+        edit_failure_continuation=False,
+    )
     assert not should_auto_continue_after_edit_failure(
-        events=events, agent_cmd=True, edit_failure_continuation=False
+        events=events, agent_cmd=True, implement_turn=False, edit_failure_continuation=False
     )
     assert not should_auto_continue_after_edit_failure(
         events=events, agent_cmd=False, edit_failure_continuation=True
     )
+
+
+def test_malformed_edittext_json_detection_and_continue_message():
+    from bright_vision_core.agent_turn import (
+        edit_failure_continue_message,
+        is_edit_tool_failure_event,
+        malformed_edittext_json_in_events,
+    )
+
+    warn = {
+        "type": "tool_warning",
+        "text": "Malformed JSON arguments in tool EditText: Expecting value",
+    }
+    assert is_edit_tool_failure_event(warn)
+    assert malformed_edittext_json_in_events([warn])
+    msg = edit_failure_continue_message(malformed_json=True)
+    assert "JSON array" in msg
 
 
 def test_should_abort_turn_for_edit_failures():
@@ -472,6 +495,14 @@ def test_should_abort_turn_for_edit_failures():
         consecutive_edit_failures=5,
         total_edit_failures=5,
         agent_cmd=True,
+        implement_turn=False,
+        edit_failure_continuation=False,
+    )
+    assert should_abort_turn_for_edit_failures(
+        consecutive_edit_failures=EDIT_FAILURE_ABORT_THRESHOLD,
+        total_edit_failures=EDIT_FAILURE_ABORT_THRESHOLD,
+        agent_cmd=True,
+        implement_turn=True,
         edit_failure_continuation=False,
     )
 
@@ -546,3 +577,97 @@ def test_duplicate_tool_call_detection_and_abort():
     assert "5 duplicate tool call" in msg
     assert "loop" in msg
     assert "Clear chat" in msg
+
+
+def test_implement_duplicate_tool_call_lower_threshold():
+    from bright_vision_core.agent_turn import (
+        IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        duplicate_tool_call_abort_threshold,
+        should_abort_turn_for_duplicate_tool_calls,
+    )
+
+    assert duplicate_tool_call_abort_threshold(implement_turn=True) == (
+        IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD
+    )
+    assert should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD,
+        edit_failure_continuation=False,
+        implement_turn=True,
+    )
+    assert not should_abort_turn_for_duplicate_tool_calls(
+        total_duplicate_calls=IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD - 1,
+        edit_failure_continuation=False,
+        implement_turn=True,
+    )
+
+
+def test_implement_context_only_abort_and_llm_retry_storm():
+    from bright_vision_core.agent_turn import (
+        IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS,
+        IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD,
+        implement_context_only_abort_warning,
+        is_llm_retry_tool_output_event,
+        llm_retry_storm_abort_warning,
+        should_abort_implement_context_only_turn,
+        should_abort_turn_for_llm_retry_storm,
+    )
+
+    cm = {"type": "tool_output", "text": "Tool Call: Local • ContextManager\nargs"}
+    retry = {"type": "tool_output", "text": "Retrying in 0.2 seconds..."}
+    edit_ok = {"type": "tool_output", "text": "Applied 1 edits in src/auth/token.ts"}
+
+    assert is_llm_retry_tool_output_event(retry)
+    assert not is_llm_retry_tool_output_event(cm)
+
+    stuck = [cm] + [retry] * 4
+    assert should_abort_implement_context_only_turn(
+        implement_turn=True,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+        agent_continuation=False,
+        events=stuck,
+        llm_rounds=IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS,
+    )
+    assert not should_abort_implement_context_only_turn(
+        implement_turn=True,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+        agent_continuation=False,
+        events=stuck + [edit_ok],
+        llm_rounds=IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS,
+    )
+    assert not should_abort_implement_context_only_turn(
+        implement_turn=False,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+        agent_continuation=False,
+        events=stuck,
+        llm_rounds=IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS,
+    )
+
+    retry_storm = [retry] * IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD
+    assert should_abort_turn_for_llm_retry_storm(
+        implement_turn=True,
+        agent_cmd=False,
+        edit_failure_continuation=False,
+        agent_continuation=False,
+        events=retry_storm,
+    )
+
+    ctx_msg = implement_context_only_abort_warning(
+        llm_rounds=6, context_manager_calls=2, llm_retries=4
+    )
+    assert "no EditText save" in ctx_msg
+    assert "ContextManager" in ctx_msg
+
+    storm_msg = llm_retry_storm_abort_warning(total=6)
+    assert "LLM retry" in storm_msg
+
+    resume_storm = [retry] * IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD
+    assert should_abort_turn_for_llm_retry_storm(
+        implement_turn=True,
+        agent_cmd=True,
+        edit_failure_continuation=False,
+        agent_continuation=False,
+        events=resume_storm,
+    )

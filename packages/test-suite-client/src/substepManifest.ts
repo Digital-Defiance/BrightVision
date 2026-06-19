@@ -37,6 +37,8 @@ export const E2E_LLM_PLAYWRIGHT_SUBSTEPS: readonly string[] = [
   'agent-llm.spec.ts',
   'context-llm.spec.ts',
   'edit-block-llm.spec.ts',
+  'implement-llm.spec.ts',
+  'implement-resume-llm.spec.ts',
   'todo-list-llm.spec.ts',
   'transcript-llm.spec.ts',
   'superproject-llm.spec.ts',
@@ -45,9 +47,12 @@ export const E2E_LLM_PLAYWRIGHT_SUBSTEPS: readonly string[] = [
 
 export const E2E_LLM_PHASED_SUBSTEP = 'spec-generate-phased-llm.spec.ts'
 
+export const E2E_LLM_IMPLEMENT_AUTO_ADVANCE_SUBSTEP = 'implement-auto-advance-llm.spec.ts'
+
 export const STEP_SUBSTEP_MANIFEST: Readonly<Record<string, readonly string[]>> = {
   'llm:core': LLM_CORE_PYTEST_SUBSTEPS,
   'e2e:llm': E2E_LLM_PLAYWRIGHT_SUBSTEPS,
+  'e2e:llm:implement-auto-advance': [E2E_LLM_IMPLEMENT_AUTO_ADVANCE_SUBSTEP],
 }
 
 export function substepsForStep(

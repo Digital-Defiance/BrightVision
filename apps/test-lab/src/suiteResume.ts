@@ -24,6 +24,7 @@ export function suitePlanKey(
     lanes.verifyEars ? '1' : '0',
     lanes.shippedScenarios ? '1' : '0',
     lanes.strictPhasedPytest ? '1' : '0',
+    lanes.implementAutoAdvanceLlm ? '1' : '0',
   ].join('')
   return `${ids}|${flags}`
 }

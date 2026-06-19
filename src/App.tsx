@@ -121,6 +121,7 @@ import {
   type SpecLayerSection,
 } from './utils/specWizard'
 import type { TraceabilityResult } from './todos/earsTypes'
+import { shouldBreakAssistantStreamForToolEvent } from './utils/assistantStreamBreak'
 import { isRedundantEditToolOutput } from './utils/suppressDuplicateToolOutput'
 import { appendTimingStatsCsvRow } from './ipc/timingStatsCsv'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
@@ -1061,7 +1062,10 @@ function AppShell({
         }
         if (!text.trim()) break
         if (isRedundantEditToolOutput(text, lastAssistantStreamRef.current)) break
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [
@@ -1101,7 +1105,10 @@ function AppShell({
         if (!raw.trim()) break
         turnHadToolErrorRef.current = true
         const text = rewriteAddFileToolMessage(raw, savedConfig.workingDir)
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [...prev, { id: orderId, type: 'tool_result' as const, name: 'error', output: text }],
@@ -1115,7 +1122,10 @@ function AppShell({
         if (!raw.trim()) break
         const emptyLlm = isEmptyLlmWarning(raw)
         const text = rewriteEmptyLlmWarningIfNeeded(raw, isLocalLlmModel)
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [
@@ -3484,6 +3494,7 @@ function AppShell({
               inputValue={inputValue}
               isRunning={isRunning}
               isBusy={isBusy}
+              activityActive={process.snapshot.active}
               pendingConfirm={pendingConfirm}
               pathSuggestions={pathSuggestions}
               pathAssistActive={pathAssistActive}

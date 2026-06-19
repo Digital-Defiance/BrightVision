@@ -87,7 +87,7 @@ Or `yarn test:bright-core` (BrightVision `tests/core/*` modules, including spec/
 
 **Test Lab unit tests:** `yarn test:lab` (`apps/test-lab` Vitest — suite resume, progress parser). Included in `yarn dogfood:check`. Default Lab plan includes **`llm:backends`** after **`verify:cecli-spec`**.
 
-**Spec implementation progress** (checklist ↔ `tasks_md` ↔ agent todo): cecli `tests/spec/test_progress.py`; BrightVision `tests/core/test_spec_progress.py`, `test_implement_progress.py`, `test_session_implement_auto_mark.py`, `test_http_implementation_progress.py`, `test_http_agent_todo_import.py`; mocked e2e `e2e/implement-progress.spec.ts`; real-core `e2e/integration/implement-progress.spec.ts` (`yarn test:e2e:integration`). Headless CLI: `bright-vision-tasks materialize|progress|sync-agent|repair-pubspec` (after `pip install -e .`). Test Lab default suite runs `verify:cecli-spec` on every run.
+**Spec implementation progress** (checklist ↔ `tasks_md` ↔ agent todo): cecli `tests/spec/test_progress.py`, `tests/helpers/test_tool_json_edittext.py`; BrightVision `tests/core/test_spec_progress.py`, `test_implement_progress.py`, `test_session_implement_auto_mark.py`, **`test_session_implement_auto_advance.py`** (mocked nested `run_message` + verify gate + **SSE `tool_output` parity**), `test_http_implementation_progress.py`, **`test_http_implement_turn.py`** + **`test_implement_turn_contracts.py`** (Session/HTTP expanded prompt, yield guard, EditText JSON coercion, code-tier routing, **spec-focus implement**), **`test_implement_llm.py`** (`E2E_LLM=1`, CODE model, implement fixture); `test_http_agent_todo_import.py`; mocked e2e `e2e/implement-progress.spec.ts`, **`e2e/implement-workspace.spec.ts`** (named-path, resume, **spec-focus + implement**); integration `e2e/integration/implement-workspace.spec.ts`, **`e2e/integration/implement-workspace-http.spec.ts`** (live `:8741` SSE parity with `implementMessagePreview.ts`); LLM e2e **`e2e/implement-llm.spec.ts`**, **`implement-resume-llm.spec.ts`** (default `e2e:llm` on Lab 3B); **`implement-auto-advance-llm.spec.ts`** (default `e2e:llm`; Lab passes `E2E_CODE_MODEL` for implement turns); real-core `e2e/integration/implement-progress.spec.ts` (`yarn test:e2e:integration`). Headless CLI: `bright-vision-tasks materialize|progress|sync-agent|repair-pubspec` (after `pip install -e .`). **Test Lab** (`yarn lab` / `yarn test:everything`) runs the full implement envelope: contract pytest in **`test-local:release`** → `yarn test:bright-core` (HTTP/Session contracts + auto-advance), **`llm:core`** → `test_implement_llm.py`, **`e2e:llm`** → implement LLM trio; manifest parity enforced in `tests/core/test_test_suite.py`.
 
 ## Rust (Tauri git_ops)
 
@@ -129,6 +129,8 @@ yarn test:e2e
 | `tasks-ears.spec.ts` | Validate EARS (mock lint) |
 | `spec-generate-all-llm.spec.ts` | Real Ollama all-layers generate-spec (default LLM lane) |
 | `spec-generate-phased-llm.spec.ts` | Real Ollama phased wizard (opt-in: Test Lab checkbox / `E2E_SPEC_GEN_PHASED=1`) |
+| `implement-llm.spec.ts` | Real LLM named-path implement (`E2E_CODE_MODEL` from Lab/`local-llm.env`) |
+| `implement-auto-advance-llm.spec.ts` | Verify + auto-advance (2-step checklist; **opt-in** — Lab checkbox or `E2E_IMPLEMENT_AUTO_ADVANCE_LLM=1`; mocked contract: `test_session_implement_auto_advance.py`) |
 | `open-project.spec.ts` | Launch gate vs primed skip; header project bar; open confirm |
 | `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
@@ -241,6 +243,7 @@ Optional env:
 | `BV_SPEC_GEN_AGENT` | `1` (default): read-only `/agent` explore before write. Set `0` to restore one-shot only. |
 | `BV_SPEC_GEN_RICHNESS_GATE` | `1` (default): auto deepen pass when output is thin. Set `0` to skip. Disabled when `BV_COMPACT_SPEC_GEN=1`. |
 | `E2E_SPEC_GEN_PHASED` | `1` runs phased wizard LLM e2e (3 jobs). Also: `yarn test:e2e:llm:phased`, Test Lab **Phased spec-gen LLM**, `yarn test:everything --spec-gen-phased`. Must appear in `suite env:` on the `e2e:llm` step (export alone is not enough if the orchestrator was started without it). |
+| `E2E_CODE_MODEL` | Test Lab `llm:core` / `e2e:llm` inject from `local-llm.env` `CODE_MODEL` (or default `qwen2.5-coder-7b-instruct` on LM Studio). Implement LLM specs warm this model before `/agent` turns. |
 | `BV_SKIP_SPEC_GEN_E2E` | `1` omits both `spec-generate-*-llm.spec.ts` from `yarn test:e2e:llm` (faster iteration; full bar still needs all-layers) |
 | `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Defaults **`1800`** in `yarn test:llm:core`, `yarn test:e2e:llm`, Test Lab `llm:core` / `e2e:llm`, and Vision API spawn (`e2e/helpers/realCoreServer.ts`). |
 | `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; same `1200` defaults as above; CLI `900` when unset) |

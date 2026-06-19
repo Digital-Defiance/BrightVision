@@ -100,6 +100,8 @@ interface ChatPanelProps {
   inputValue: string
   isRunning: boolean
   isBusy: boolean
+  /** Activity bar still active (e.g. SSE ended without ``done``). */
+  activityActive?: boolean
   pendingConfirm: CoreConfirmEvent | null
   pathSuggestions: string[]
   pathAssistActive: boolean
@@ -179,6 +181,7 @@ export function ChatPanel({
   inputValue,
   isRunning,
   isBusy,
+  activityActive = false,
   pendingConfirm,
   pathSuggestions,
   pathAssistActive,
@@ -741,7 +744,7 @@ export function ChatPanel({
           }
           disabled={!isRunning}
         />
-        {isBusy ? (
+        {isBusy || (activityActive && isRunning) ? (
           <Stack direction="row" spacing={0.5} sx={{ alignSelf: 'flex-end' }}>
             <Button
               data-testid="chat-queue"

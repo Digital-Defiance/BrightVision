@@ -29,9 +29,20 @@ if ! lms ls --json 2>/dev/null | grep -q "\"modelKey\":\"${KEY}\""; then
   exit 1
 fi
 
+if lms ps --json 2>/dev/null | grep -q "\"modelKey\":\"${KEY}\""; then
+  ALREADY_LOADED=1
+else
+  ALREADY_LOADED=0
+fi
+
 if [ "${OLLAMA_WARMUP_EXCLUSIVE:-1}" != "0" ]; then
-  echo "lms-warmup: unloading other models (lms unload --all)" >&2
-  lms unload --all >/dev/null 2>&1 || true
+  if [ "${ALREADY_LOADED}" = "1" ] && [ "${OLLAMA_WARMUP_SKIP_IF_LOADED:-0}" != "0" ]; then
+    echo "lms-warmup: ${KEY} resident — skipping unload --all" >&2
+  else
+    echo "lms-warmup: unloading other models (lms unload --all)" >&2
+    lms unload --all >/dev/null 2>&1 || true
+    ALREADY_LOADED=0
+  fi
 fi
 
 LOAD_ARGS="-y --identifier ${KEY}"
@@ -42,10 +53,14 @@ if [ -n "${BRIGHTVISION_LLM_LOAD_PARALLEL:-}" ]; then
   LOAD_ARGS="${LOAD_ARGS} --parallel ${BRIGHTVISION_LLM_LOAD_PARALLEL}"
 fi
 
-# shellcheck disable=SC2086
-if ! lms load "${KEY}" ${LOAD_ARGS} >/dev/null 2>&1; then
-  echo "lms-warmup: lms load ${KEY} failed" >&2
-  exit 1
+if [ "${ALREADY_LOADED}" = "1" ]; then
+  echo "lms-warmup: ${KEY} already loaded — skipping lms load" >&2
+else
+  # shellcheck disable=SC2086
+  if ! lms load "${KEY}" ${LOAD_ARGS} >/dev/null 2>&1; then
+    echo "lms-warmup: lms load ${KEY} failed" >&2
+    exit 1
+  fi
 fi
 
 # lms load does not start the OpenAI-compatible HTTP server — ensure it is listening.

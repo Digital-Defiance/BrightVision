@@ -86,6 +86,7 @@ export async function fetchExpectations(skipLlm: boolean, lanes: SuiteLaneOption
       ...(lanes.verifyEars ? { verify_ears: 'true' } : {}),
       ...(lanes.shippedScenarios ? { shipped_scenarios: 'true' } : {}),
       ...(lanes.strictPhasedPytest ? { strict_phased_pytest: 'true' } : {}),
+      ...(lanes.implementAutoAdvanceLlm ? { implement_auto_advance_llm: 'true' } : {}),
     })}`
   )
   if (!res.ok) throw new Error(`expectations failed: ${res.status}`)
@@ -176,6 +177,7 @@ export async function startRun(
       verify_ears: Boolean(opts.verifyEars),
       shipped_scenarios: Boolean(opts.shippedScenarios),
       strict_phased_pytest: Boolean(opts.strictPhasedPytest),
+      implement_auto_advance_llm: Boolean(opts.implementAutoAdvanceLlm),
       save_transcript: Boolean(opts.saveTranscript),
       fail_fast: Boolean(opts.failFast),
       short_circuit: Boolean(opts.shortCircuit),

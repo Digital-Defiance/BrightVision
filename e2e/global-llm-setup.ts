@@ -75,7 +75,7 @@ export default async function globalSetup(): Promise<void> {
   if (!isLlmE2eEnabled()) return
   const phased = process.env['E2E_SPEC_GEN_PHASED'] === '1'
   console.error(
-    `[global-llm-setup] E2E_LLM=1 E2E_SPEC_GEN_PHASED=${process.env['E2E_SPEC_GEN_PHASED'] ?? '(unset)'}`
+    `[global-llm-setup] E2E_LLM=1 E2E_SPEC_GEN_PHASED=${process.env['E2E_SPEC_GEN_PHASED'] ?? '(unset)'} E2E_CODE_MODEL=${process.env['E2E_CODE_MODEL'] ?? '(unset)'}`
   )
   if (phased) {
     console.error('[global-llm-setup] phased spec-gen file enabled')

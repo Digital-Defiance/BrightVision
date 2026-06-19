@@ -49,6 +49,11 @@ def assistant_text(events: list[dict]) -> str:
     return "".join(tokens)
 
 
+def user_message_text(events: list[dict]) -> str:
+    ev = next((e for e in events if e.get("type") == "user_message"), None)
+    return str(ev.get("text") or "") if ev else ""
+
+
 def _is_hex_part(part: str) -> bool:
     return len(part) >= 2 and all(c in "0123456789abcdef" for c in part.lower())
 

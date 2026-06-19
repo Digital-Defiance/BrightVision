@@ -34,6 +34,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | **Real LLM hello** | Opt-in | `hello-llm.spec.ts`, `agent-llm.spec.ts`, `test_hello_llm.py`, `test_agent_llm.py` |
 | **Real LLM + file context** | Opt-in | `context-llm.spec.ts`, `test_context_llm.py` — `e2e/fixtures/context-workspace` |
 | **Real core integration** | Done | `yarn test:e2e:integration`; `test_http_agent_todo_import.py`, `test_agent_todos.py` |
+| **#51 implement workspace** | Partial | `implement-workspace.spec.ts` (UI POST + `inject_todo_spec`/`spec_focus`, resume, **spec-focus implement**), `integration/implement-workspace.spec.ts`, **`integration/implement-workspace-http.spec.ts`**; **`implement-llm.spec.ts`** + **`implement-resume-llm.spec.ts`** (default `e2e:llm` / Lab); **`implement-auto-advance-llm.spec.ts`** (opt-in); **`test_session_implement_auto_advance.py`** (mocked auto-advance contract in `test-local:release`); `test_implement_llm.py` |
 | **#50** Open project (IDE) | Done | `open-project.spec.ts`, `navigation.spec.ts` (project bar); helpers `openProject.ts` |
 | **#30** Web parity | Partial | context + settings + path-completion web branch — **Open:** `/add` Tab on web-only |
 | **#31** Release hygiene | Done (automated) | `release-hygiene.spec.ts`, [RELEASE.md](../docs/RELEASE.md) operator steps |
@@ -54,6 +55,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config + open-project priming |
 | `openProject.ts` | `vision-skip-project-gate`, `vision-current-project` for E2E |
 | `scenarios.ts` / `fixtureWorkspaces.ts` | Named scenarios + git workspaces with deterministic outputs |
+| `implementFixture.ts` / `implementBlockPreview.ts` | Implement workspace todo profiles + cecli inject preview (no LLM) |
 | `primeScenarioConfig.ts` | Per-scenario localStorage (e.g. auto-load) |
 
 ## Real desktop smoke

@@ -6,7 +6,20 @@ import asyncio
 
 import pytest
 
-from bright_vision_core.event_io import EventIO
+from bright_vision_core.event_io import EventIO, _UNDO_HINT
+
+
+def test_tool_output_skips_undo_hint_sse() -> None:
+    io = EventIO()
+    io.tool_output(_UNDO_HINT)
+    assert io.events == []
+
+
+def test_tool_output_emits_other_messages() -> None:
+    io = EventIO()
+    io.tool_output("Tool Call: Local • ReadRange")
+    assert len(io.events) == 1
+    assert io.events[0]["type"] == "tool_output"
 
 
 def test_confirm_ask_accepts_group_response_kwarg() -> None:

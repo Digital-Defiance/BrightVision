@@ -1,5 +1,6 @@
 import { execFileSync, execSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -385,6 +386,15 @@ export function resolveVisionModel(): string {
   return ''
 }
 
+/** CODE tier for implement/agent LLM e2e — prefers E2E_CODE_MODEL / CODE_MODEL. */
+export function resolveCodeVisionModel(): string {
+  for (const key of ['E2E_CODE_MODEL', 'CODE_MODEL', 'E2E_HEAVY_MODEL', 'HEAVY_MODEL'] as const) {
+    const raw = process.env[key]?.trim()
+    if (raw) return visionModelFromTag(raw)
+  }
+  return resolveVisionModel()
+}
+
 /** Create/init minimal workspace (committed README; `.git` created on first LLM e2e run). */
 export function ensureLlmE2eWorkspace(): string {
   fs.mkdirSync(LLM_E2E_WORKSPACE, { recursive: true })
@@ -500,6 +510,22 @@ export function coreHealthUrl(): string {
 
 const WARMUP_SCRIPT = path.join(REPO_ROOT, 'scripts', 'local-llm-warmup-for-tests.sh')
 
+function codeModelWarmMarkerPath(): string {
+  return path.join(os.tmpdir(), 'bv-e2e-code-model-warmed')
+}
+
+function readCodeModelWarmMarker(): string {
+  try {
+    return fs.readFileSync(codeModelWarmMarkerPath(), 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+function writeCodeModelWarmMarker(bareTag: string): void {
+  fs.writeFileSync(codeModelWarmMarkerPath(), bareTag, 'utf8')
+}
+
 /** Vision/LiteLLM id for a bare local model tag (router tier warmup). */
 export function visionWarmupModelId(bareTag: string): string {
   const tag = bareTag.trim()
@@ -529,6 +555,49 @@ export function warmLocalLlmModelTag(
     },
     timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
   })
+}
+
+/** Mid-suite LM Studio/Ollama reset after long /agent turns (mirrors pytest ``recover_local_llm_for_tests``). */
+export function recoverLocalLlmForTests(): void {
+  if (process.env.E2E_SKIP_OLLAMA_WARMUP === '1') return
+  const tag = defaultE2eOllamaTag()
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(tag),
+      OLLAMA_WARMUP_EXCLUSIVE: '0',
+      LMS_WARMUP_RESTART_SERVER: resolveLocalLlmBackend() === 'lmstudio' ? '1' : '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
+}
+
+/** Load CODE tier before implement LLM specs (Lab sets ``E2E_CODE_MODEL`` from ``local-llm.env``). */
+export function warmCodeModelForImplementE2e(): void {
+  if (process.env.E2E_SKIP_OLLAMA_WARMUP === '1') return
+  const codeBare = normalizeOllamaTag(resolveCodeVisionModel())
+  const chatBare = normalizeOllamaTag(resolveVisionModel())
+  if (!codeBare || codeBare === chatBare) return
+  const alreadyWarmed = readCodeModelWarmMarker() === codeBare
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(codeBare),
+      OLLAMA_WARMUP_EXCLUSIVE: alreadyWarmed ? '0' : '1',
+      OLLAMA_WARMUP_SKIP_IF_LOADED: alreadyWarmed ? '1' : '0',
+      LMS_WARMUP_RESTART_SERVER: '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
+  writeCodeModelWarmMarker(codeBare)
+  process.env.BV_E2E_CODE_MODEL_WARMED = codeBare
+}
+
+export function isHeavyCodeVisionModel(): boolean {
+  const code = (process.env.E2E_CODE_MODEL ?? resolveCodeVisionModel()).toLowerCase()
+  return /27b|32b|70b|qwen3\.6/.test(code)
 }
 
 /** Env for spawning Vision API — must not put repo root on PYTHONPATH (shadows `cecli`). */

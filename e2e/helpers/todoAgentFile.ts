@@ -3,6 +3,12 @@ import path from 'node:path'
 
 export const E2E_TODO_MAGIC = 'bv-todo-9c2e'
 
+/** Remove agent session artifacts so UpdateTodoList starts clean. */
+export function clearHelloWorkspaceAgentArtifacts(workspaceRoot: string): void {
+  const cecli = path.join(workspaceRoot, '.cecli')
+  if (fs.existsSync(cecli)) fs.rmSync(cecli, { recursive: true })
+}
+
 /** True when any .cecli/agents/.../todo.txt under workspace contains the magic task text. */
 export function workspaceHasAgentTodoMagic(workspaceRoot: string): boolean {
   const agents = path.join(workspaceRoot, '.cecli', 'agents')

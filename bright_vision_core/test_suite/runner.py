@@ -61,6 +61,8 @@ _LLM_CORE_HEARTBEAT_INTERVAL_S = 30.0
 _UTIL_EMIT_INTERVAL_S = 30.0
 _LLM_GPU_STALL_ABORT_S = float(os.environ.get("BV_LLM_GPU_STALL_ABORT_S", "240"))
 _LLM_GPU_LOW_WARN_S = float(os.environ.get("BV_LLM_GPU_LOW_WARN_S", "120"))
+# LM Studio on macOS often reports 0% GPU via ioreg while CPU is busy — treat as active.
+_LLM_CPU_STALL_ACTIVITY_PCT = float(os.environ.get("BV_LLM_CPU_STALL_ACTIVITY_PCT", "12"))
 _LLM_GPU_STALL_ABORT_ENABLED = os.environ.get("BV_LLM_GPU_STALL_ABORT", "1").strip().lower() not in (
     "0",
     "false",
@@ -97,6 +99,7 @@ def should_gpu_stall_abort(
     use_gpu: bool,
     step_elapsed_s: float,
     gpu_idle_s: float,
+    cpu_idle_s: float | None = None,
     sse_wait_started_at: float | None,
 ) -> tuple[bool, float]:
     stall_s = resolve_gpu_stall_abort_s(step_env)
@@ -104,11 +107,17 @@ def should_gpu_stall_abort(
         return False, stall_s
     if step_elapsed_s < stall_s or gpu_idle_s < stall_s:
         return False, stall_s
+    if cpu_idle_s is not None and cpu_idle_s < stall_s:
+        # CPU busy with flat GPU — common for LM Studio / small models on Apple Silicon.
+        return False, stall_s
     if sse_wait_started_at is not None and step.id == "llm:core":
         turn_s = _suite_turn_timeout_s(step_env)
         # Let pytest hit SSE timeout + recover retry before the suite kills llm:core.
         if (time.time() - sse_wait_started_at) < (turn_s * 2.0 + 120.0):
             return False, stall_s
+    if step.id == "e2e:llm" and step_elapsed_s < stall_s * 2.0:
+        # Playwright LLM lane runs long /agent implement + spec-gen files serially.
+        return False, stall_s
     return True, stall_s
 _TEST_FAIL_LINE_RES = [
     re.compile(r"^FAILED\s+\S", re.I),
@@ -176,7 +185,13 @@ def build_step_env(
         env["BV_TEST_SUITE_SMOKE_E2E"] = "1"
         env.pop("E2E_LLM", None)
         env.pop("E2E_SUPERPROJECT_LLM", None)
-    if step.id == "llm:core" or step.requires_ollama:
+    if step.id == "e2e:llm:implement-auto-advance":
+        env["E2E_IMPLEMENT_AUTO_ADVANCE_LLM"] = "1"
+    elif step.id == "eval:prompts":
+        from bright_vision_core.test_suite.local_llm import eval_prompts_step_env
+
+        env.update(eval_prompts_step_env(suite_run=suite_run))
+    elif step.id == "llm:core" or step.requires_ollama:
         env.update(llm_core_step_env(suite_run=suite_run))
     if step.id == "e2e:llm:superproject":
         env["E2E_SUPERPROJECT_LLM"] = "1"
@@ -190,6 +205,17 @@ def build_step_env(
         env["BV_TEST_SUITE_LIVE_OUTPUT"] = "1"
         if os.environ.get("BV_SUITE_STRICT_PHASED_PYTEST") == "1":
             env["BV_SUITE_STRICT_PHASED_PYTEST"] = "1"
+    if step.id == "e2e:llm" and suite_run:
+        try:
+            spec_s = float(env.get("LLM_SPEC_GEN_TIMEOUT_S", "3600"))
+        except (TypeError, ValueError):
+            spec_s = 3600.0
+        floor = int(max(1200.0, spec_s * 0.75))
+        try:
+            current = int(float(env.get("BV_LLM_GPU_STALL_ABORT_S", "0")))
+        except (TypeError, ValueError):
+            current = 0
+        env["BV_LLM_GPU_STALL_ABORT_S"] = str(max(current, floor))
     return env
 
 
@@ -220,7 +246,7 @@ def run_step(
 ) -> tuple[bool, float, float | None, float | None, str]:
     """Run one step. Returns ok, seconds, gpu_avg, gpu_peak, combined capture text."""
     env = build_step_env(step, suite_run=suite_run, cwd=cwd)
-    if short_circuit:
+    if short_circuit and step.id != "eval:prompts":
         env["BV_TEST_SUITE_SHORT_CIRCUIT"] = "1"
 
     if step.requires_ollama or step.id == "test-local:release":
@@ -230,6 +256,8 @@ def run_step(
             bits.append(f"BV_COMPACT_SPEC_GEN={env.get('BV_COMPACT_SPEC_GEN', '(unset)')}")
             bits.append(f"LLM_SPEC_GEN_TIMEOUT_S={env.get('LLM_SPEC_GEN_TIMEOUT_S', '')}")
             bits.append(f"E2E_SPEC_GEN_PHASED={env.get('E2E_SPEC_GEN_PHASED', '(unset)')}")
+            if env.get("E2E_CODE_MODEL"):
+                bits.append(f"E2E_CODE_MODEL={env.get('E2E_CODE_MODEL', '')}")
         if env.get("E2E_MODEL_ROUTER") == "1":
             bits.append("E2E_MODEL_ROUTER=1")
             from bright_vision_core.test_suite.router_preflight import resolve_router_tags
@@ -285,6 +313,7 @@ def run_step(
                 capture_output=True,
                 text=True,
             )
+    if step.id in ("llm:core", "eval:prompts"):
         _warmup_script = cwd / "scripts" / "local-llm-warmup-for-tests.sh"
         if _warmup_script.is_file() and not os.environ.get("SKIP_OLLAMA_WARMUP"):
             backend = resolve_backend()
@@ -356,7 +385,7 @@ def run_step(
                         "line": hint,
                     },
                 )
-        if not warmup_failed:
+        if step.id == "llm:core" and not warmup_failed:
             _emit(
                 on_event,
                 {
@@ -406,6 +435,7 @@ def run_step(
     gpu_stall_abort = False
     gpu_low_warned = False
     last_gpu_active_at = step_start
+    last_cpu_active_at = step_start
     sse_wait_started_at: float | None = None
     short_circuit_hit = False
     short_circuit_abort_emitted = False
@@ -418,13 +448,15 @@ def run_step(
         last_line_at = time.time()
 
     def _emit_live_util(sample: UtilizationSample, *, now: float) -> None:
-        nonlocal last_gpu_active_at
+        nonlocal last_gpu_active_at, last_cpu_active_at
         if sample.gpu_pct is not None:
             live_gpu_samples.append(sample.gpu_pct)
             if sample.gpu_pct > 0.5:
                 last_gpu_active_at = now
         if sample.cpu_pct is not None:
             live_cpu_samples.append(sample.cpu_pct)
+            if sample.cpu_pct >= _LLM_CPU_STALL_ACTIVITY_PCT:
+                last_cpu_active_at = now
         if sample.mem_pct is not None:
             live_mem_samples.append(sample.mem_pct)
         peak_gpu = max(live_gpu_samples) if live_gpu_samples else None
@@ -457,12 +489,14 @@ def run_step(
         )
         step_elapsed = int(now - step_start)
         gpu_idle_s = now - last_gpu_active_at
+        cpu_idle_s = now - last_cpu_active_at
         abort, stall_s = should_gpu_stall_abort(
             step=step,
             step_env=env,
             use_gpu=use_gpu,
             step_elapsed_s=float(step_elapsed),
             gpu_idle_s=gpu_idle_s,
+            cpu_idle_s=cpu_idle_s,
             sse_wait_started_at=sse_wait_started_at,
         )
         if abort:
@@ -660,8 +694,7 @@ def run_step(
         vision_proc: subprocess.Popen[str] | None = None
         try:
             step_argv = list(step.argv)
-            if step.id == "llm:core":
-                from bright_vision_core.test_suite.manifest import llm_core_pytest_argv
+            if step.id in ("llm:core", "eval:prompts"):
                 from bright_vision_core.test_suite.vision_spawn import (
                     spawn_vision_api,
                     terminate_vision_api,
@@ -681,6 +714,8 @@ def run_step(
 
                 vision_proc = spawn_vision_api(cwd, env, on_line=_vision_line)
                 env["BV_LLM_PYTEST_VISION_URL"] = vision_base_url()
+            if step.id == "llm:core":
+                from bright_vision_core.test_suite.manifest import llm_core_pytest_argv
 
                 step_argv = list(llm_core_pytest_argv())
             if short_circuit and step.id == "llm:core" and "--maxfail=1" not in step_argv:
@@ -899,6 +934,7 @@ def run_suite(
             verify_ears=opts.verify_ears,
             shipped_scenarios=opts.shipped_scenarios,
             strict_phased_pytest=opts.strict_phased_pytest,
+            implement_auto_advance_llm=opts.implement_auto_advance_llm,
         )
     elif spec_gen_phased:
         opts = SuiteRunOptions(
@@ -909,6 +945,7 @@ def run_suite(
             verify_ears=opts.verify_ears,
             shipped_scenarios=opts.shipped_scenarios,
             strict_phased_pytest=opts.strict_phased_pytest,
+            implement_auto_advance_llm=opts.implement_auto_advance_llm,
         )
     if opts.spec_gen_phased or os.environ.get("E2E_SPEC_GEN_PHASED") == "1":
         os.environ["E2E_SPEC_GEN_PHASED"] = "1"

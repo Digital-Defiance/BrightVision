@@ -48,6 +48,7 @@ from bright_vision_core.roadmap_hints import maybe_append_roadmap_hint
 from bright_vision_core.slash_helpers import (
     fast_slash_preproc_timeout_s,
     is_switch_coder_signal,
+    is_reload_program_signal,
     resolve_slash_command_name,
     resolve_turn_slash_command,
     synthetic_slash_preproc_input,
@@ -580,6 +581,9 @@ class Session:
             "ls_calls": 0,
             "explore_calls": 0,
             "duplicate_tool_calls": 0,
+            "llm_retries": 0,
+            "consecutive_edit_failures": 0,
+            "total_edit_failures": 0,
             "exploration_aborted": False,
             "flutter_test_ok": None,
             "focus_step": None,
@@ -614,19 +618,28 @@ class Session:
                 agent_context_pressure_warning,
                 agent_had_write_tool_in_events,
                 duplicate_tool_call_abort_warning,
+                edit_failure_abort_warning,
                 exploration_ls_abort_warning,
                 exploration_repetition_abort_warning,
+                implement_context_only_abort_warning,
                 is_agent_tool_activity_event,
                 is_duplicate_tool_call_error_event,
+                is_edit_tool_failure_event,
+                is_edit_tool_success_event,
                 is_explore_code_tool_output_event,
+                is_llm_retry_tool_output_event,
                 is_ls_tool_output_event,
                 is_readrange_first_edit_error_event,
                 is_readrange_tool_error_event,
                 is_tool_activity_event,
+                llm_retry_storm_abort_warning,
                 parse_token_usage_stat,
                 readrange_failure_abort_warning,
                 should_abort_agent_for_context_pressure,
+                should_abort_implement_context_only_turn,
                 should_abort_turn_for_duplicate_tool_calls,
+                should_abort_turn_for_edit_failures,
+                should_abort_turn_for_llm_retry_storm,
                 should_abort_turn_for_ls_exploration,
                 should_abort_turn_for_readrange_failures,
                 should_abort_turn_for_repetition_guard,
@@ -661,6 +674,39 @@ class Session:
                                 rounds=turn_context_state["rounds"],
                             )
                         )
+                if is_llm_retry_tool_output_event(event):
+                    turn_context_state["llm_retries"] += 1
+            if implement_turn and is_edit_tool_failure_event(event):
+                turn_context_state["consecutive_edit_failures"] += 1
+                turn_context_state["total_edit_failures"] += 1
+            elif implement_turn and (
+                is_edit_tool_success_event(event)
+                or (
+                    event.get("type") == "tool_output"
+                    and "Retrieved context for" in str(event.get("text") or "")
+                )
+            ):
+                turn_context_state["consecutive_edit_failures"] = 0
+            if (
+                implement_turn
+                and not turn_context_state["aborted"]
+                and should_abort_turn_for_edit_failures(
+                    consecutive_edit_failures=turn_context_state["consecutive_edit_failures"],
+                    total_edit_failures=turn_context_state["total_edit_failures"],
+                    agent_cmd=agent_cmd,
+                    implement_turn=True,
+                    edit_failure_continuation=edit_failure_continuation,
+                )
+            ):
+                turn_context_state["aborted"] = True
+                turn_context_state["exploration_aborted"] = True
+                self.io.tool_warning(
+                    edit_failure_abort_warning(
+                        consecutive=turn_context_state["consecutive_edit_failures"],
+                        total=turn_context_state["total_edit_failures"],
+                    )
+                )
+                self.interrupt_turn()
             if (
                 agent_cmd
                 and not agent_continuation
@@ -710,6 +756,7 @@ class Session:
                         total_duplicate_calls=turn_context_state["duplicate_tool_calls"],
                         edit_failure_continuation=edit_failure_continuation,
                         agent_continuation=agent_continuation,
+                        implement_turn=implement_turn,
                     )
                 ):
                     turn_context_state["aborted"] = True
@@ -756,6 +803,49 @@ class Session:
                     turn_context_state["exploration_aborted"] = True
                     self.io.tool_warning(exploration_repetition_abort_warning())
                     self.interrupt_turn()
+            if (
+                implement_turn
+                and not turn_context_state["aborted"]
+            ):
+                ring = list(getattr(self.io, "debug_event_ring", []) or [])
+                if should_abort_turn_for_llm_retry_storm(
+                    implement_turn=implement_turn,
+                    agent_cmd=agent_cmd,
+                    edit_failure_continuation=edit_failure_continuation,
+                    agent_continuation=agent_continuation,
+                    events=ring,
+                ):
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(
+                        llm_retry_storm_abort_warning(
+                            total=turn_context_state["llm_retries"],
+                        )
+                    )
+                    self.interrupt_turn()
+                elif should_abort_implement_context_only_turn(
+                    implement_turn=implement_turn,
+                    agent_cmd=agent_cmd,
+                    edit_failure_continuation=edit_failure_continuation,
+                    agent_continuation=agent_continuation,
+                    events=ring,
+                    llm_rounds=turn_context_state["rounds"],
+                ):
+                    from bright_vision_core.agent_turn import (
+                        context_manager_call_count_from_events,
+                        llm_retry_count_from_events,
+                    )
+
+                    turn_context_state["aborted"] = True
+                    turn_context_state["exploration_aborted"] = True
+                    self.io.tool_warning(
+                        implement_context_only_abort_warning(
+                            llm_rounds=turn_context_state["rounds"],
+                            context_manager_calls=context_manager_call_count_from_events(ring),
+                            llm_retries=llm_retry_count_from_events(ring),
+                        )
+                    )
+                    self.interrupt_turn()
 
         def _run_agent_continuation(continue_message: str, status: str) -> Iterator[dict[str, Any]]:
             if not agent_cmd or agent_continuation:
@@ -773,7 +863,7 @@ class Session:
             ):
                 yield event
 
-        def _run_edit_failure_continuation() -> Iterator[dict[str, Any]]:
+        def _run_edit_failure_continuation(*, malformed_json: bool = False) -> Iterator[dict[str, Any]]:
             if edit_failure_continuation:
                 return
             from bright_vision_core.agent_turn import edit_failure_continue_message
@@ -782,7 +872,7 @@ class Session:
                 "EditText failed — auto-continuing once with ReadRange guidance…"
             )
             for event in self.run_message(
-                edit_failure_continue_message(),
+                edit_failure_continue_message(malformed_json=malformed_json),
                 preproc=False,
                 skip_workspace_init=True,
                 active_todo_id=turn_todo_id,
@@ -1127,12 +1217,15 @@ class Session:
                 if should_auto_continue_after_token_limit(events=ring, assistant_text=blob):
                     yield from _maybe_continue_agent_after_token_limit()
                     return
-                if should_auto_continue_after_agent_stall(
-                    had_tool_call=turn_had_tool_call,
-                    events=ring,
-                    assistant_text=blob,
-                    coder=self.coder,
-                    model_context_tokens=model_ctx,
+                if (
+                    not implement_turn
+                    and should_auto_continue_after_agent_stall(
+                        had_tool_call=turn_had_tool_call,
+                        events=ring,
+                        assistant_text=blob,
+                        coder=self.coder,
+                        model_context_tokens=model_ctx,
+                    )
                 ):
                     yield from _maybe_continue_agent_after_stall()
                     return
@@ -1203,6 +1296,8 @@ class Session:
                 agent_ran_flutter_via_shell,
                 edit_failure_turn_warning,
                 flutter_test_shell_blocked_warning,
+                malformed_edittext_json_in_events,
+                should_auto_continue_after_edit_failure,
             )
             from bright_vision_core.spec_focus import is_implement_turn_message
 
@@ -1214,6 +1309,17 @@ class Session:
             )
             if msg:
                 yield self.io.tool_warning(msg)
+
+            if should_auto_continue_after_edit_failure(
+                events=ring,
+                agent_cmd=agent_cmd,
+                implement_turn=implement_turn,
+                edit_failure_continuation=edit_failure_continuation,
+            ):
+                yield from _run_edit_failure_continuation(
+                    malformed_json=malformed_edittext_json_in_events(ring),
+                )
+                return
 
             from bright_vision_core.agent_todos import AgentTodoSanitizeContext
 
@@ -1394,6 +1500,14 @@ class Session:
                     )
                     return
                 except BaseException as preproc_err:
+                    if is_reload_program_signal(preproc_err):
+                        from bright_vision_core.hot_reload import apply_hot_reload
+
+                        for event in apply_hot_reload(self, preproc_err):
+                            yield event
+                        yield from _finalize_agent_preproc_turn()
+                        _restore_agent_preproc_io()
+                        return
                     if is_switch_coder_signal(preproc_err):
                         preproc_switch_err = preproc_err
                     else:
@@ -1463,7 +1577,7 @@ class Session:
                 nonlocal total_readrange_failures
                 from bright_vision_core.agent_turn import (
                     edit_failure_abort_warning,
-                    is_edit_tool_error_event,
+                    is_edit_tool_failure_event,
                     is_edit_tool_success_event,
                     is_read_range_success_event,
                     is_readrange_tool_error_event,
@@ -1475,11 +1589,14 @@ class Session:
                 if event.get("type") == "tool_error":
                     turn_had_tool_error = True
                     turn_tool_error_text += str(event.get("text") or "")
-                    if is_edit_tool_error_event(event):
+                    if is_edit_tool_failure_event(event):
                         consecutive_edit_failures += 1
                         total_edit_failures += 1
                     elif is_readrange_tool_error_event(event):
                         total_readrange_failures += 1
+                elif event.get("type") == "tool_warning" and is_edit_tool_failure_event(event):
+                    consecutive_edit_failures += 1
+                    total_edit_failures += 1
                 elif is_edit_tool_success_event(event) or is_read_range_success_event(event):
                     consecutive_edit_failures = 0
                 yield event
@@ -1499,6 +1616,7 @@ class Session:
                     consecutive_edit_failures=consecutive_edit_failures,
                     total_edit_failures=total_edit_failures,
                     agent_cmd=agent_cmd,
+                    implement_turn=implement_turn,
                     edit_failure_continuation=edit_failure_continuation,
                 ):
                     edit_failure_aborted = True
@@ -1615,6 +1733,7 @@ class Session:
             self.sync_agent_todos_with_workspace()
             from bright_vision_core.agent_turn import (
                 edit_failure_turn_warning,
+                malformed_edittext_json_in_events,
                 should_auto_continue_after_edit_failure,
                 token_limit_exhausted,
                 vibe_token_limit_recovery_warning,
@@ -1627,9 +1746,12 @@ class Session:
             if should_auto_continue_after_edit_failure(
                 events=ring,
                 agent_cmd=agent_cmd,
+                implement_turn=implement_turn,
                 edit_failure_continuation=edit_failure_continuation,
             ):
-                yield from _run_edit_failure_continuation()
+                yield from _run_edit_failure_continuation(
+                    malformed_json=malformed_edittext_json_in_events(ring),
+                )
                 return
             if token_limit_exhausted(
                 events=ring,
@@ -1640,6 +1762,13 @@ class Session:
             yield from _maybe_verify_step_and_auto_advance()
             yield self.io.emit("done", **_attach_turn_capture(payload))
         except BaseException as err:
+            if is_reload_program_signal(err):
+                from bright_vision_core.hot_reload import apply_hot_reload
+
+                for event in apply_hot_reload(self, err):
+                    yield event
+                yield from _finalize_agent_preproc_turn()
+                return
             if is_switch_coder_signal(err):
                 yield from _finalize_agent_preproc_turn()
                 return

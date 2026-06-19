@@ -94,6 +94,15 @@ def resolve_vision_model() -> str:
     return vision_model_from_tag(resolve_ollama_tag())
 
 
+def resolve_code_vision_model() -> str:
+    """CODE tier for implement/agent turns — prefers E2E_CODE_MODEL / CODE_MODEL."""
+    for key in ("E2E_CODE_MODEL", "CODE_MODEL", "E2E_HEAVY_MODEL", "HEAVY_MODEL"):
+        raw = os.environ.get(key, "").strip()
+        if raw:
+            return vision_model_from_tag(raw)
+    return resolve_vision_model()
+
+
 def fetch_ollama_tag_names(host: str | None = None) -> list[str]:
     base = host or _ollama_host()
     req = urllib.request.Request(f"{base}/api/tags")

@@ -8,6 +8,9 @@ export default defineConfig({
   testDir: 'e2e',
   testIgnore: [
     '**/hello-llm.spec.ts',
+    /** Fixture workspaces (submodule); agent-created `*.test.ts` must not run as Playwright tests. */
+    '**/fixture-pack/**',
+    '**/fixtures/**',
     ...(suiteSmokeE2e
       ? ['**/*-llm.spec.ts', '**/integration/**']
       : []),

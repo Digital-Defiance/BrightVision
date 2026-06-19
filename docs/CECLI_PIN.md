@@ -100,7 +100,21 @@ sh scripts/fix-cecli-submodule-remote.sh
 | `origin` | `https://github.com/Digital-Defiance/cecli.git` |
 | `upstream` | `https://github.com/cecli-dev/cecli.git` (maintainer integration / tags) |
 
-## Bump to cecli-dev integration (e.g. v0.100.1, includes PR #530)
+## Bump to cecli-dev integration (e.g. v0.100.8 on `dev-integration`)
+
+**`dev-integration`** rebases onto upstream tags (latest: **[v0.100.8](https://github.com/cecli-dev/cecli/releases/tag/v0.100.8)** — MR #578: `/hot-reload` (Vision: quick-command chip + `bright_vision_core/hot_reload.py`), ReadRange token-based previews, EditText `insert` removed, per-agent MCP sets).
+
+```bash
+git -C cecli fetch upstream v0.100.8
+git -C cecli checkout dev-integration
+git -C cecli rebase FETCH_HEAD   # resolve conflicts; skip commits already upstream
+git -C cecli push --force-with-lease origin dev-integration
+git add cecli   # parent repo
+source activate.sh && pip install -e cecli
+yarn verify:cecli-spec && yarn verify:cecli-hopper
+```
+
+Legacy one-shot bump (e.g. v0.100.1, includes PR #530):
 
 From BrightVision repo root:
 

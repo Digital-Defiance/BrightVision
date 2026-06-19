@@ -49,6 +49,7 @@ class StartRunRequest(BaseModel):
     verify_ears: bool = False
     shipped_scenarios: bool = False
     strict_phased_pytest: bool = False
+    implement_auto_advance_llm: bool = False
     save_transcript: bool = False
     transcript_path: str | None = None
     fail_fast: bool = False
@@ -64,6 +65,7 @@ def _run_options_from_query(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> SuiteRunOptions:
     return SuiteRunOptions(
         skip_llm=skip_llm,
@@ -73,6 +75,7 @@ def _run_options_from_query(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
 
 
@@ -85,6 +88,7 @@ def _run_options_from_body(body: StartRunRequest) -> SuiteRunOptions:
         verify_ears=body.verify_ears,
         shipped_scenarios=body.shipped_scenarios,
         strict_phased_pytest=body.strict_phased_pytest,
+        implement_auto_advance_llm=body.implement_auto_advance_llm,
     )
 
 
@@ -123,6 +127,7 @@ def get_plan(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> dict[str, Any]:
     opts = _run_options_from_query(
         skip_llm=skip_llm,
@@ -132,6 +137,7 @@ def get_plan(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
     steps = plan_steps(skip_llm=skip_llm, options=opts)
     return {
@@ -187,6 +193,7 @@ def get_expectations(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> dict[str, Any]:
     opts = _run_options_from_query(
         skip_llm=skip_llm,
@@ -196,6 +203,7 @@ def get_expectations(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
     step_ids = [s.id for s in plan_steps(skip_llm=skip_llm, options=opts)]
     return expectations_for_steps(step_ids)

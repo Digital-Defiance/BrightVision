@@ -10,6 +10,7 @@ function laneQueryParams(skipLlm: boolean, lanes: SuiteLaneOptions): string {
   if (lanes.verifyEars) q.set('verify_ears', 'true')
   if (lanes.shippedScenarios) q.set('shipped_scenarios', 'true')
   if (lanes.strictPhasedPytest) q.set('strict_phased_pytest', 'true')
+  if (lanes.implementAutoAdvanceLlm) q.set('implement_auto_advance_llm', 'true')
   return q.toString()
 }
 

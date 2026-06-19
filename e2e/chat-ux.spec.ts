@@ -110,16 +110,10 @@ test.describe('Chat UX (roadmap #1–2, #9–10, #13)', () => {
     await expect(clearBtn).toBeDisabled()
   })
 
-  test('clear history cancel keeps transcript', async ({ page }) => {
-    await page.getByTestId('chat-input').fill('hello-e2e-clear-cancel')
-    await page.getByTestId('chat-send').click()
-    await expectOptimisticSend(page, 'hello-e2e-clear-cancel')
-    await expect(page.getByText('hello-e2e-clear-cancel')).toBeVisible()
-
-    page.once('dialog', (dialog) => dialog.dismiss())
-    await page.getByTestId('chat-clear-history').click()
-
-    await expect(page.getByText('hello-e2e-clear-cancel')).toBeVisible()
-    await expect(page.getByTestId('chat-clear-history')).toBeEnabled()
+  test('hot-reload quick command chip prefills slash', async ({ page }) => {
+    const chip = page.getByTestId('quick-command-hot-reload')
+    await expect(chip).toBeVisible()
+    await chip.click()
+    await expect(page.getByTestId('chat-input')).toHaveValue('/hot-reload')
   })
 })

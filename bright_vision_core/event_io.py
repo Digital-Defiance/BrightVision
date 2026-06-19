@@ -18,6 +18,8 @@ from rich.console import Console
 
 from cecli.io import InputOutput
 
+_UNDO_HINT = "You can use /undo to undo and discard each cecli commit."
+
 
 def _headless_llm_test_mode() -> bool:
     return os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1"
@@ -122,23 +124,29 @@ class EventIO(InputOutput):
 
     def tool_output(self, *messages, log_only=False, bold=False, **kwargs):
         kwargs.pop("coder_uuid", None)
+        text = " ".join(str(m) for m in messages)
+        if text.strip() == _UNDO_HINT:
+            log_only = True
+        event = None
         if not log_only:
-            text = " ".join(str(m) for m in messages)
-            self.emit("tool_output", text=text)
+            event = self.emit("tool_output", text=text)
         if self.echo_to_console:
             super().tool_output(*messages, log_only=log_only, bold=bold, **kwargs)
+        return event
 
     def tool_error(self, message="", strip=True, **kwargs):
         kwargs.pop("coder_uuid", None)
-        self.emit("tool_error", text=str(message))
+        event = self.emit("tool_error", text=str(message))
         if self.echo_to_console:
             super().tool_error(message, strip=strip, **kwargs)
+        return event
 
     def tool_warning(self, message="", strip=True, **kwargs):
         kwargs.pop("coder_uuid", None)
-        self.emit("tool_warning", text=str(message))
+        event = self.emit("tool_warning", text=str(message))
         if self.echo_to_console:
             super().tool_warning(message, strip=strip, **kwargs)
+        return event
 
     def resolve_confirm(self, confirm_id: str, accepted: bool) -> bool:
         """Answer a pending confirm (HTTP/UI). Returns False if unknown or already resolved."""

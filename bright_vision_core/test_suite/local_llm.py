@@ -139,6 +139,102 @@ def default_suite_router_tags(backend: str | None = None) -> tuple[str, str, str
     )
 
 
+def resolve_suite_code_model_tag(backend: str | None = None) -> str:
+    """CODE-tier tag for implement/agent LLM lanes (``local-llm.env`` or suite default)."""
+    file_env = load_local_llm_env_file()
+    code = (
+        os.environ.get("CODE_MODEL", "").strip()
+        or os.environ.get("HEAVY_MODEL", "").strip()
+        or file_env.get("CODE_MODEL", "").strip()
+        or file_env.get("HEAVY_MODEL", "").strip()
+    )
+    if not code:
+        _, code, _ = default_suite_router_tags(backend)
+    return strip_local_model_tag(code)
+
+
+def implement_heavy_code_model(code: str) -> bool:
+    """Large CODE-tier models need longer implement-turn caps in Lab."""
+    low = (code or "").lower()
+    return any(marker in low for marker in ("27b", "32b", "70b", "qwen3.6"))
+
+
+def implement_lane_turn_timeout_s(code_model: str, *, base: str = "600") -> str | None:
+    if not implement_heavy_code_model(code_model):
+        return None
+    try:
+        return str(max(int(float(base)), 1200))
+    except ValueError:
+        return "1200"
+
+
+def implement_lane_step_env(*, suite_run: bool = False) -> dict[str, str]:
+    """Pin CODE tier for implement LLM e2e/pytest when Test Lab runs LLM steps."""
+    in_suite = suite_run or os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+    if not in_suite or os.environ.get("BV_SUITE_USE_ENV_MODEL") == "1":
+        return {}
+    env: dict[str, str] = {}
+    code = (
+        os.environ.get("E2E_CODE_MODEL", "").strip()
+        or os.environ.get("E2E_HEAVY_MODEL", "").strip()
+    )
+    if not code:
+        code = resolve_suite_code_model_tag()
+        env["E2E_CODE_MODEL"] = code
+    cap = implement_lane_turn_timeout_s(code)
+    if cap:
+        env["BV_SUITE_LLM_TURN_TIMEOUT_S"] = cap
+    return env
+
+
+def _suite_litellm_no_retry_params() -> str:
+    """Cap LiteLLM retries so LM Studio 5xx does not burn the turn cap."""
+    import json
+
+    raw = os.environ.get("LITELLM_EXTRA_PARAMS", "").strip()
+    params: dict[str, object] = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                params = parsed
+        except json.JSONDecodeError:
+            pass
+    params["num_retries"] = 0
+    return json.dumps(params)
+
+
+def eval_prompts_step_env(*, suite_run: bool = False) -> dict[str, str]:
+    """Fast-tier model for behavioral prompt eval (before heavy llm:core / implement)."""
+    in_suite = suite_run or os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+    use_env_model = os.environ.get("BV_SUITE_USE_ENV_MODEL") == "1"
+    backend = resolve_backend()
+    fast = (
+        os.environ.get("E2E_OLLAMA_MODEL", "").strip()
+        if use_env_model
+        else default_suite_e2e_model(backend)
+    )
+    turn_cap = "240" if in_suite else "600"
+    env: dict[str, str] = {
+        "PYTHONSAFEPATH": "1",
+        "PYTHONUNBUFFERED": "1",
+        "E2E_LLM": "1",
+        "VISION_AGENT_PREPROC_TIMEOUT_S": "0",
+        "LLM_TEST_TURN_TIMEOUT_S": turn_cap,
+        "E2E_OLLAMA_MODEL": fast,
+        "LITELLM_EXTRA_PARAMS": _suite_litellm_no_retry_params(),
+    }
+    if backend == "lmstudio":
+        env.update(lmstudio_core_env())
+        if in_suite:
+            env["LMS_WARMUP_RESTART_SERVER"] = "1"
+    if in_suite:
+        env["BV_TEST_SUITE_ACTIVE"] = "1"
+        env["BV_TEST_SUITE_LIVE_OUTPUT"] = "1"
+        env["BV_EVAL_PROMPTS_SOFT"] = "1"
+    return env
+
+
 def router_lane_step_env(*, suite_run: bool = False) -> dict[str, str]:
     """Pin small router tier models in suite (same opt-out as ``llm_core_step_env``)."""
     in_suite = suite_run or os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"

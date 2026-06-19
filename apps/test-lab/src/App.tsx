@@ -54,6 +54,7 @@ import {
   type TestLabNtfyPrefs,
 } from './ntfyLabPrefs'
 import {
+  fullSuiteRunPrefs,
   loadTestLabRunPrefs,
   saveTestLabRunPrefs,
   type TestLabRunPrefs,
@@ -120,6 +121,7 @@ export default function App() {
     verifyEars,
     shippedScenarios,
     strictPhasedPytest,
+    implementAutoAdvanceLlm,
     skipGpu,
     useBrightDate,
     saveTranscript,
@@ -204,8 +206,9 @@ export default function App() {
       verifyEars,
       shippedScenarios,
       strictPhasedPytest,
+      implementAutoAdvanceLlm,
     }),
-    [specGenPhased, llmRouter, cloudLlm, verifyEars, shippedScenarios, strictPhasedPytest]
+    [specGenPhased, llmRouter, cloudLlm, verifyEars, shippedScenarios, strictPhasedPytest, implementAutoAdvanceLlm]
   )
 
   const refreshMeta = useCallback(async () => {
@@ -990,6 +993,26 @@ export default function App() {
       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
         Optional diagnostic lanes
       </Typography>
+      <Stack direction="row" spacing={1} sx={{ mb: 1 }} flexWrap="wrap" alignItems="center">
+        <Button
+          size="small"
+          variant="outlined"
+          disabled={running}
+          onClick={() =>
+            patchRunPrefs(
+              fullSuiteRunPrefs(runPrefs, { cloudLlmConfigured, routerLaneReady })
+            )
+          }
+        >
+          Enable all lanes
+        </Button>
+        <Typography variant="caption" color="text.secondary">
+          Base release e2e (incl. implement-workspace) always runs. With every box checked
+          (or this button), the suite also runs verify:ears, shipped-scenarios, phased
+          spec-gen, router/cloud when configured, cecli pre-commit, package Vitests, remaining
+          engine pytest, and eval:prompts — everything testable without extra env vars.
+        </Typography>
+      </Stack>
       <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
         <FormControlLabel
           control={
@@ -1050,6 +1073,16 @@ export default function App() {
             />
           }
           label="Strict phased pytest (fail on EARS skip)"
+        />
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={implementAutoAdvanceLlm}
+              onChange={(_, v) => patchRunPrefs({ implementAutoAdvanceLlm: v })}
+              disabled={running || skipLlm}
+            />
+          }
+          label="Implement auto-advance LLM (heavy; ~20+ min)"
         />
       </Stack>
       {cloudLlm && !cloudLlmConfigured && (

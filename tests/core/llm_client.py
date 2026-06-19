@@ -85,6 +85,9 @@ def stream_session_message(
     *,
     preproc: bool = True,
     timeout_s: float | None = None,
+    active_todo_id: str | None = None,
+    inject_todo_spec: bool = False,
+    spec_focus: bool = False,
 ) -> list[dict]:
     """
     POST a user message and parse SSE events.
@@ -103,7 +106,13 @@ def stream_session_message(
         with client.stream(
             "POST",
             f"/sessions/{session_id}/messages",
-            json={"content": content, "preproc": preproc},
+            json={
+                "content": content,
+                "preproc": preproc,
+                "active_todo_id": active_todo_id,
+                "inject_todo_spec": inject_todo_spec,
+                "spec_focus": spec_focus,
+            },
         ) as stream:
             if stream.status_code != 200:
                 raise AssertionError(f"messages stream: {stream.status_code}")

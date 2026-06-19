@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from bright_vision_core.test_suite.manifest import SuiteRunOptions
+from bright_vision_core.test_suite.manifest import SuiteRunOptions, full_suite_run_options
 from bright_vision_core.test_suite.runner import run_suite
 from bright_vision_core.test_suite.timing import repo_root
 from bright_vision_core.test_suite.log_digest import agent_digest_file
@@ -80,6 +80,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Add Playwright shipped-scenarios matrix.",
     )
     parser.add_argument(
+        "--implement-auto-advance-llm",
+        action="store_true",
+        help="Add e2e:llm:implement-auto-advance (heavy multi-step implement; opt-in).",
+    )
+    parser.add_argument(
+        "--all-lanes",
+        action="store_true",
+        help="Enable all optional diagnostic lanes (same as --verify-ears --shipped-scenarios "
+        "--spec-gen-phased --llm-router --cloud-llm --strict-phased-pytest; plus cecli "
+        "pre-commit, package Vitests, remaining engine pytest, and eval:prompts when all "
+        "lanes are on; LLM tiers still require a reachable local backend).",
+    )
+    parser.add_argument(
         "--strict-phased-pytest",
         action="store_true",
         help="Fail llm:core if phased pytest hits EARS gate (default: skip).",
@@ -140,17 +153,22 @@ def main(argv: list[str] | None = None) -> int:
                 print("\nOne or more steps failed.", file=sys.stderr)
 
     try:
-        run_options = SuiteRunOptions(
-            skip_llm=args.skip_llm,
-            spec_gen_phased=args.spec_gen_phased,
-            llm_router=args.llm_router,
-            cloud_llm=args.cloud_llm,
-            verify_ears=args.verify_ears,
-            shipped_scenarios=args.shipped_scenarios,
-            strict_phased_pytest=args.strict_phased_pytest,
+        run_options = (
+            full_suite_run_options()
+            if args.all_lanes
+            else SuiteRunOptions(
+                skip_llm=args.skip_llm,
+                spec_gen_phased=args.spec_gen_phased,
+                llm_router=args.llm_router,
+                cloud_llm=args.cloud_llm,
+                verify_ears=args.verify_ears,
+                shipped_scenarios=args.shipped_scenarios,
+                strict_phased_pytest=args.strict_phased_pytest,
+                implement_auto_advance_llm=args.implement_auto_advance_llm,
+            )
         )
         ok = run_suite(
-            skip_llm=args.skip_llm,
+            skip_llm=args.skip_llm if not args.all_lanes else False,
             skip_gpu=args.skip_gpu,
             skip_time=args.skip_time,
             use_brightdate=args.use_brightdate,

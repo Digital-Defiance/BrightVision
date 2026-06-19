@@ -27,6 +27,9 @@ READRANGE_FAILURE_ABORT_THRESHOLD = 2
 LS_EXPLORATION_ABORT_THRESHOLD = 4
 AGENT_EXPLORATION_EMPTY_ABORT_ROUNDS = 4
 DUPLICATE_TOOL_CALL_ABORT_THRESHOLD = 5
+IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD = 3
+IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS = 6
+IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD = 6
 
 _PROSE_SHELL_FENCE = re.compile(
     r"```(?:bash|sh|shell|zsh|fish)\s*\n.+?```",
@@ -573,16 +576,24 @@ def is_duplicate_tool_call_error_event(event: dict) -> bool:
     return "Duplicate tool call rejected" in text
 
 
+def duplicate_tool_call_abort_threshold(*, implement_turn: bool = False) -> int:
+    if implement_turn:
+        return IMPLEMENT_DUPLICATE_TOOL_CALL_ABORT_THRESHOLD
+    return DUPLICATE_TOOL_CALL_ABORT_THRESHOLD
+
+
 def should_abort_turn_for_duplicate_tool_calls(
     *,
     total_duplicate_calls: int,
     edit_failure_continuation: bool,
     agent_continuation: bool = False,
+    implement_turn: bool = False,
 ) -> bool:
     """Stop a runaway turn that keeps calling the same tool with identical params."""
     if edit_failure_continuation or agent_continuation:
         return False
-    return total_duplicate_calls >= DUPLICATE_TOOL_CALL_ABORT_THRESHOLD
+    threshold = duplicate_tool_call_abort_threshold(implement_turn=implement_turn)
+    return total_duplicate_calls >= threshold
 
 
 def duplicate_tool_call_abort_warning(*, total: int) -> str:
@@ -591,6 +602,100 @@ def duplicate_tool_call_abort_warning(*, total: int) -> str:
         "(same tool called with identical parameters). "
         "The model is stuck in a loop. **Clear chat** and retry with a narrower task, "
         "or use **Implement** on one numbered step."
+    )
+
+
+def is_context_manager_tool_output_event(event: dict) -> bool:
+    if event.get("type") != "tool_output":
+        return False
+    return "Tool Call: Local • ContextManager" in str(event.get("text") or "")
+
+
+def is_llm_retry_tool_output_event(event: dict) -> bool:
+    """LiteLLM / model layer retry sleep mirrored as tool_output in headless IO."""
+    if event.get("type") != "tool_output":
+        return False
+    text = str(event.get("text") or "")
+    return "Retrying in " in text and "seconds" in text
+
+
+def context_manager_call_count_from_events(events: list[dict] | tuple) -> int:
+    return sum(1 for event in events if is_context_manager_tool_output_event(event))
+
+
+def llm_retry_count_from_events(events: list[dict] | tuple) -> int:
+    return sum(1 for event in events if is_llm_retry_tool_output_event(event))
+
+
+def implement_had_edit_text_success(events: list[dict] | tuple) -> bool:
+    """True when EditText applied — ContextManager scaffolding alone does not count."""
+    return any(is_edit_tool_success_event(event) for event in events)
+
+
+def should_abort_implement_context_only_turn(
+    *,
+    implement_turn: bool,
+    agent_cmd: bool = False,
+    edit_failure_continuation: bool,
+    agent_continuation: bool,
+    events: list[dict] | tuple,
+    llm_rounds: int,
+) -> bool:
+    """Stop implement turns stuck in ContextManager / LLM retries without EditText."""
+    del agent_cmd  # Tasks implement/resume uses /agent transport; guards follow implement_turn.
+    if not implement_turn or edit_failure_continuation or agent_continuation:
+        return False
+    if implement_had_edit_text_success(events):
+        return False
+    cm_calls = context_manager_call_count_from_events(events)
+    llm_retries = llm_retry_count_from_events(events)
+    dup_errors = sum(1 for event in events if is_duplicate_tool_call_error_event(event))
+    stuck_signal = cm_calls >= 1 or llm_retries >= 4 or dup_errors >= 2
+    if not stuck_signal:
+        return False
+    if llm_rounds >= IMPLEMENT_CONTEXT_ONLY_ABORT_ROUNDS:
+        return True
+    if llm_retries >= IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD:
+        return True
+    return False
+
+
+def implement_context_only_abort_warning(
+    *,
+    llm_rounds: int,
+    context_manager_calls: int,
+    llm_retries: int,
+) -> str:
+    return (
+        f"Stopped implement turn after ~{llm_rounds} model call(s) with no EditText save "
+        f"({context_manager_calls} ContextManager, {llm_retries} LLM retries). "
+        "Use **ContextManager create** on the named path once, then **ReadRange** (`@000`/`000@`) "
+        "and **EditText** on that file only. **Clear chat** and **Implement** one step — "
+        "do not loop ContextManager or resume."
+    )
+
+
+def should_abort_turn_for_llm_retry_storm(
+    *,
+    implement_turn: bool,
+    agent_cmd: bool = False,
+    edit_failure_continuation: bool,
+    agent_continuation: bool,
+    events: list[dict] | tuple,
+) -> bool:
+    del agent_cmd
+    if not implement_turn or edit_failure_continuation or agent_continuation:
+        return False
+    if implement_had_edit_text_success(events):
+        return False
+    return llm_retry_count_from_events(events) >= IMPLEMENT_LLM_RETRY_ABORT_THRESHOLD
+
+
+def llm_retry_storm_abort_warning(*, total: int) -> str:
+    return (
+        f"Stopped implement turn after {total} LLM retry(ies) with no file saved. "
+        "The local model may be overloaded — check LM Studio/Ollama, reduce context, "
+        "then **Clear chat** and **Implement** one numbered step."
     )
 
 
@@ -814,23 +919,46 @@ def vibe_token_limit_recovery_warning() -> str:
 
 
 def edit_tool_failures_in_events(events: list[dict] | tuple) -> list[str]:
-    """EditText/ContextManager tool_error texts from the turn event ring."""
+    """EditText/ContextManager failure texts from the turn event ring."""
     failures: list[str] = []
     for event in events:
-        if is_edit_tool_error_event(event):
-            failures.append(str(event.get("text") or "").strip())
+        if is_edit_tool_failure_event(event):
+            failures.append(_edit_tool_failure_text(event))
     return failures
+
+
+def malformed_edittext_json_in_events(events: list[dict] | tuple) -> bool:
+    for event in events:
+        if event.get("type") not in ("tool_error", "tool_warning"):
+            continue
+        text = _edit_tool_failure_text(event)
+        if "Malformed JSON" in text and "EditText" in text:
+            return True
+    return False
+
+
+def _edit_tool_failure_text(event: dict) -> str:
+    return str(event.get("text") or "").strip()
+
+
+def is_edit_tool_failure_event(event: dict) -> bool:
+    """EditText/ContextManager failure from tool_error or tool_warning (e.g. malformed JSON)."""
+    if event.get("type") not in ("tool_error", "tool_warning"):
+        return False
+    text = _edit_tool_failure_text(event)
+    if not text:
+        return False
+    if any(marker in text for marker in _EDIT_TOOL_ERROR_MARKERS):
+        return True
+    if "Malformed JSON" in text and "EditText" in text:
+        return True
+    return "EditText" in text or "ContextManager" in text
 
 
 def is_edit_tool_error_event(event: dict) -> bool:
     if event.get("type") != "tool_error":
         return False
-    text = str(event.get("text") or "").strip()
-    if not text:
-        return False
-    if any(marker in text for marker in _EDIT_TOOL_ERROR_MARKERS):
-        return True
-    return "EditText" in text or "ContextManager" in text
+    return is_edit_tool_failure_event(event)
 
 
 def is_edit_tool_success_event(event: dict) -> bool:
@@ -857,9 +985,12 @@ def should_abort_turn_for_edit_failures(
     total_edit_failures: int,
     agent_cmd: bool,
     edit_failure_continuation: bool,
+    implement_turn: bool = False,
 ) -> bool:
     """Stop a runaway implement turn retrying EditText without ReadRange."""
-    if agent_cmd or edit_failure_continuation:
+    if edit_failure_continuation:
+        return False
+    if agent_cmd and not implement_turn:
         return False
     if not AGENT_TURN_FEATURES.get("implement_continue_after_edit_failure"):
         return False
@@ -905,18 +1036,27 @@ def should_auto_continue_after_edit_failure(
     events: list[dict] | tuple,
     agent_cmd: bool,
     edit_failure_continuation: bool,
+    implement_turn: bool = False,
 ) -> bool:
     """One-shot auto-continue for implement/spec-focus turns after EditText failure."""
     if not AGENT_TURN_FEATURES.get("implement_continue_after_edit_failure"):
         return False
-    if agent_cmd or edit_failure_continuation:
+    if edit_failure_continuation:
+        return False
+    if agent_cmd and not implement_turn:
         return False
     return bool(edit_tool_failures_in_events(events))
 
 
-def edit_failure_continue_message() -> str:
-    return (
+def edit_failure_continue_message(*, malformed_json: bool = False) -> str:
+    base = (
         "The last EditText failed. Call **ReadRange** on the target file first "
         "(`@000`/`000@` for new or empty files), then **EditText** exactly one file. "
         "Do not update UpdateTodoList until the edit succeeds."
     )
+    if malformed_json:
+        return (
+            f"{base} Pass **edits** as a JSON array (one object per file), "
+            "not a stringified JSON blob — keep quotes and newlines valid JSON."
+        )
+    return base

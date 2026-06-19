@@ -233,6 +233,7 @@ export function useVisionSession(
         throw err
       } finally {
         finishSendGeneration(generation)
+        if (inflightRef.current === 0) process.idle()
       }
     },
     [process, setBusyFromInflight, finishSendGeneration]

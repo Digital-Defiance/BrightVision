@@ -114,6 +114,7 @@ _RECOVER_LLM_AFTER_TEST_FILES = (
     "test_todo_list_llm.py",
     "test_transcript_llm.py",
     "test_generate_spec_llm.py",
+    "test_implement_llm.py",
 )
 
 
