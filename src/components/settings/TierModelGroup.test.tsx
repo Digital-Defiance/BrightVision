@@ -40,7 +40,16 @@ describe('TierModelGroup', () => {
       makeEntry('f2', 'ollama_chat/model-b', 'fast', { label: 'Model B', tierSlot: 1 }),
       makeEntry('f3', 'ollama_chat/model-c', 'fast', { label: 'Model C', tierSlot: 2 }),
     ],
-    availableModels: ['model-d', 'model-e'],
+    snapshot: {
+      ollamaHost: 'http://127.0.0.1:11434',
+      reachable: true,
+      configuredTag: '',
+      configuredInPs: false,
+      tagsText: '',
+      psText: '',
+      tagsRows: [{ name: 'model-d' }, { name: 'model-e' }],
+      backend: 'ollama',
+    },
     onToggle: vi.fn(),
     onRemove: vi.fn(),
     onAdd: vi.fn(),
@@ -131,7 +140,16 @@ describe('TierModelGroup', () => {
     const props: TierModelGroupProps = {
       ...defaultProps,
       onAdd,
-      availableModels: ['new-model-tag'],
+      snapshot: {
+        ollamaHost: 'http://127.0.0.1:11434',
+        reachable: true,
+        configuredTag: '',
+        configuredInPs: false,
+        tagsText: '',
+        psText: '',
+        tagsRows: [{ name: 'new-model-tag' }],
+        backend: 'ollama',
+      },
     }
     const { container } = renderWithTheme(<TierModelGroup {...props} />)
 
@@ -154,22 +172,40 @@ describe('TierModelGroup', () => {
     expect(addedEntry.enabled).toBe(true)
   })
 
-  it('shows Add button (not select) when no available models', () => {
+  it('always shows add select with custom option when catalog is empty', () => {
     const onAdd = vi.fn()
+    const { snapshot: _drop, ...rest } = defaultProps
     const props: TierModelGroupProps = {
-      ...defaultProps,
+      ...rest,
       onAdd,
-      availableModels: [],
+      snapshot: {
+        ollamaHost: 'http://127.0.0.1:11434',
+        reachable: true,
+        configuredTag: '',
+        configuredInPs: false,
+        tagsText: '',
+        psText: '',
+        tagsRows: [],
+        backend: 'ollama',
+      },
     }
     const { container } = renderWithTheme(<TierModelGroup {...props} />)
 
-    const addBtn = container.querySelector('[data-testid="tier-model-add-btn-fast"]') as HTMLButtonElement
-    expect(addBtn).toBeTruthy()
+    const addSelect = container.querySelector('[data-testid="tier-model-add-select-fast"]')
+    expect(addSelect).toBeTruthy()
 
-    fireEvent.click(addBtn)
+    const selectEl = addSelect!.querySelector('[role="combobox"]') as HTMLElement
+    fireEvent.mouseDown(selectEl)
+    const customOption = screen
+      .getAllByRole('option')
+      .find((el) => el.getAttribute('data-value') === 'custom')
+    expect(customOption).toBeTruthy()
+    fireEvent.click(customOption!)
+
     expect(onAdd).toHaveBeenCalledTimes(1)
     const addedEntry = onAdd.mock.calls[0][0]
     expect(addedEntry.tier).toBe('fast')
+    expect(addedEntry.model).toBe('')
   })
 
   it('renders correct tier labels for each tier type', () => {

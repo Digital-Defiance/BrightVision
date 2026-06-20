@@ -18,9 +18,13 @@ test.describe('Model router (#39)', () => {
   test('hopper supports code and think roles', async ({ page }) => {
     await page.getByTestId('pref-model-router-enabled').click()
     await page.getByTestId('model-hopper-enable-hopper-fast-deepseek').click()
-    await page.getByRole('button', { name: 'Add think slot' }).click()
-    const rows = page.locator('[data-testid^="model-hopper-row-"]')
-    await expect(rows).toHaveCount(4)
+    await page.getByTestId('model-hopper-enable-hopper-think-r1').click()
+
     await expect(page.getByTestId('model-router-active-routes')).toBeVisible()
+    await expect(page.getByTestId('model-router-active-routes')).toContainText('Code')
+    await expect(page.getByTestId('model-router-active-routes')).toContainText('Think')
+
+    const rows = page.locator('[data-testid^="model-hopper-row-"]')
+    await expect(rows).toHaveCount(3)
   })
 })

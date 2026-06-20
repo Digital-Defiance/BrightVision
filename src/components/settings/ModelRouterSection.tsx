@@ -7,7 +7,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
+import type { OllamaModelsSnapshot, LocalLlmSnapshot } from '../../ipc/localLlm'
 import type { ModelRouterPrefs } from '../../theme/modelRouterPrefs'
 import { effectiveRouterEnabled } from '../../theme/modelRouterPrefs'
 import { resolveHopperModels, syncSessionModelToHopper } from '../../theme/modelHopper'
@@ -18,6 +18,8 @@ interface ModelRouterSectionProps {
   prefs: ModelRouterPrefs
   sessionModel: string
   ollamaSnapshot?: OllamaModelsSnapshot | null
+  localLlmSnap?: LocalLlmSnapshot | null
+  onRefreshCatalog?: () => void
   /** `MODEL_ROUTER` from local-llm env (0 = opt-out). */
   modelRouterEnv?: boolean | null
   onChange: (prefs: ModelRouterPrefs) => void
@@ -27,6 +29,8 @@ export function ModelRouterSection({
   prefs,
   sessionModel,
   ollamaSnapshot,
+  localLlmSnap,
+  onRefreshCatalog,
   modelRouterEnv,
   onChange,
 }: ModelRouterSectionProps) {
@@ -75,6 +79,8 @@ export function ModelRouterSection({
           disabled={!routerIntent}
           sessionModel={sessionModel}
           ollamaSnapshot={ollamaSnapshot}
+          localLlmSnap={localLlmSnap}
+          onRefreshCatalog={onRefreshCatalog}
           onChange={(models) => onChange({ ...prefs, models })}
         />
         <Button

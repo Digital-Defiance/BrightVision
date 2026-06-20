@@ -507,6 +507,8 @@ export function SettingsPanel({
         prefs={modelRouterPrefs}
         sessionModel={sessionModel}
         ollamaSnapshot={ollamaTagsSnap}
+        localLlmSnap={localLlmSnap}
+        onRefreshCatalog={refreshLocalLlm}
         modelRouterEnv={localLlmSnap?.modelRouter}
         onChange={onModelRouterPrefsChange}
       />

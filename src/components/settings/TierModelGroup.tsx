@@ -1,17 +1,11 @@
-import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import PsychologyIcon from '@mui/icons-material/Psychology'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import {
   Box,
-  Button,
   Chip,
-  FormControl,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Switch,
   TextField,
@@ -35,9 +29,8 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ollamaChatModelFromTag } from '../../ipc/localLlm'
+import type { LocalLlmSnapshot, OllamaModelsSnapshot } from '../../ipc/localLlm'
 import {
-  createHopperEntry,
   hopperTierLabel,
   normalizeHopperTier,
   resolveHopperEnableThinking,
@@ -45,6 +38,7 @@ import {
   type ModelHopperEntry,
   type ModelHopperTier,
 } from '../../theme/modelHopper'
+import { ModelAddPicker } from './ModelAddPicker'
 import {
   ModelRouteTierDot,
   modelRouteTierBorderSx,
@@ -55,8 +49,12 @@ export interface TierModelGroupProps {
   tier: ModelHopperTier
   /** Model entries belonging to this tier. */
   entries: ModelHopperEntry[]
-  /** Available Ollama tags the user can add from. */
-  availableModels: string[]
+  /** Connected backend catalog (Ollama tags or LM Studio lms ls). */
+  snapshot?: OllamaModelsSnapshot | null
+  /** Parsed local-llm.env for env-var picks. */
+  localLlmSnap?: LocalLlmSnapshot | null
+  /** @deprecated Use snapshot.tagsRows via ModelAddPicker. */
+  availableModels?: string[]
   /** Fired when a model's enabled state is toggled. */
   onToggle: (id: string, enabled: boolean) => void
   /** Fired when a model row is removed. */
@@ -268,7 +266,8 @@ function SortableModelRow({
 export function TierModelGroup({
   tier,
   entries,
-  availableModels,
+  snapshot,
+  localLlmSnap,
   onToggle,
   onRemove,
   onAdd,
@@ -283,12 +282,7 @@ export function TierModelGroup({
   // Remove is disabled when only one model remains in the code tier
   const isCodeTier = normalizedTier === 'code'
   const isRemoveDisabled = disabled || (isCodeTier && entries.length <= 1)
-
-  // Filter available models to exclude ones already in this tier
-  const existingModels = new Set(entries.map((e) => e.model))
-  const filteredAvailable = availableModels.filter(
-    (tag) => !existingModels.has(ollamaChatModelFromTag(tag))
-  )
+  const existingModels = entries.map((e) => e.model)
 
   // DnD sensors: pointer (mouse/touch) + keyboard (a11y)
   const sensors = useSensors(
@@ -354,62 +348,20 @@ export function TierModelGroup({
         </SortableContext>
       </DndContext>
 
-      {/* Add model button */}
+      {/* Add model picker — backend catalog, env vars, or custom */}
       <Stack direction="row" spacing={1} sx={{ mt: 1, pl: 1 }}>
-        {filteredAvailable.length > 0 ? (
-          <FormControl size="small" sx={{ minWidth: 200 }} disabled={disabled}>
-            <InputLabel id={`add-model-${normalizedTier}`} shrink>Add model</InputLabel>
-            <Select
-              labelId={`add-model-${normalizedTier}`}
-              label="Add model"
-              value=""
-              displayEmpty
-              notched
-              onChange={(e) => {
-                const tag = e.target.value
-                if (!tag) return
-                onAdd(
-                  createHopperEntry({
-                    tier: normalizedTier,
-                    model: ollamaChatModelFromTag(tag),
-                    label: tag,
-                    enabled: true,
-                  })
-                )
-              }}
-              data-testid={`tier-model-add-select-${normalizedTier}`}
-            >
-              <MenuItem value="">
-                <em>Select model…</em>
-              </MenuItem>
-              {filteredAvailable.map((tag) => (
-                <MenuItem key={tag} value={tag}>
-                  {tag}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        ) : (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<AddIcon />}
-            disabled={disabled}
-            onClick={() =>
-              onAdd(
-                createHopperEntry({
-                  tier: normalizedTier,
-                  model: '',
-                  label: `New ${tierLabel} model`,
-                  enabled: false,
-                })
-              )
-            }
-            data-testid={`tier-model-add-btn-${normalizedTier}`}
-          >
-            Add model
-          </Button>
-        )}
+        <ModelAddPicker
+          tier={normalizedTier}
+          existingModels={existingModels}
+          snapshot={snapshot}
+          localLlmSnap={localLlmSnap}
+          disabled={disabled}
+          includeSessionCode={isCodeTier}
+          defaultEnabled
+          label="Add model"
+          testId={`tier-model-add-select-${normalizedTier}`}
+          onAdd={onAdd}
+        />
       </Stack>
     </Box>
   )

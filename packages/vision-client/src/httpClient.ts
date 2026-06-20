@@ -324,6 +324,18 @@ export class CoreHttpClient {
     return normalizeStore(await res.json())
   }
 
+  /** Drop stale session agent todo.txt so deleted Tasks are not resurrected on sync. */
+  async clearSessionAgentTodoPlan(sessionId: string): Promise<{ cleared: boolean }> {
+    const res = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/todos/clear-agent-plan`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) {
+      throw new Error(`clear session agent todo plan: ${res.status} ${await res.text()}`)
+    }
+    return (await res.json()) as { cleared: boolean }
+  }
+
   async createWorkspaceTodo(
     workspace: string,
     body: { title: string; spec?: string; template?: string }

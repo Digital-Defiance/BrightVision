@@ -122,20 +122,6 @@ export function useWorkspaceTodos(
         try {
           await api.client.health()
           if (stale()) return
-          const sessionId = api.sessionId
-          const sessionWs = api.sessionWorkspace
-          if (
-            sessionId &&
-            sessionWs &&
-            workspacePathsEqual(sessionWs, api.workspace)
-          ) {
-            try {
-              await api.client.importSessionAgentTodoPlan(sessionId)
-            } catch {
-              /* best-effort — list still returns on-disk store */
-            }
-          }
-          if (stale()) return
           const data = await api.client.listWorkspaceTodos(api.workspace)
           if (stale()) return
           setStore(data)
@@ -156,6 +142,20 @@ export function useWorkspaceTodos(
       if (!stale()) setLoading(false)
     }
   }, [api, workingDir, tauriLocal, mirrorToDisk])
+
+  const syncAgentTodoPlan = useCallback(async () => {
+    if (!httpReady || !api?.client || !api.sessionId) {
+      throw new Error('Sync agent plan requires a running Vision session')
+    }
+    const sessionWs = api.sessionWorkspace
+    if (!sessionWs || !workspacePathsEqual(sessionWs, api.workspace)) {
+      throw new Error('Session workspace does not match the open project')
+    }
+    const data = await api.client.importSessionAgentTodoPlan(api.sessionId)
+    setStore(data)
+    await mirrorToDisk(data)
+    return data
+  }, [httpReady, api, mirrorToDisk])
 
   useEffect(() => {
     void reload()
@@ -282,6 +282,19 @@ export function useWorkspaceTodos(
     async (id: string) => {
       if (httpReady && api) {
         await api.client.deleteWorkspaceTodo(api.workspace, id)
+        if (api.sessionId) {
+          try {
+            await api.client.clearSessionAgentTodoPlan(api.sessionId)
+          } catch {
+            /* best-effort */
+          }
+        }
+        setStore((prev) => {
+          if (!prev) return prev
+          const todos = prev.todos.filter((t) => t.id !== id)
+          const activeId = prev.activeId === id ? null : prev.activeId
+          return { ...prev, todos, activeId }
+        })
         await reload()
         return
       }
@@ -492,6 +505,7 @@ export function useWorkspaceTodos(
     tauriLocal,
     activeTodo,
     reload,
+    syncAgentTodoPlan,
     createTodo,
     updateTodo,
     deleteTodo,

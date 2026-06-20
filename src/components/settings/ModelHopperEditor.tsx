@@ -1,8 +1,8 @@
-import AddIcon from '@mui/icons-material/Add'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import PsychologyIcon from '@mui/icons-material/Psychology'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import {
   Box,
@@ -20,10 +20,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { OllamaModelsSnapshot } from '../../ipc/localLlm'
-import { ollamaChatModelFromTag } from '../../ipc/localLlm'
+import { useState } from 'react'
+import type { LocalLlmSnapshot, OllamaModelsSnapshot } from '../../ipc/localLlm'
+import { visionModelFromLocalTag } from '../../ipc/localLlm'
+import { backendLabel, catalogRowsFromSnapshot } from '../../utils/hopperModelCatalog'
 import {
-  createHopperEntry,
   hopperExtraParamsError,
   moveHopperEntry,
   normalizeHopperTier,
@@ -39,12 +40,15 @@ import {
   modelRouteTierBorderSx,
 } from './ModelRouteTierIndicator'
 import { TierModelGroup } from './TierModelGroup'
+import { ModelAddPicker } from './ModelAddPicker'
 
 interface ModelHopperEditorProps {
   models: ModelHopperEntry[]
   disabled?: boolean
   sessionModel: string
   ollamaSnapshot?: OllamaModelsSnapshot | null
+  localLlmSnap?: LocalLlmSnapshot | null
+  onRefreshCatalog?: () => void
   onChange: (models: ModelHopperEntry[]) => void
 }
 
@@ -53,9 +57,15 @@ export function ModelHopperEditor({
   disabled = false,
   sessionModel,
   ollamaSnapshot,
+  localLlmSnap,
+  onRefreshCatalog,
   onChange,
 }: ModelHopperEditorProps) {
-  const ollamaTags = ollamaSnapshot?.tagsRows?.map((r) => r.name).filter(Boolean) ?? []
+  const backend = ollamaSnapshot?.backend ?? localLlmSnap?.backend ?? 'ollama'
+  const catalogRows = catalogRowsFromSnapshot(ollamaSnapshot)
+  const catalogListId = 'model-hopper-catalog-list'
+  const existingModelIds = models.map((m) => m.model)
+  const [addTier, setAddTier] = useState<ModelHopperTier>('fast')
 
   // Group entries by tier to detect multi-model tiers.
   // A tier is considered "multi-model" if it has > 1 entry AND at least one has tierSlot defined
@@ -96,7 +106,8 @@ export function ModelHopperEditor({
                 key={tier}
                 tier={tier}
                 entries={tierGroups[tier]}
-                availableModels={ollamaTags}
+                snapshot={ollamaSnapshot}
+                localLlmSnap={localLlmSnap}
                 disabled={disabled}
                 onToggle={(id, enabled) =>
                   onChange(updateHopperEntry(models, id, { enabled }))
@@ -203,14 +214,23 @@ export function ModelHopperEditor({
             placeholder={
               entry.tier === 'code' || entry.tier === 'heavy'
                 ? '(session model)'
-                : 'ollama_chat/…'
+                : backend === 'lmstudio'
+                  ? 'openai/…'
+                  : 'ollama_chat/…'
             }
             value={entry.model}
             onChange={(e) =>
               onChange(updateHopperEntry(models, entry.id, { model: e.target.value }))
             }
             sx={{ flex: '2 1 200px', minWidth: 180 }}
-            slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
+            slotProps={{
+              input: {
+                sx: { fontFamily: 'monospace', fontSize: '0.85rem' },
+              },
+              htmlInput: {
+                list: catalogRows.length ? catalogListId : undefined,
+              },
+            }}
           />
           <Tooltip
             title={
@@ -347,92 +367,61 @@ export function ModelHopperEditor({
           />
         </Box>
       ))}
-      <Stack direction="row" flexWrap="wrap" gap={1}>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<AddIcon />}
+      {catalogRows.length > 0 ? (
+        <datalist id={catalogListId}>
+          {catalogRows.map((row) => (
+            <option
+              key={row.name}
+              value={visionModelFromLocalTag(row.name, backend)}
+              label={row.name}
+            />
+          ))}
+        </datalist>
+      ) : null}
+      <Stack direction="row" flexWrap="wrap" gap={1} alignItems="flex-start">
+        <FormControl size="small" sx={{ minWidth: 100 }} disabled={disabled}>
+          <InputLabel id="hopper-add-tier">Tier</InputLabel>
+          <Select
+            labelId="hopper-add-tier"
+            label="Tier"
+            value={addTier}
+            onChange={(e) => setAddTier(e.target.value as ModelHopperTier)}
+            data-testid="model-hopper-add-tier"
+          >
+            <MenuItem value="fast">
+              <ModelRouteTierSelectLabel tier="fast" />
+            </MenuItem>
+            <MenuItem value="code">
+              <ModelRouteTierSelectLabel tier="code" />
+            </MenuItem>
+            <MenuItem value="think">
+              <ModelRouteTierSelectLabel tier="think" />
+            </MenuItem>
+          </Select>
+        </FormControl>
+        <ModelAddPicker
+          tier={addTier}
+          existingModels={existingModelIds}
+          snapshot={ollamaSnapshot}
+          localLlmSnap={localLlmSnap}
           disabled={disabled}
-          onClick={() =>
-            onChange([
-              ...models,
-              createHopperEntry({ tier: 'fast', model: '', label: 'New model' }),
-            ])
-          }
-          data-testid="model-hopper-add"
-        >
-          Add model
-        </Button>
-        <Button
-          size="small"
-          variant="text"
-          disabled={disabled}
-          onClick={() =>
-            onChange([
-              ...models,
-              createHopperEntry({
-                tier: 'code',
-                model: '',
-                label: 'Session model (code)',
-                enabled: false,
-              }),
-            ])
-          }
-        >
-          Add code slot
-        </Button>
-        <Button
-          size="small"
-          variant="text"
-          disabled={disabled}
-          onClick={() =>
-            onChange([
-              ...models,
-              createHopperEntry({
-                tier: 'think',
-                model: 'ollama_chat/deepseek-r1:32b',
-                label: 'Think model',
-                enabled: false,
-              }),
-            ])
-          }
-        >
-          Add think slot
-        </Button>
-        {ollamaTags.length > 0 && (
-          <FormControl size="small" sx={{ minWidth: 200 }} disabled={disabled}>
-            <InputLabel id="hopper-from-ollama" shrink>From Ollama tags</InputLabel>
-            <Select
-              labelId="hopper-from-ollama"
-              label="From Ollama tags"
-              value=""
-              displayEmpty
-              notched
-              onChange={(e) => {
-                const tag = e.target.value
-                if (!tag) return
-                onChange([
-                  ...models,
-                  createHopperEntry({
-                    tier: 'fast',
-                    model: ollamaChatModelFromTag(tag),
-                    label: tag,
-                    enabled: false,
-                  }),
-                ])
-              }}
-            >
-              <MenuItem value="">
-                <em>Select tag…</em>
-              </MenuItem>
-              {ollamaTags.map((tag) => (
-                <MenuItem key={tag} value={tag}>
-                  {tag}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        )}
+          includeSessionCode={addTier === 'code'}
+          label={`Add to ${backendLabel(backend)}`}
+          testId="model-hopper-add"
+          onAdd={(entry) => onChange([...models, entry])}
+        />
+        {onRefreshCatalog ? (
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<RefreshIcon />}
+            disabled={disabled}
+            onClick={onRefreshCatalog}
+            data-testid="model-hopper-refresh-catalog"
+          >
+            Refresh {backendLabel(backend)}
+          </Button>
+        ) : null}
       </Stack>
     </Stack>
   )

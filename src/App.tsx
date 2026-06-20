@@ -122,6 +122,7 @@ import {
 } from './utils/specWizard'
 import type { TraceabilityResult } from './todos/earsTypes'
 import { shouldBreakAssistantStreamForToolEvent } from './utils/assistantStreamBreak'
+import { resolveSendTodoOptions as resolveSendTodoMessageOptions } from './utils/sendTodoOptions'
 import { isRedundantEditToolOutput } from './utils/suppressDuplicateToolOutput'
 import { appendTimingStatsCsvRow } from './ipc/timingStatsCsv'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
@@ -518,6 +519,7 @@ function AppShell({
   const pendingUserMessageIdsRef = useRef<number[]>([])
   const chatMessageIdSeqRef = useRef(0)
   const todoInjectedIdRef = useRef<string | null>(null)
+  const pendingSendTodoRef = useRef<{ id: string; injectTodoSpec: boolean } | null>(null)
   const recordTurnLinksRef = useRef<(links: string[]) => void | Promise<void>>(async () => {})
   const reloadTodosRef = useRef<() => void | Promise<void>>(async () => {})
   const savedConfigRef = useRef(savedConfig)
@@ -2516,6 +2518,18 @@ function AppShell({
     setLastUserMessageForRetry(trimmed)
   }, [])
 
+  const resolveSendTodoOptionsForSend = useCallback(() => {
+    const pending = pendingSendTodoRef.current
+    if (pending) pendingSendTodoRef.current = null
+    return resolveSendTodoMessageOptions(
+      pending
+        ? { activeTodoId: pending.id, injectTodoSpec: pending.injectTodoSpec }
+        : null,
+      activeTodo,
+      todoInjectedIdRef.current
+    )
+  }, [activeTodo])
+
   const deliverUserMessage = useCallback(
     async (
       text: string,
@@ -2539,12 +2553,15 @@ function AppShell({
       let merged: SendMessageOptions | undefined = todoOptions
         ? { activeTodoId: todoOptions.activeTodoId, injectTodoSpec: todoOptions.injectTodoSpec }
         : undefined
-      if (specFocusMode && activeTodo) {
-        merged = {
-          ...merged,
-          specFocus: true,
-          activeTodoId: merged?.activeTodoId ?? activeTodo.id,
-          injectTodoSpec: Boolean(merged?.injectTodoSpec ?? todoOptions?.injectTodoSpec),
+      if (specFocusMode) {
+        const focusId = merged?.activeTodoId ?? activeTodo?.id
+        if (focusId) {
+          merged = {
+            ...merged,
+            specFocus: true,
+            activeTodoId: focusId,
+            injectTodoSpec: Boolean(merged?.injectTodoSpec),
+          }
         }
       }
       const result = await send(text, { ...merged, ...sendExtras })
@@ -2766,6 +2783,7 @@ function AppShell({
         checklist: todo.checklist,
       })
       todoInjectedIdRef.current = null
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: true }
       setActiveTab('chat')
       setInputValue(buildStartWorkMessage(todo, todoStore?.todos ?? []))
       setSnackbar({
@@ -2791,6 +2809,7 @@ function AppShell({
         checklist: todo.checklist,
       })
       todoInjectedIdRef.current = todo.id
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: false }
       setActiveTab('chat')
       setInputValue(buildResumeWorkMessage(todo, todoStore?.todos ?? []))
       setSnackbar({
@@ -3072,6 +3091,7 @@ function AppShell({
         checklist: todo.checklist,
       })
       todoInjectedIdRef.current = null
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: true }
       setActiveTab('chat')
       setInputValue(buildImplementStepMessage(step, todo))
       setSnackbar({
@@ -3141,13 +3161,12 @@ function AppShell({
 
     setInputValue('')
     rememberUserMessageForRetry(text)
-    const injectSpec = Boolean(activeTodo && todoInjectedIdRef.current !== activeTodo.id)
-    const todoOptions = activeTodo
-      ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
-      : undefined
+    const todoOptions = resolveSendTodoOptionsForSend()
     try {
       const result = await deliverUserMessage(text, todoOptions)
-      if (injectSpec && activeTodo) todoInjectedIdRef.current = activeTodo.id
+      if (todoOptions?.injectTodoSpec) {
+        todoInjectedIdRef.current = todoOptions.activeTodoId
+      }
       if (!result.queued) {
         void reloadTodos()
       }

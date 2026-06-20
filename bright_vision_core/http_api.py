@@ -48,6 +48,7 @@ if _os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or _os.environ.get("E2E_LLM") 
 
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder
 from bright_vision_core.agent_todos import (
+    clear_session_agent_todo_file,
     sync_session_agent_todos,
     try_import_agent_plan_for_workspace,
 )
@@ -1081,6 +1082,14 @@ def import_session_agent_todo_plan(session_id: str):
     session = _get_session(session_id)
     store, _warnings = sync_session_agent_todos(session, pull=True, push_active=True)
     return _todo_list_response(store)
+
+
+@app.post("/sessions/{session_id}/todos/clear-agent-plan")
+def clear_session_agent_todo_plan(session_id: str):
+    """Remove this session's agent todo.txt (e.g. after deleting the last workspace task)."""
+    session = _get_session(session_id)
+    cleared = clear_session_agent_todo_file(session)
+    return {"cleared": cleared}
 
 
 @app.get("/sessions/{session_id}/todos", response_model=TodoListResponse)

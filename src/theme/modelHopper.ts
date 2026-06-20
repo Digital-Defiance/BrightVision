@@ -96,6 +96,9 @@ export function createHopperEntry(
     enabled: partial.enabled ?? false,
     enableThinking: partial.enableThinking,
     extraParams: partial.extraParams,
+    priorityRank: partial.priorityRank,
+    tierSlot: partial.tierSlot,
+    capabilities: partial.capabilities,
   }
 }
 

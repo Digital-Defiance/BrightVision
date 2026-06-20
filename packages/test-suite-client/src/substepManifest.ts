@@ -13,6 +13,7 @@ export const LLM_CORE_PYTEST_SUBSTEPS: readonly string[] = [
   'tests/core/test_context_llm.py::TestContextLlm::test_add_fixture_file_then_read_magic_constant',
   'tests/core/test_agent_llm.py::TestAgentLlm::test_agent_slash_streams_done_without_verbose_error',
   'tests/core/test_todo_list_llm.py::TestTodoListLlm::test_update_todo_list_writes_magic_task',
+  'tests/core/test_implement_llm.py::TestImplementLlm::test_implement_turn_injects_workspace_and_may_create_token_file',
   'tests/core/test_transcript_llm.py::TestTranscriptLlm::test_transcript_includes_user_and_assistant_after_turn',
   'tests/core/test_generate_spec_parse.py::TestGenerateSpecParse::test_parse_three_sections',
   'tests/core/test_generate_spec_parse.py::TestGenerateSpecParse::test_sample_passes_sanity',

@@ -96,6 +96,12 @@ export function patchCoreHttpClientForTauri(
       normalizeStore
     )
 
+  client.clearSessionAgentTodoPlan = (sessionId) =>
+    req<{ cleared: boolean }>(
+      'POST',
+      `sessions/${encodeURIComponent(sessionId)}/todos/clear-agent-plan`
+    )
+
   client.createWorkspaceTodo = (workspace, body) =>
     req<TodoItem>('POST', `workspaces/todos?${workspaceQs(workspace)}`, body)
 
