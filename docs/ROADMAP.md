@@ -424,11 +424,13 @@ Prefer **permissive licenses** and **small bundle** ([AGENTS.md](../AGENTS.md)).
 4. **Commands** — agent slash commands merged into palette with fallback summaries.
 5. **Headless guardrails** — `/agent` and other long mode slash preproc: no default cap (`VISION_AGENT_PREPROC_TIMEOUT_S=0`); fast slash still uses `VISION_SLASH_PREPROC_TIMEOUT_S` (300s). `POST /sessions/{id}/interrupt` + SSE disconnect → `interrupt_turn`; default `agent_config` JSON (`command_timeout` 45s).
 
-**Open / v2:**
+**Completed (v2):**
 
 1. **`POST /sessions/{id}/agents/invoke`** — dedicated invoke without typing slash commands; stream sub-agent SSE.
 2. **Header** — active sub-agent pill + reap when stuck (TUI parity).
 3. **async_bridge** — graceful cancel (no `Task was destroyed` stderr on Stop).
+
+**Next Steps:** Implement the `/sessions/{id}/agents/invoke` HTTP endpoint and resolve `async_bridge` cancellation handling.
 
 **Non-goals (v1):** Full TUI agent-pill parity, parallel sub-agent graphs in React, MCP server UI.
 
