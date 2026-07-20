@@ -30,10 +30,13 @@ def _patch_webbrowser_open_globally() -> None:
     import webbrowser
 
     webbrowser.open = _noop  # type: ignore[method-assign]
+    # Older cecli bound webbrowser on cecli.io; rc6+ imports it inside methods.
+    # Patching the stdlib module still covers those local imports.
     try:
         import cecli.io as cecli_io
 
-        cecli_io.webbrowser.open = _noop  # type: ignore[attr-defined]
+        if hasattr(cecli_io, "webbrowser"):
+            cecli_io.webbrowser.open = _noop  # type: ignore[attr-defined]
     except ImportError:
         pass
     _BROWSER_PATCHED = True
@@ -62,6 +65,22 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_git_from_identity_hooks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Keep test ``git commit`` away from ~/.gitconfig ``core.hooksPath`` identity hooks."""
+    empty_template = tmp_path_factory.mktemp("git-empty-template")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    monkeypatch.setenv("GIT_TEMPLATE_DIR", str(empty_template))
+    # Committer identity when local repo config is unset (after blanking global).
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "BrightVision Test")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "test@brightvision.local")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "BrightVision Test")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "test@brightvision.local")
+
+
+@pytest.fixture(autouse=True)
 def _no_cecli_browser_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent cecli from opening token-limit docs in the browser during suite runs."""
     if not _should_block_browser_tabs():
@@ -72,8 +91,11 @@ def _no_cecli_browser_tabs(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("webbrowser.open", _noop)
     try:
-        monkeypatch.setattr("cecli.io.webbrowser.open", _noop)
-    except AttributeError:
+        import cecli.io as cecli_io
+
+        if hasattr(cecli_io, "webbrowser"):
+            monkeypatch.setattr("cecli.io.webbrowser.open", _noop)
+    except ImportError:
         pass
 
 

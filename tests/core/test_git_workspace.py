@@ -1,5 +1,6 @@
 import inspect
 import asyncio
+import os
 import subprocess
 import types
 import unittest
@@ -19,11 +20,29 @@ from cecli.utils import GitTemporaryDirectory, make_repo
 
 
 def _git(*args, cwd):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+    # Isolate from global identity/hooks templates (e.g. ~/.git-templates/hooks).
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def _disable_commit_hooks(repo_root: Path) -> None:
+    """Stop GitPython commits from hitting global identity-switch hooks."""
+    _git("config", "core.hooksPath", "/dev/null", cwd=repo_root)
 
 
 def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | None = None):
     """Add a submodule at `name` with optional {relative_path: content} files."""
+    _disable_commit_hooks(super_root)
     sub_files = sub_files or {"hello.txt": "hello\n"}
     sub_path = super_root / name
     sub_path.mkdir(parents=True, exist_ok=True)
@@ -33,6 +52,7 @@ def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | Non
         f.write_text(content)
 
     _git("init", cwd=sub_path)
+    _disable_commit_hooks(sub_path)
     _git("config", "user.email", "sub@test.com", cwd=sub_path)
     _git("config", "user.name", "Sub User", cwd=sub_path)
     for rel in sub_files:
@@ -40,6 +60,8 @@ def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | Non
     _git("commit", "-m", "init submodule repo", cwd=sub_path)
 
     _git("submodule", "add", str(sub_path), name, cwd=super_root)
+    # Fresh clone under superproject may reinstall template hooks.
+    _disable_commit_hooks(super_root / name)
     _git("commit", "-m", f"add submodule {name}", cwd=super_root)
 
 

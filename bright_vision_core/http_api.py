@@ -39,10 +39,12 @@ if _os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or _os.environ.get("E2E_LLM") 
     import webbrowser as _webbrowser
 
     _webbrowser.open = lambda *_a, **_k: None  # type: ignore[method-assign, assignment]
+    # Older cecli bound webbrowser on cecli.io; rc6+ imports it inside methods.
     try:
         import cecli.io as _cecli_io
 
-        _cecli_io.webbrowser.open = lambda *_a, **_k: None  # type: ignore[attr-defined]
+        if hasattr(_cecli_io, "webbrowser"):
+            _cecli_io.webbrowser.open = lambda *_a, **_k: None  # type: ignore[attr-defined]
     except ImportError:
         pass
 

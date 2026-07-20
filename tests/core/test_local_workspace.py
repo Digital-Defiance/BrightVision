@@ -38,11 +38,33 @@ class TestLocalWorkspaceConfig(unittest.TestCase):
             b = root / "b"
             for repo in (a, b):
                 repo.mkdir()
-                subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-                (repo / "README.md").write_text(f"# {repo.name}\n", encoding="utf-8")
-                subprocess.run(["git", "add", "README.md"], cwd=repo, check=True, capture_output=True)
                 subprocess.run(
-                    ["git", "commit", "-m", "init", "--author", "t <t@t>", "--no-gpg-sign"],
+                    ["git", "-c", "core.hooksPath=/dev/null", "init"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                )
+                (repo / "README.md").write_text(f"# {repo.name}\n", encoding="utf-8")
+                subprocess.run(
+                    ["git", "-c", "core.hooksPath=/dev/null", "add", "README.md"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "core.hooksPath=/dev/null",
+                        "-c",
+                        "user.email=t@t",
+                        "-c",
+                        "user.name=t",
+                        "commit",
+                        "-m",
+                        "init",
+                        "--no-gpg-sign",
+                    ],
                     cwd=repo,
                     check=True,
                     capture_output=True,
@@ -71,7 +93,12 @@ class TestLocalWorkspaceConfig(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-c", "core.hooksPath=/dev/null", "init"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+            )
             (root / ".cecli.workspaces.yml").write_text(
                 yaml.dump(
                     {

@@ -158,12 +158,12 @@ class TestYieldGuardExecution:
             gen.close()
 
         result = asyncio.run(Tool.execute(session.coder, summary="done without edits"))
-        assert "Yield rejected" in result
+        assert "Yield rejected" in str(result)
         assert not getattr(session.coder, "agent_finished", False)
 
         session.coder.files_edited_by_tools = {"src/auth/token.ts"}
         ok = asyncio.run(Tool.execute(session.coder, summary="after edit"))
-        assert "Yield rejected" not in ok
+        assert "Yield rejected" not in str(ok)
 
 
 class TestAutoAdvanceGuard:

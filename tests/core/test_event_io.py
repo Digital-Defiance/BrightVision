@@ -68,7 +68,8 @@ async def test_offer_url_blocked_during_llm_e2e(monkeypatch: pytest.MonkeyPatch)
     def _open(url: str, *_args, **_kwargs) -> None:
         opened.append(url)
 
-    monkeypatch.setattr("cecli.io.webbrowser.open", _open)
+    # rc6+ imports webbrowser inside offer_url; patch the stdlib module.
+    monkeypatch.setattr("webbrowser.open", _open)
     io = EventIO(yes=True)
     ok = await io.offer_url("https://cecli.dev/docs/troubleshooting/token-limits.html")
     assert ok is False
