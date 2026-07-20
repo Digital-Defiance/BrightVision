@@ -50,9 +50,9 @@ export function WelcomePanel({
 
       <Stack spacing={1.5} sx={{ mb: 2 }}>
         {[
-          { n: 1, text: 'Choose the repo you want to work on (or keep the auto-detected path).' },
+          { n: 1, text: 'Confirm the open project in the header (or Open project to switch repos).' },
           { n: 2, text: 'Optionally set model and API keys in Settings, then Save.' },
-          { n: 3, text: 'Click Start agent below (or on the chat tab) — launches local LLM, Vision API, and session.' },
+          { n: 3, text: 'Click Start agent below — launches local LLM, Vision API, and session in that project.' },
         ].map((step) => (
           <Stack key={step.n} direction="row" spacing={1.5} alignItems="flex-start">
             <Box
@@ -104,7 +104,7 @@ export function WelcomePanel({
 
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         <Button variant="contained" startIcon={<FolderOpenIcon />} onClick={onChooseProject}>
-          Choose project
+          Switch project…
         </Button>
         <Button variant="outlined" startIcon={<SettingsIcon />} onClick={onOpenSettings}>
           Settings

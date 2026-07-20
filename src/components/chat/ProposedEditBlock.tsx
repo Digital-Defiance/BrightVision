@@ -77,6 +77,7 @@ export function ProposedEditBlock({
           size="small"
           color={applied ? 'success' : 'warning'}
           variant="outlined"
+          data-testid={applied ? 'proposed-edit-applied' : 'proposed-edit-proposed'}
           sx={{ mr: 0.5, fontSize: '0.65rem', height: 22 }}
         />
         <Chip

@@ -23,6 +23,10 @@ export const DIGITAL_DEFIANCE_URL = 'https://digitaldefiance.org'
 export const CECLI_HOME_URL = 'https://cecli.dev'
 export const CECLI_GITHUB_URL = 'https://github.com/dwash96/cecli'
 
+/** BrightVision desktop releases (DMG / Homebrew cask). */
+export const BRIGHTVISION_GITHUB_REPO = 'Digital-Defiance/BrightVision'
+export const BRIGHTVISION_RELEASES_URL = `https://github.com/${BRIGHTVISION_GITHUB_REPO}/releases/latest`
+
 /** Per-project metadata tree (shared with Cecli). Keep in sync with bright_vision_core/brand.py */
 export const WORKSPACE_META_DIR = '.cecli'
 

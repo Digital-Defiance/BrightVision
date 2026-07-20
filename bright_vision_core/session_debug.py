@@ -62,6 +62,10 @@ def _parse_tool_arguments(raw: Any) -> Any:
 def _messages_from_coder(coder) -> list[dict[str, Any]]:
     done = getattr(coder, "done_messages", None) or []
     cur = getattr(coder, "cur_messages", None) or []
+    if not isinstance(done, (list, tuple)):
+        done = []
+    if not isinstance(cur, (list, tuple)):
+        cur = []
     out: list[dict[str, Any]] = []
     for i, msg in enumerate(list(done) + list(cur)):
         if not isinstance(msg, dict):
@@ -209,6 +213,11 @@ def build_session_debug_export(session_id: str, session) -> dict[str, Any]:
             "platform": platform.platform(),
             "versions": _engine_versions(),
         },
+        "agent_turn_features": getattr(
+            __import__("bright_vision_core.agent_turn", fromlist=["AGENT_TURN_FEATURES"]),
+            "AGENT_TURN_FEATURES",
+            None,
+        ),
         "router": router,
         "transcript": transcript_rows_from_coder(coder),
         "messages": messages,

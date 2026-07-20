@@ -1,32 +1,97 @@
 #!/usr/bin/env sh
 # Dev: editable Cecli (submodule) + bright_vision_core (parent package).
 # Safe to source: does not enable set -e in your interactive shell.
-# When sourced from scripts/lab.sh, $0 is lab.sh — use BRIGHT_VISION_ROOT / BV_ROOT / BASH_SOURCE.
+# When .venv is warm (cecli + bright_vision_core + uvicorn + pytest importable), skips pip installs
+# — speeds up yarn lab / yarn vision. Launchers set BRIGHT_VISION_ACTIVATE_QUIET=1 for
+# instant PATH-only activate; scripts/ensure-venv.sh runs pip once when imports are missing.
+# Interactive `source activate.sh` runs import probe. Force reinstall: BRIGHT_VISION_ACTIVATE_FORCE=1
+# or BV_VISION_SETUP=1 yarn vision
+# When sourced: zsh/BSH use %x; bash uses BASH_SOURCE; lab.sh sets BRIGHT_VISION_ROOT / BV_ROOT.
+# BSH (https://bsh.digitaldefiance.org) is a zsh fork — exposes BSH_VERSION, not ZSH_VERSION.
+_is_zsh_family() {
+  [ -n "${ZSH_VERSION:-}" ] || [ -n "${BSH_VERSION:-}" ]
+}
+
+_canonical_dir() {
+  _d="$1"
+  [ -n "$_d" ] && [ -d "$_d" ] || return 1
+  (cd "$_d" && pwd -P)
+}
+
+_repo_root_from_dir() {
+  _dir="$1"
+  _canon="$(_canonical_dir "$_dir" 2>/dev/null)" || _canon=""
+  if [ -n "$_canon" ]; then
+    echo "$_canon"
+  else
+    cd "$_dir" && pwd -P
+  fi
+}
+
 _resolve_repo_root() {
+  _from_script=""
+  # Prefer the directory that contains this activate.sh (where the user sourced from).
+  if _is_zsh_family; then
+    _zsh_src="${(%):-%x}"
+    case "$_zsh_src" in
+      bsh | zsh | bash | sh | ksh | dash | "" | -bsh | -zsh | -bash) _zsh_src="" ;;
+    esac
+    if [ -z "$_zsh_src" ] && [ -n "${funcfiletrace[1]:-}" ]; then
+      _zsh_src="${funcfiletrace[1]%%:*}"
+    fi
+    if [ -n "$_zsh_src" ]; then
+      _zsh_dir="$(cd "$(dirname "$_zsh_src")" 2>/dev/null && pwd)" || _zsh_dir=""
+      if [ -n "$_zsh_dir" ] && [ -d "${_zsh_dir}/bright_vision_core" ]; then
+        _from_script="$_zsh_dir"
+      fi
+    fi
+  fi
+  if [ -z "$_from_script" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
+    _bash_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || _bash_dir=""
+    if [ -n "$_bash_dir" ] && [ -d "${_bash_dir}/bright_vision_core" ]; then
+      _from_script="$_bash_dir"
+    fi
+  fi
+  if [ -n "$_from_script" ]; then
+    _repo_root_from_dir "$_from_script"
+    return 0
+  fi
   if [ -n "${BRIGHT_VISION_ROOT:-}" ] && [ -d "${BRIGHT_VISION_ROOT}/bright_vision_core" ]; then
-    cd "${BRIGHT_VISION_ROOT}" && pwd
+    _repo_root_from_dir "${BRIGHT_VISION_ROOT}"
     return 0
   fi
   if [ -n "${BV_ROOT:-}" ] && [ -d "${BV_ROOT}/bright_vision_core" ]; then
-    cd "${BV_ROOT}" && pwd
-    return 0
-  fi
-  if [ -n "${BASH_VERSION:-}" ] && [ -n "${BASH_SOURCE[0]:-}" ]; then
-    cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
+    _repo_root_from_dir "${BV_ROOT}"
     return 0
   fi
   case "$0" in
     */activate.sh | ./activate.sh | activate.sh)
-      cd "$(dirname "$0")" && pwd
+      _repo_root_from_dir "$(dirname "$0")"
       return 0
       ;;
   esac
+  # sh/dash: executed as ./activate.sh (not sourced).
+  # Already in repo root (common when: cd BrightVision && source ./activate.sh).
+  if [ -d "./bright_vision_core" ] && [ -f "./pyproject.toml" ]; then
+    _repo_root_from_dir "."
+    return 0
+  fi
   return 1
 }
 ROOT="$(_resolve_repo_root)" || {
-  echo "activate.sh: set BRIGHT_VISION_ROOT to the repo root, or run: source ./activate.sh from that directory" >&2
+  echo "activate.sh: cd to the BrightVision repo root and run: source ./activate.sh" >&2
+  echo "  (BSH/zsh/bash; or export BRIGHT_VISION_ROOT=/path/to/BrightVision)" >&2
   return 1 2>/dev/null || exit 1
 }
+_prev_root="${BRIGHT_VISION_ROOT:-}"
+export BRIGHT_VISION_ROOT="$ROOT"
+export BV_ROOT="$ROOT"
+if [ -n "$_prev_root" ] && [ "$_prev_root" != "$ROOT" ]; then
+  _prev_canon="$(_canonical_dir "$_prev_root" 2>/dev/null || printf '%s' "$_prev_root")"
+  if [ "$_prev_canon" != "$ROOT" ]; then
+    echo "activate.sh: using ${ROOT} (activate.sh location; was BRIGHT_VISION_ROOT=${_prev_root})" >&2
+  fi
+fi
 VENV="${ROOT}/.venv"
 
 die() {
@@ -81,6 +146,32 @@ pick_cecli_root() {
   return 1
 }
 
+# Git tags use *-brightN; setuptools_scm needs PEP 440 (e.g. 0.2.1.post1).
+bright_vision_scm_pretend_version() {
+  _scm="${BRIGHT_VISION_SCM_VERSION:-}"
+  if [ -z "$_scm" ] && [ -f "${ROOT}/package.json" ]; then
+    _scm=$(grep '"version"' "${ROOT}/package.json" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+    case "$_scm" in
+      *-bright*) _scm=$(printf '%s' "$_scm" | sed 's/-bright/.post/') ;;
+    esac
+  fi
+  printf '%s' "$_scm"
+}
+
+install_bright_vision_editable() {
+  _extras="${1:-[dev]}"
+  _scm="$(bright_vision_scm_pretend_version)"
+  if [ -n "$_scm" ]; then
+    export SETUPTOOLS_SCM_PRETEND_VERSION="$_scm"
+  fi
+  if ! "${PYTHON}" -m pip install -q -e "${ROOT}${_extras}"; then
+    unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+    die "editable install failed: bright_vision_core (parent)"
+    return 1
+  fi
+  unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+}
+
 venv_needs_recreate() {
   [ ! -x "${VENV}/bin/python3" ] && return 0
   if ! "${VENV}/bin/python3" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
@@ -91,32 +182,194 @@ venv_needs_recreate() {
   _ve=$(
     grep '^VIRTUAL_ENV=' "$_cfg" 2>/dev/null | head -1 | sed 's/^VIRTUAL_ENV=//;s/^"//;s/"$//'
   )
-  [ "$_ve" != "${ROOT}/.venv" ] && return 0
+  if _venv_paths_match "$_ve" "${VENV}"; then
+    return 1
+  fi
+  _ve_canon="$(_canonical_dir "$_ve" 2>/dev/null || printf '%s' "$_ve")"
+  _want_canon="$(_canonical_dir "${VENV}" 2>/dev/null || printf '%s' "${VENV}")"
+  if [ "$_ve_canon" = "$_want_canon" ]; then
+    return 1
+  fi
+  _py_prefix=$("${VENV}/bin/python3" -c 'import sys; print(sys.prefix)' 2>/dev/null || _py_prefix="")
+  if [ -n "$_py_prefix" ] && _venv_paths_match "$_py_prefix" "${VENV}"; then
+    return 1
+  fi
+  return 0
+}
+
+recreate_venv_if_needed() {
+  if ! venv_needs_recreate && [ -x "${VENV}/bin/python3" ]; then
+    return 0
+  fi
+  if [ -d "$VENV" ]; then
+    echo "activate.sh: recreating stale or incomplete .venv (was: ${VENV})" >&2
+    chmod -R u+w "$VENV" 2>/dev/null || true
+    rm -rf "$VENV" 2>/dev/null || true
+    if [ -d "$VENV" ]; then
+      die "failed to remove stale .venv at ${VENV} (close apps using it, then: rm -rf ${VENV})"
+    fi
+  fi
+}
+
+activation_force() {
+  [ "${BRIGHT_VISION_ACTIVATE_FORCE:-}" = "1" ]
+}
+
+# Fast path: editable installs import cleanly from .venv (any cwd).
+deps_importable() {
+  venv_needs_recreate && return 1
+  _imports='import cecli, bright_vision_core, uvicorn, pytest'
+  "${VENV}/bin/python3" -c "
+import os, sys
+if not os.path.isfile(os.path.join(sys.prefix, 'pyvenv.cfg')):
+    raise SystemExit(1)
+${_imports}
+" 2>/dev/null
+}
+
+activation_ready() {
+  deps_importable
+}
+
+apply_activation_env() {
+  [ -f "${VENV}/bin/activate" ] && [ -x "${VENV}/bin/python3" ] || \
+    die "broken .venv at ${VENV} — rm -rf ${VENV} and re-run: source activate.sh"
+  PYTHON="${VENV}/bin/python3"
+  if [ ! -e "${VENV}/bin/python" ]; then
+    ln -sf python3 "${VENV}/bin/python" 2>/dev/null || true
+  fi
+  export PATH="${VENV}/bin:${PATH}"
+  export PYTHONSAFEPATH=1
+  # shellcheck disable=SC1090
+  . "${VENV}/bin/activate" || die "failed to activate .venv"
+  export PATH="${VENV}/bin:${PATH}"
+}
+
+# Parent shell already ran activate — skip import checks + pip.
+_venv_paths_match() {
+  _a="$1"
+  _b="$2"
+  [ -n "$_a" ] && [ -n "$_b" ] || return 1
+  _ac="$(_canonical_dir "$_a" 2>/dev/null || printf '%s' "$_a")"
+  _bc="$(_canonical_dir "$_b" 2>/dev/null || printf '%s' "$_b")"
+  [ "$_ac" = "$_bc" ]
+}
+
+activation_inherited() {
+  activation_force && return 1
+  [ -x "${VENV}/bin/python3" ] && [ -f "${VENV}/bin/activate" ] || return 1
+  deps_importable || return 1
+  if [ -n "${BRIGHT_VISION_ACTIVATED:-}" ]; then
+    _act_canon="$(_canonical_dir "$BRIGHT_VISION_ACTIVATED" 2>/dev/null || printf '%s' "$BRIGHT_VISION_ACTIVATED")"
+    [ "$_act_canon" = "$ROOT" ] && return 0
+  fi
+  if [ -n "${VIRTUAL_ENV:-}" ]; then
+    _venv_paths_match "${VIRTUAL_ENV}" "${VENV}" && return 0
+  fi
   return 1
 }
 
-if venv_needs_recreate; then
-  if [ -d "$VENV" ]; then
-    echo "activate.sh: recreating stale .venv (was: ${VENV})" >&2
-    rm -rf "$VENV"
+# yarn lab / yarn vision: never pip — deps are verified by the launcher script.
+activation_launcher() {
+  [ "${BRIGHT_VISION_ACTIVATE_QUIET:-}" = "1" ] || return 1
+  activation_force && return 1
+  [ -x "${VENV}/bin/python3" ] && [ -f "${VENV}/bin/activate" ] || return 1
+  "${VENV}/bin/python3" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null
+}
+
+_activate_log() {
+  [ "${BRIGHT_VISION_ACTIVATE_DEBUG:-}" = "1" ] || return 0
+  echo "activate.sh: $*" >&2
+}
+
+inherit_activation_env() {
+  PYTHON="${VENV}/bin/python3"
+  export BRIGHT_VISION_ROOT="$ROOT"
+  export BV_ROOT="$ROOT"
+  export PYTHONSAFEPATH=1
+  export BRIGHT_VISION_ACTIVATED="$ROOT"
+  case ":${PATH}:" in
+    *":${VENV}/bin:"*) ;;
+    *) export PATH="${VENV}/bin:${PATH}" ;;
+  esac
+  _ve_canon="$(_canonical_dir "${VIRTUAL_ENV:-}" 2>/dev/null || printf '%s' "${VIRTUAL_ENV:-}")"
+  _want_canon="$(_canonical_dir "${VENV}" 2>/dev/null || printf '%s' "${VENV}")"
+  if [ "$_ve_canon" != "$_want_canon" ]; then
+    # shellcheck disable=SC1090
+    . "${VENV}/bin/activate" || die "failed to activate .venv"
+    export PATH="${VENV}/bin:${PATH}"
   fi
+}
+
+mark_activation_done() {
+  export BRIGHT_VISION_ACTIVATED="$ROOT"
+}
+
+print_activation_summary() {
+  _skipped="${1:-}"
+  CECLI_ROOT="$(pick_cecli_root 2>/dev/null || true)"
+  if [ -n "$_skipped" ]; then
+    echo "Activated (cached): $("$PYTHON" -c 'import sys; print(sys.executable)')"
+    echo "  skipped pip — set BRIGHT_VISION_ACTIVATE_FORCE=1 to reinstall"
+  else
+    echo "Activated: $("$PYTHON" -c 'import sys; print(sys.executable)')"
+  fi
+  echo "  Python venv:  ${VIRTUAL_ENV:-$VENV}"
+  echo "  Vision API:   ${ROOT}/bright_vision_core  (pip install -e ${ROOT})"
+  if [ -n "$CECLI_ROOT" ]; then
+    if [ "$CECLI_ROOT" = "${ROOT}/cecli" ]; then
+      echo "  Cecli agent:  ${CECLI_ROOT}  (submodule → Digital-Defiance/cecli)"
+    elif [ "$CECLI_ROOT" = "${ROOT}/BrightVision-core" ]; then
+      echo "  Cecli agent:  ${CECLI_ROOT}  (legacy bundle — prefer: git submodule update --init cecli)"
+    else
+      echo "  Cecli agent:  ${CECLI_ROOT}"
+    fi
+  else
+    echo "  Cecli agent:  (from PyPI / requirements-core.txt)"
+  fi
+  echo "  Serve CLI:    $(command -v bright-vision-core-serve 2>/dev/null || echo '(not on PATH)')"
+  if [ -z "$_skipped" ]; then
+    echo ""
+    echo "Next:"
+    echo "  yarn tauri dev"
+    echo "  bright-vision-core-serve       # HTTP :8741"
+    echo "  python scripts/vision_serve.py # same (Tauri uses repo-root scripts/)"
+  fi
+}
+
+if activation_inherited; then
+  _activate_log "fast: inherited"
+  inherit_activation_env
+  return 0 2>/dev/null || exit 0
 fi
+
+if activation_launcher; then
+  _activate_log "fast: launcher (yarn vision/lab — no pip)"
+  inherit_activation_env
+  mark_activation_done
+  return 0 2>/dev/null || exit 0
+fi
+
+if activation_ready && ! activation_force; then
+  _activate_log "fast: warm venv (import probe ok)"
+  apply_activation_env
+  mark_activation_done
+  if [ "${BRIGHT_VISION_ACTIVATE_QUIET:-}" != "1" ]; then
+    print_activation_summary skipped
+  fi
+  return 0 2>/dev/null || exit 0
+fi
+
+_activate_log "slow: pip install (venv missing or deps not importable)"
+
+recreate_venv_if_needed
 PY_BOOT="$(pick_python)" || die "need Python 3.10+ (install python@3.12 or set BRIGHT_VISION_PYTHON)"
 
-if [ ! -d "$VENV" ]; then
-  "$PY_BOOT" -m venv "$VENV" || die "failed to create .venv"
+if [ ! -x "${VENV}/bin/python3" ]; then
+  "$PY_BOOT" -m venv "$VENV" || die "failed to create .venv at ${VENV}"
 fi
 
-PYTHON="${VENV}/bin/python3"
-if [ ! -e "${VENV}/bin/python" ]; then
-  ln -sf python3 "${VENV}/bin/python" 2>/dev/null || true
-fi
-export PATH="${VENV}/bin:${PATH}"
-# Parent repo has a `cecli/` submodule dir; cwd on sys.path shadows the installed package.
-export PYTHONSAFEPATH=1
-# shellcheck disable=SC1090
-. "${VENV}/bin/activate" || die "failed to activate .venv"
-export PATH="${VENV}/bin:${PATH}"
+apply_activation_env
 
 if ! "$PYTHON" -c 'import os, sys; sys.exit(0 if os.path.isfile(os.path.join(sys.prefix, "pyvenv.cfg")) else 1)' 2>/dev/null; then
   echo "activate.sh: warning: interpreter may not be this repo venv ($("$PYTHON" -c 'import sys; print(sys.executable)'))" >&2
@@ -142,27 +395,20 @@ else
     return 1
   fi
 
+  if [ -f "${ROOT}/brightdate-python/pyproject.toml" ]; then
+    if ! "$PYTHON" -m pip install -q -e "${ROOT}/brightdate-python"; then
+      die "editable install failed: brightdate at ${ROOT}/brightdate-python (git submodule update --init brightdate-python)"
+      return 1
+    fi
+  else
+    echo "activate.sh: warning: brightdate-python missing — run: git submodule update --init brightdate-python" >&2
+  fi
+
   if [ ! -f "${ROOT}/pyproject.toml" ]; then
     die "missing ${ROOT}/pyproject.toml (bright_vision_core package)"
     return 1
   fi
-  # Parent repo git tags use *-brightN; setuptools_scm needs PEP 440 (e.g. 0.1.1.post3).
-  _scm="${BRIGHT_VISION_SCM_VERSION:-}"
-  if [ -z "$_scm" ] && [ -f "${ROOT}/package.json" ]; then
-    _scm=$(grep '"version"' "${ROOT}/package.json" | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-    case "$_scm" in
-      *-bright*) _scm=$(printf '%s' "$_scm" | sed 's/-bright/.post/') ;;
-    esac
-  fi
-  if [ -n "$_scm" ]; then
-    export SETUPTOOLS_SCM_PRETEND_VERSION="$_scm"
-  fi
-  # [dev] in same install — git tags *-brightN are not PEP 440; pretend version must stay set.
-  if ! "$PYTHON" -m pip install -q -e "${ROOT}[dev]"; then
-    die "editable install failed: bright_vision_core (parent)"
-    return 1
-  fi
-  unset SETUPTOOLS_SCM_PRETEND_VERSION 2>/dev/null || true
+  install_bright_vision_editable "[dev]"
 fi
 
 if ! "$PYTHON" -m pip install -q "uvicorn[standard]"; then
@@ -178,23 +424,5 @@ if [ "${BRIGHT_VISION_CORE_INSTALL:-editable}" = "pypi" ]; then
 fi
 
 CECLI_ROOT="$(pick_cecli_root 2>/dev/null || true)"
-echo "Activated: $("$PYTHON" -c 'import sys; print(sys.executable)')"
-echo "  Python venv:  ${VIRTUAL_ENV:-$VENV}"
-echo "  Vision API:   ${ROOT}/bright_vision_core  (pip install -e ${ROOT})"
-if [ -n "$CECLI_ROOT" ]; then
-  if [ "$CECLI_ROOT" = "${ROOT}/cecli" ]; then
-    echo "  Cecli agent:  ${CECLI_ROOT}  (submodule → Digital-Defiance/cecli)"
-  elif [ "$CECLI_ROOT" = "${ROOT}/BrightVision-core" ]; then
-    echo "  Cecli agent:  ${CECLI_ROOT}  (legacy bundle — prefer: git submodule update --init cecli)"
-  else
-    echo "  Cecli agent:  ${CECLI_ROOT}"
-  fi
-else
-  echo "  Cecli agent:  (from PyPI / requirements-core.txt)"
-fi
-echo "  Serve CLI:    $(command -v bright-vision-core-serve 2>/dev/null || echo '(not on PATH)')"
-echo ""
-echo "Next:"
-echo "  yarn tauri dev"
-echo "  bright-vision-core-serve       # HTTP :8741"
-echo "  python scripts/vision_serve.py # same (Tauri uses repo-root scripts/)"
+mark_activation_done
+print_activation_summary

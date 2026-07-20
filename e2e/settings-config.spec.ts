@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { installMockCoreApi } from './helpers/mockCoreApi'
 import { gotoVision, openSettings } from './helpers/session'
-import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY } from './helpers/testConfig'
+import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY, primeVisionAppConfig } from './helpers/testConfig'
 
 test.describe('Settings (roadmap #17, #28 persistence)', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,20 +36,14 @@ test.describe('Settings (roadmap #17, #28 persistence)', () => {
 
   test('session create sends persistence flags to core API', async ({ page }) => {
     let body: Record<string, unknown> = {}
-    await page.addInitScript((cfg) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(
-        'bright-vision-config',
-        JSON.stringify({
-          ...cfg,
-          sessionEncrypt: true,
-          autoSaveSession: true,
-          autoLoadSession: false,
-          autoSaveSessionName: 'e2e-api',
-          chatHistoryFile: true,
-        })
-      )
-    }, E2E_CONFIG)
+    await primeVisionAppConfig(page, {
+      ...E2E_CONFIG,
+      sessionEncrypt: true,
+      autoSaveSession: true,
+      autoLoadSession: false,
+      autoSaveSessionName: 'e2e-api',
+      chatHistoryFile: true,
+    })
     await installMockCoreApi(page, {
       onSessionCreate: (b) => {
         body = b
@@ -69,13 +63,7 @@ test.describe('Settings (roadmap #17, #28 persistence)', () => {
 
   test('session create sends auto_commits false when prompt before commit', async ({ page }) => {
     let autoCommits: boolean | undefined
-    await page.addInitScript((cfg) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(
-        'bright-vision-config',
-        JSON.stringify({ ...cfg, promptBeforeCommit: true })
-      )
-    }, E2E_CONFIG)
+    await primeVisionAppConfig(page, { ...E2E_CONFIG, promptBeforeCommit: true })
     await installMockCoreApi(page, {
       onSessionCreate: (body) => {
         autoCommits = body.auto_commits as boolean | undefined

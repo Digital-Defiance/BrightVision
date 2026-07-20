@@ -11,11 +11,13 @@ import FolderSharedIcon from '@mui/icons-material/FolderShared'
 import HubIcon from '@mui/icons-material/Hub'
 import LinkIcon from '@mui/icons-material/Link'
 import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import ReplayIcon from '@mui/icons-material/Replay'
 import { DISPLAY_VISION_API } from '../../brand'
 import {
   Alert,
   Box,
   Button,
+  ButtonGroup,
   Checkbox,
   Chip,
   CircularProgress,
@@ -28,6 +30,7 @@ import {
   IconButton,
   InputLabel,
   Switch,
+  Tooltip,
   List,
   ListItem,
   ListItemButton,
@@ -44,7 +47,12 @@ import {
 } from '@mui/material'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { isTodoBlocked } from '../../todos/layers'
-import { parseImplementationSteps, type ImplementationStep } from '../../todos/tasksMd'
+import { shouldResumeWork } from '../../todos/formatContext'
+import {
+  firstOpenImplementationStep,
+  mergedImplementationSteps,
+  type ImplementationStep,
+} from '../../todos/tasksMd'
 import type { ChecklistItem, TodoItem, TodoStatus } from '../../todos/types'
 import {
   earsIssueLabel,
@@ -54,14 +62,20 @@ import {
 } from '../../todos/earsTypes'
 import { TODO_TEMPLATES } from '../../todos/types'
 import { SessionContextHint } from '../session/SessionContextHint'
+import { SteeringFilesHint } from '../spec/SteeringFilesHint'
+import type { CoreHttpClient } from '../../ipc/httpClient'
 import type { SessionContextUsage } from '../../utils/contextUsage'
 import {
+  defaultPromptForSection,
   gateSpecTabSwitch,
   specWizardNudges,
   wizardPromptForSection,
   type SpecLayerSection,
   type SpecWizardTab,
 } from '../../utils/specWizard'
+import { specGenerateBlockedReason } from '../../utils/specGenerateGate'
+import type { RecentSpecJob } from '../../utils/recentSpecJob'
+import { formatSpecGenTimeoutLabel, type SpecGenTimeoutPrefs } from '../../theme/specGenTimeoutPrefs'
 
 const STATUS_COLOR: Record<TodoStatus, 'default' | 'primary' | 'success' | 'warning'> = {
   open: 'default',
@@ -103,11 +117,17 @@ interface TodoPanelProps {
   onSetActive: (id: string | null) => void
   onMarkDone: (id: string) => void
   onStartWork: (todo: TodoItem) => void
+  onResumeWork: (todo: TodoItem) => void
   onImplementStep?: (todo: TodoItem, step: ImplementationStep) => void
   httpReady?: boolean
   sessionReady?: boolean
   sessionBusy?: boolean
   specGenerating?: boolean
+  recentSpecJob?: RecentSpecJob | null
+  onExportSpecJobDebug?: () => void
+  onDismissRecentSpecJob?: () => void
+  onExtendSpecTimeoutsAndRetry?: () => void
+  specGenTimeoutPrefs?: SpecGenTimeoutPrefs
   contextPaths?: string[]
   contextUsage?: SessionContextUsage
   onOpenSpec?: () => void
@@ -136,6 +156,12 @@ interface TodoPanelProps {
   onCancelSpecGenerate?: () => void
   /** Bumped after generate/refine saves layers — refreshes spec index panel. */
   specIndexRefreshToken?: number
+  /** Open project path — tasks load from this repo's `.cecli/todos.json`. */
+  projectPath?: string
+  /** Active chat session uses a different repo than the open project. */
+  sessionWorkspaceMismatch?: boolean
+  steeringClient?: CoreHttpClient | null
+  onSteeringNotify?: (message: string, severity: 'info' | 'warning' | 'error') => void
 }
 
 export function TodoPanel({
@@ -149,11 +175,17 @@ export function TodoPanel({
   onSetActive,
   onMarkDone,
   onStartWork,
+  onResumeWork,
   onImplementStep,
   httpReady,
   sessionReady,
   sessionBusy,
   specGenerating,
+  recentSpecJob,
+  onExportSpecJobDebug,
+  onDismissRecentSpecJob,
+  onExtendSpecTimeoutsAndRetry,
+  specGenTimeoutPrefs,
   contextPaths = [],
   contextUsage,
   onOpenSpec,
@@ -175,6 +207,10 @@ export function TodoPanel({
   specIndexRefreshToken,
   currentBranch,
   tauriLocal,
+  projectPath,
+  sessionWorkspaceMismatch,
+  steeringClient,
+  onSteeringNotify,
 }: TodoPanelProps) {
   const importInputRef = useRef<HTMLInputElement>(null)
   const importMergeRef = useRef(false)
@@ -200,6 +236,7 @@ export function TodoPanel({
   const [generateMode, setGenerateMode] = useState<'generate' | 'refine'>('generate')
   const [generateSection, setGenerateSection] = useState<SpecLayerSection | 'all'>('all')
   const [tabGateAlert, setTabGateAlert] = useState<string | null>(null)
+  const [layerGenPrompt, setLayerGenPrompt] = useState('')
 
   const selected = todos.find((t) => t.id === selectedId) ?? null
   const layerDraft = useMemo(
@@ -213,9 +250,35 @@ export function TodoPanel({
 
   const depOptions = todos.filter((t) => t.id !== selected?.id)
   const implSteps = useMemo(
-    () => (selected ? parseImplementationSteps(tasksMd) : []),
-    [selected?.id, tasksMd]
+    () => (selected ? mergedImplementationSteps(tasksMd, checklist) : []),
+    [selected?.id, tasksMd, checklist]
   )
+  const nextImplStep = useMemo(() => firstOpenImplementationStep(implSteps), [implSteps])
+  const workTodoDraft = useMemo(() => {
+    if (!selected) return null
+    return {
+      ...selected,
+      title,
+      requirements,
+      design,
+      tasks_md: tasksMd,
+      depends_on: dependsOn,
+      branch,
+      pr_url: prUrl,
+      checklist,
+    }
+  }, [
+    selected,
+    title,
+    requirements,
+    design,
+    tasksMd,
+    dependsOn,
+    branch,
+    prUrl,
+    checklist,
+  ])
+  const resumeWork = workTodoDraft ? shouldResumeWork(workTodoDraft) : false
 
   const implementBlockedByEars = Boolean(earsLint && !earsLint.ok)
 
@@ -223,6 +286,85 @@ export function TodoPanel({
     setEarsLint(null)
     setSpecTrace(null)
   }, [selectedId])
+
+  useEffect(() => {
+    if (!selected || specTab === 'checklist') return
+    const section: SpecLayerSection =
+      specTab === 'design' ? 'design' : specTab === 'tasks' ? 'tasks_md' : 'requirements'
+    setLayerGenPrompt(defaultPromptForSection(section, selected.title))
+  }, [selected?.id, selected?.title, specTab])
+
+  const layerGenSection = (): SpecLayerSection | null => {
+    if (specTab === 'requirements') return 'requirements'
+    if (specTab === 'design') return 'design'
+    if (specTab === 'tasks') return 'tasks_md'
+    return null
+  }
+
+  const generateBlockedReason = specGenerateBlockedReason({
+    hasTask: Boolean(selected),
+    visionSessionReady: Boolean(sessionReady),
+    sessionBusy,
+    specGenerating,
+    workspaceMismatch: sessionWorkspaceMismatch,
+  })
+
+  const runLayerGenerate = (section: SpecLayerSection) => {
+    if (!selected || !onGenerateSpec || generateBlockedReason) return
+    const prompt = layerGenPrompt.trim()
+    if (!prompt) return
+    void Promise.resolve(
+      onGenerateSpec(selected.id, prompt, 'generate', {
+        section,
+        contextPaths,
+      })
+    ).catch(() => {
+      /* parent snackbar */
+    })
+  }
+
+  const renderGenerateButton = (
+    label: string,
+    onClick: () => void,
+    testId: string,
+    extraDisabled = false
+  ) => {
+    const disabled = Boolean(generateBlockedReason) || specGenerating || extraDisabled
+    const btn = (
+      <Button
+        size="small"
+        startIcon={specGenerating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+        disabled={disabled}
+        data-testid={testId}
+        onClick={onClick}
+      >
+        {label}
+      </Button>
+    )
+    return generateBlockedReason ? (
+      <Tooltip title={generateBlockedReason}>
+        <span>{btn}</span>
+      </Tooltip>
+    ) : (
+      btn
+    )
+  }
+
+  const renderLayerGenPrompt = (section: SpecLayerSection) => (
+    <TextField
+      label="Generation prompt"
+      size="small"
+      fullWidth
+      multiline
+      minRows={3}
+      maxRows={8}
+      value={layerGenPrompt}
+      onChange={(e) => setLayerGenPrompt(e.target.value)}
+      helperText={wizardPromptForSection(section, selected?.title).helper}
+      placeholder="Describe the feature in plain language — the AI writes EARS requirements in the document below."
+      inputProps={{ 'data-testid': 'spec-layer-gen-prompt' }}
+    />
+  )
 
   const runEarsLint = async () => {
     if (!selected || !onLintRequirements) return
@@ -306,7 +448,7 @@ export function TodoPanel({
   }, [specIndexRefreshToken, todos, selectedId])
 
   const persistEditor = async () => {
-    if (!selected) return
+    if (!selected || specGenerating) return
     await onUpdate(selected.id, {
       title: title.trim() || 'Untitled',
       requirements,
@@ -362,8 +504,8 @@ export function TodoPanel({
             <Button
               color="inherit"
               size="small"
-              disabled={specGenerating}
-              onClick={() => openGenerateWizard(nudge.actionSection!, 'generate')}
+              disabled={Boolean(generateBlockedReason) || specGenerating}
+              onClick={() => runLayerGenerate(nudge.actionSection!)}
             >
               {nudge.actionLabel}
             </Button>
@@ -561,8 +703,24 @@ export function TodoPanel({
           )}
         </Stack>
       </Stack>
+      {sessionWorkspaceMismatch ? (
+        <Alert severity="warning" sx={{ mx: 1, mb: 1 }} data-testid="tasks-session-workspace-mismatch">
+          Chat is still using a different repository than the open project. Use Stop &amp; Start in Chat,
+          or click the project name in the header to switch folders.
+        </Alert>
+      ) : null}
       <Typography variant="caption" color="text.secondary" sx={{ px: 1 }}>
-        Stored in <Box component="code">.cecli/todos.json</Box>; three-layer specs also sync to{' '}
+        Stored in <Box component="code">.cecli/todos.json</Box>
+        {projectPath ? (
+          <>
+            {' '}
+            under{' '}
+            <Box component="code" sx={{ fontSize: 'inherit' }}>
+              {projectPath}
+            </Box>
+          </>
+        ) : null}
+        ; three-layer specs also sync to{' '}
         <Box component="code">.cecli/specs/&lt;id&gt;/</Box>.
         {tauriLocal && !httpReady
           ? ` Desktop: tasks saved locally via Tauri (${DISPLAY_VISION_API} optional).`
@@ -573,20 +731,72 @@ export function TodoPanel({
         <Box component="code">UpdateTodoList</Box> syncs into Tasks when a chat turn finishes or when
         you open this tab.
       </Typography>
-      {specGenerating && (
+      {projectPath && steeringClient ? (
+        <SteeringFilesHint
+          workspace={projectPath}
+          client={steeringClient}
+          httpReady={httpReady}
+          onOpenInEditor={onOpenContextInEditor}
+          onNotify={onSteeringNotify}
+        />
+      ) : null}
+      {(specGenerating || recentSpecJob?.id) && (
         <Alert
-          severity="info"
+          severity={
+            recentSpecJob?.outcome === 'timeout' ||
+            recentSpecJob?.outcome === 'error' ||
+            recentSpecJob?.outcome === 'session_lost'
+              ? 'warning'
+              : 'info'
+          }
           sx={{ mx: 1 }}
           data-testid="spec-generating-banner"
           action={
-            onCancelSpecGenerate ? (
-              <Button color="inherit" size="small" onClick={onCancelSpecGenerate}>
-                Cancel
-              </Button>
-            ) : undefined
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              {recentSpecJob?.outcome === 'timeout' && onExtendSpecTimeoutsAndRetry ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  data-testid="spec-job-extend-retry"
+                  onClick={onExtendSpecTimeoutsAndRetry}
+                >
+                  Extend & retry
+                </Button>
+              ) : null}
+              {recentSpecJob?.id && onExportSpecJobDebug ? (
+                <Button
+                  color="inherit"
+                  size="small"
+                  data-testid="spec-job-export-debug-banner"
+                  onClick={onExportSpecJobDebug}
+                >
+                  Export debug
+                </Button>
+              ) : null}
+              {!specGenerating && recentSpecJob?.id && onDismissRecentSpecJob ? (
+                <Button color="inherit" size="small" onClick={onDismissRecentSpecJob}>
+                  Dismiss
+                </Button>
+              ) : null}
+              {specGenerating && onCancelSpecGenerate ? (
+                <Button color="inherit" size="small" onClick={onCancelSpecGenerate}>
+                  Cancel
+                </Button>
+              ) : null}
+            </Stack>
           }
         >
-          Generating spec in the background — switch to Chat or other tabs while you wait.
+          {specGenerating
+            ? `Generating spec in the background${recentSpecJob?.id ? ` (job ${recentSpecJob.id.slice(0, 8)}…)` : ''} — export debug if it stalls. Current limit: ${specGenTimeoutPrefs ? formatSpecGenTimeoutLabel(specGenTimeoutPrefs) : 'see Settings'}.`
+            : recentSpecJob?.outcome === 'timeout'
+              ? `Spec job ${recentSpecJob.id.slice(0, 8)}… timed out (${specGenTimeoutPrefs ? formatSpecGenTimeoutLabel(specGenTimeoutPrefs) : 'limit reached'}). Use Extend & retry for 40 min / 20 min per turn, or change presets in Settings → Spec generation.`
+              : recentSpecJob?.outcome === 'session_lost'
+                ? `Spec job ${recentSpecJob.id.slice(0, 8)}… stopped when the session ended — export debug to investigate.`
+                : recentSpecJob?.outcome === 'error'
+                  ? `Spec job ${recentSpecJob.id.slice(0, 8)}… failed — export debug to investigate.`
+                  : recentSpecJob?.outcome === 'ears_blocked'
+                    ? `Spec job ${recentSpecJob.id.slice(0, 8)}… completed but EARS blocked save — fix requirements and refine.`
+                    : `Spec job ${recentSpecJob?.id.slice(0, 8)}… finished — export debug if you need the trace.`}
         </Alert>
       )}
       {specIndex && (
@@ -852,8 +1062,9 @@ export function TodoPanel({
               {specTab === 'requirements' && (
                 <Stack spacing={1}>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('requirements')}
                   <TextField
-                    label="Requirements (EARS-style)"
+                    label="Requirements document"
                     size="small"
                     fullWidth
                     multiline
@@ -863,6 +1074,7 @@ export function TodoPanel({
                     onChange={(e) => setRequirements(e.target.value)}
                     onBlur={persistRequirements}
                     placeholder="WHEN … THE system SHALL …"
+                    helperText="Output: AI-generated or hand-written EARS requirements. Edit here after generation, or write directly."
                   />
                   {earsLint && (
                     <Alert
@@ -899,6 +1111,7 @@ export function TodoPanel({
               {specTab === 'design' && (
                 <Stack spacing={1}>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('design')}
                   <TextField
                     label="Design"
                     size="small"
@@ -916,6 +1129,7 @@ export function TodoPanel({
               {specTab === 'tasks' && (
                 <>
                   {renderWizardNudges()}
+                  {renderLayerGenPrompt('tasks_md')}
                   {specTrace && (
                     <Alert
                       severity={specTrace.ok ? 'success' : 'warning'}
@@ -961,9 +1175,14 @@ export function TodoPanel({
                   />
                   {implSteps.length > 0 && onImplementStep && (
                     <Box>
-                      <Typography variant="subtitle2" gutterBottom>
-                        Steered implementation
-                      </Typography>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2">Steered implementation</Typography>
+                        {nextImplStep && (
+                          <Typography variant="caption" color="text.secondary">
+                            Next: {nextImplStep.number}. {nextImplStep.text}
+                          </Typography>
+                        )}
+                      </Stack>
                       <Stack spacing={0.5}>
                         {implSteps.map((step) => (
                           <Stack
@@ -975,7 +1194,11 @@ export function TodoPanel({
                           >
                             <Typography
                               variant="body2"
-                              sx={{ flex: 1, opacity: step.done ? 0.6 : 1 }}
+                              sx={{
+                                flex: 1,
+                                opacity: step.done ? 0.6 : 1,
+                                fontWeight: nextImplStep?.number === step.number ? 600 : 400,
+                              }}
                             >
                               {step.number}. {step.text}
                               {step.done ? ' ✓' : ''}
@@ -1081,37 +1304,26 @@ export function TodoPanel({
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 {onGenerateSpec && (
                   <>
-                    <Button
-                      size="small"
-                      startIcon={
-                        specGenerating ? <CircularProgress size={16} /> : <AutoAwesomeIcon />
-                      }
-                      disabled={!sessionReady || sessionBusy || specGenerating}
-                      data-testid="todo-generate-spec-wizard"
-                      onClick={() => {
-                        const section: SpecLayerSection | 'all' =
-                          specTab === 'requirements'
-                            ? 'requirements'
-                            : specTab === 'design'
-                              ? 'design'
-                              : specTab === 'tasks'
-                                ? 'tasks_md'
-                                : 'all'
-                        openGenerateWizard(section, 'generate')
-                      }}
-                    >
-                      {specTab === 'requirements'
+                    {renderGenerateButton(
+                      specTab === 'requirements'
                         ? 'Generate requirements'
                         : specTab === 'design'
                           ? 'Generate design'
                           : specTab === 'tasks'
                             ? 'Generate tasks'
-                            : 'Generate spec'}
-                    </Button>
+                            : 'Generate spec',
+                      () => {
+                        const section = layerGenSection()
+                        if (section) runLayerGenerate(section)
+                        else openGenerateWizard('all', 'generate')
+                      },
+                      'todo-generate-spec-wizard',
+                      specTab !== 'checklist' && !layerGenPrompt.trim()
+                    )}
                     {specTab !== 'checklist' && (
                       <Button
                         size="small"
-                        disabled={!sessionReady || sessionBusy || specGenerating}
+                        disabled={Boolean(generateBlockedReason) || specGenerating}
                         onClick={() => openGenerateWizard('all', 'generate')}
                         data-testid="todo-generate-spec-all"
                       >
@@ -1120,7 +1332,7 @@ export function TodoPanel({
                     )}
                     <Button
                       size="small"
-                      disabled={!sessionReady || sessionBusy || specGenerating}
+                      disabled={Boolean(generateBlockedReason) || specGenerating}
                       onClick={() => openGenerateWizard('all', 'refine')}
                     >
                       Refine spec
@@ -1163,27 +1375,50 @@ export function TodoPanel({
                     )}
                   </>
                 )}
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<PlayArrowIcon />}
-                  onClick={() => {
-                    persistEditor()
-                    onStartWork({
-                      ...selected,
-                      title,
-                      requirements,
-                      design,
-                      tasks_md: tasksMd,
-                      depends_on: dependsOn,
-                      branch,
-                      pr_url: prUrl,
-                      checklist,
-                    })
-                  }}
-                >
-                  Start work
-                </Button>
+                <ButtonGroup variant="contained" size="small" disableElevation>
+                  <Button
+                    startIcon={<PlayArrowIcon />}
+                    onClick={() => {
+                      persistEditor()
+                      onStartWork({
+                        ...selected,
+                        title,
+                        requirements,
+                        design,
+                        tasks_md: tasksMd,
+                        depends_on: dependsOn,
+                        branch,
+                        pr_url: prUrl,
+                        checklist,
+                      })
+                    }}
+                    data-testid="todo-start-work"
+                  >
+                    Start
+                  </Button>
+                  {resumeWork && (
+                    <Button
+                      startIcon={<ReplayIcon />}
+                      onClick={() => {
+                        persistEditor()
+                        onResumeWork({
+                          ...selected,
+                          title,
+                          requirements,
+                          design,
+                          tasks_md: tasksMd,
+                          depends_on: dependsOn,
+                          branch,
+                          pr_url: prUrl,
+                          checklist,
+                        })
+                      }}
+                      data-testid="todo-resume-work"
+                    >
+                      Resume
+                    </Button>
+                  )}
+                </ButtonGroup>
                 <Button
                   variant="outlined"
                   size="small"

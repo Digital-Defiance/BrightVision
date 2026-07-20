@@ -123,9 +123,9 @@ def format_duration(seconds: float, *, use_brightdate: bool | None = None) -> st
     if use_brightdate is None:
         use_brightdate = os.environ.get("BV_SUITE_USE_BRIGHTDATE") == "1"
     if use_brightdate:
-        from bright_vision_core.test_suite.brightdate_timing import format_elapsed_brightdate
+        from brightdate.format import format_duration as format_duration_bd
 
-        return format_elapsed_brightdate(seconds)
+        return format_duration_bd(seconds)
     if seconds < 0:
         seconds = 0.0
     if seconds < 60:
@@ -239,8 +239,34 @@ def medians_for_steps(step_ids: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+def gpu_baseline_for_step(step_id: str) -> dict[str, float | int]:
+    """Historical GPU avg/peak medians from successful runs (for stall heuristics)."""
+    data = load_history()
+    runs = data.get("steps", {}).get(step_id, {}).get("runs", [])
+    avgs = [
+        float(r["gpu_avg"])
+        for r in runs
+        if r.get("ok", True) and isinstance(r.get("gpu_avg"), (int, float))
+    ]
+    peaks = [
+        float(r["gpu_peak"])
+        for r in runs
+        if r.get("ok", True) and isinstance(r.get("gpu_peak"), (int, float))
+    ]
+    return {
+        "sampleCount": min(len(avgs), len(peaks)) if avgs or peaks else 0,
+        "medianGpuAvg": percentile(avgs, 0.5) if avgs else 0.0,
+        "medianGpuPeak": percentile(peaks, 0.5) if peaks else 0.0,
+    }
+
+
 def expectations_for_steps(step_ids: list[str]) -> dict[str, Any]:
     rows = medians_for_steps(step_ids)
+    for row in rows:
+        gpu = gpu_baseline_for_step(row["stepId"])
+        row["medianGpuPeak"] = float(gpu["medianGpuPeak"])
+        row["medianGpuAvg"] = float(gpu["medianGpuAvg"])
+        row["gpuSampleCount"] = int(gpu["sampleCount"])
     total_expected = sum(r["medianSeconds"] for r in rows)
     have_all = all(r["sampleCount"] > 0 for r in rows)
     missing = [r["stepId"] for r in rows if r["sampleCount"] == 0]

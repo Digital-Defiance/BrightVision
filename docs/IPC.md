@@ -43,6 +43,16 @@ Response includes updated `files_in_chat` and `events` (tool_output / errors).
 
 > **Note:** Project-local state lives under **`.cecli/`**: Cecli uses `agents/`, `sessions/`, `logs/`, …; BrightVision adds `todos.json`, `specs/`, `attachments/`.
 
+### Multi-repo workspace (cecli)
+
+Optional `.cecli.workspaces.yml` at the project root (local `path:` projects). Vision exposes a read-only summary for the UI:
+
+```http
+GET /workspaces/cecli-workspace?workspace=/abs/path/to/project
+```
+
+Response includes `present`, `project_count`, `projects[]`, and `raw` YAML when a file exists. Session create may pass `workspaces` to seed the file when absent (see `CreateSessionRequest` in `http_api.py`).
+
 ### Workspace tasks (spec-driven)
 
 Todos live in `.cecli/todos.json` under the session workspace.
@@ -58,6 +68,8 @@ PUT    /sessions/{session_id}/todos/active   {"activeId": "…" | null}
 POST   /workspaces/todos/{id}/lint-requirements?workspace=…   optional {"requirements": "draft markdown"}
 POST   /sessions/{session_id}/todos/{id}/lint-requirements   same body — deterministic EARS lint (`bright_vision_core/ears`)
 GET    /workspaces/spec-index?workspace=…   scan `.cecli/specs/**` vs `todos.json` task ids
+GET    /workspaces/steering-files?workspace=…   list `.cecli/STEERING.md` + `.cecli/steering/*.md`
+POST   /workspaces/steering-files/scaffold?workspace=…   create `.cecli/STEERING.md` from template when missing
 GET    /sessions/{session_id}/spec-index   same for session workspace
 POST   /workspaces/todos/{id}/trace-spec?workspace=…   optional {"requirements","design","tasks_md"} drafts
 POST   /sessions/{session_id}/todos/{id}/trace-spec   REQ ↔ design ↔ tasks traceability report
@@ -94,6 +106,17 @@ GET /sessions/{session_id}/debug
 ```
 
 Includes: session metadata, cecli message history with `tool_calls`, parsed tool invocations, duplicate-call hints, agent `todo.txt` snapshot, and the last ~800 `EventIO` events. UI: **Settings → Session history → Export debug bundle**. Redact secrets before sharing.
+
+### Spec job debug export
+
+Background **generate-spec / refine-spec** runs in a separate headless session (not the chat session). When generation stalls or times out, export:
+
+```http
+GET /workspaces/todos/generate-spec/{job_id}/debug
+GET /sessions/{session_id}/todos/generate-spec/{job_id}/debug
+```
+
+Includes: job metadata (workspace, todo, model, section, prompt preview, status, error), LLM message snapshot, tool invocations, and `EventIO` events captured from the ephemeral session (refreshed live while `status: running`). UI: **Spec job** chip in the header while a job runs — copy job ID or **Export debug** (Tasks/Spec tabs also link **Export debug**). Redact secrets before sharing.
 
 ### Workspace tasks (no session)
 

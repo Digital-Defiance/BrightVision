@@ -19,8 +19,13 @@ except ImportError:
     configure_auth = None
     reset_auth_for_tests = None
 
-from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
-from llm_client import stream_session_message
+from llm_ollama import (
+    ensure_ollama_for_llm_e2e,
+    ollama_reachable,
+    recover_local_llm_for_tests,
+    resolve_vision_model,
+)
+from llm_client import create_llm_vision_client, stream_session_message
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LLM_E2E_WORKSPACE = REPO_ROOT / "e2e" / "fixtures" / "hello-workspace"
@@ -93,7 +98,7 @@ def _event_texts(events: list[dict]) -> str:
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
 @unittest.skipIf(os.environ.get("E2E_LLM") != "1", "set E2E_LLM=1 to run real LLM tests")
-@unittest.skipIf(not ollama_reachable(), "Ollama not reachable")
+@unittest.skipIf(not ollama_reachable(), "Local LLM not reachable")
 class TestAgentLlm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -103,6 +108,8 @@ class TestAgentLlm(unittest.TestCase):
         _sessions.clear()
         reset_auth_for_tests()
         configure_auth("127.0.0.1")
+        if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1":
+            recover_local_llm_for_tests()
 
     def tearDown(self):
         reset_auth_for_tests()
@@ -110,14 +117,28 @@ class TestAgentLlm(unittest.TestCase):
     def test_agent_slash_streams_done_without_verbose_error(self):
         model = resolve_vision_model()
         root = _ensure_llm_e2e_workspace()
-        client = TestClient(app)
+        client = create_llm_vision_client()
         res = client.post("/sessions", json={"workspace": root, "model": model})
         if res.status_code == 400:
             self.skipTest(f"Could not create session: {res.text}")
         self.assertEqual(res.status_code, 200, res.text)
         session_id = res.json()["session_id"]
 
-        events = stream_session_message(client, session_id, AGENT_PROMPT)
+        events: list[dict] = []
+        last_err: BaseException | None = None
+        for attempt in range(2):
+            try:
+                events = stream_session_message(client, session_id, AGENT_PROMPT)
+                last_err = None
+                break
+            except TimeoutError as err:
+                last_err = err
+                if attempt == 0:
+                    recover_local_llm_for_tests()
+                    continue
+                raise
+        if last_err is not None:
+            raise last_err
         types = [e.get("type") for e in events]
         errors = [e for e in events if e.get("type") == "error"]
         self.assertFalse(errors, errors)

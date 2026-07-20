@@ -34,6 +34,16 @@ export function isWaitingForModelProgress(update: ProcessUpdate): boolean {
   return /waiting for/.test(hay)
 }
 
+export function isAgentPreprocHeartbeatProgress(update: ProcessUpdate): boolean {
+  const hay = `${update.label} ${update.detail ?? ''}`.toLowerCase()
+  return /running slash commands|running agent commands/.test(hay)
+}
+
+/** Keep “Finishing turn” after tokens when core still emits wait/slash heartbeats. */
+export function shouldHoldPostTokenProgress(update: ProcessUpdate): boolean {
+  return isWaitingForModelProgress(update) || isAgentPreprocHeartbeatProgress(update)
+}
+
 /** After assistant tokens, avoid reverting the bar to “Waiting for model”. */
 export function progressUpdateAfterStreamedTokens(ev: CoreProgressEvent): ProcessUpdate {
   const label = String(ev.label ?? '').trim()

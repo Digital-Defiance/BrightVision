@@ -8,10 +8,12 @@ import {
   type ReactNode,
 } from 'react'
 import type { CoreEventBase, CoreProgressEvent } from '../ipc/events'
+import { isCoreEvent } from '../ipc/events'
+import { isBenignTurnStopError } from '../utils/abort'
 import {
-  isWaitingForModelProgress,
   progressEventToUpdate,
   progressUpdateAfterStreamedTokens,
+  shouldHoldPostTokenProgress,
 } from './ingestProgress'
 import {
   IDLE_SNAPSHOT,
@@ -102,14 +104,18 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
   )
 
   const idle = useCallback(() => dispatch({ type: 'idle' }), [])
-  const fail = useCallback((message: string) => dispatch({ type: 'fail', message }), [])
+  const fail = useCallback((message: string) => {
+    dispatch({ type: 'fail', message })
+    window.setTimeout(() => dispatch({ type: 'idle' }), 4000)
+  }, [])
 
   const ingestCoreEvent = useCallback((ev: CoreEventBase) => {
+    if (!isCoreEvent(ev)) return
     switch (ev.type) {
       case 'progress': {
         const raw = progressEventToUpdate(ev as CoreProgressEvent)
         const update =
-          streamedTokensThisTurnRef.current && isWaitingForModelProgress(raw)
+          streamedTokensThisTurnRef.current && shouldHoldPostTokenProgress(raw)
             ? progressUpdateAfterStreamedTokens(ev as CoreProgressEvent)
             : raw
         dispatch({ type: 'apply', update })
@@ -145,17 +151,19 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
         break
       case 'tool_output':
       case 'tool_error':
-      case 'tool_warning':
+      case 'tool_warning': {
+        const toolText = String((ev as { text?: string }).text ?? '').trim()
         dispatch({
           type: 'apply',
           update: {
             phase: 'tool',
             label: PHASE_LABELS.tool,
-            detail: String(ev.type).replace('tool_', ''),
+            detail: toolText.slice(0, 120) || String(ev.type).replace('tool_', ''),
             progress: null,
           },
         })
         break
+      }
       case 'confirm': {
         const auto = Boolean((ev as { auto_answered?: boolean }).auto_answered)
         if (!auto) {
@@ -188,14 +196,20 @@ export function ProcessProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'idle' })
         }
         break
-      case 'error':
+      case 'error': {
         streamedTokensThisTurnRef.current = false
+        const message = String(ev.text ?? 'Unknown error')
+        if (isBenignTurnStopError(message)) {
+          dispatch({ type: 'idle' })
+          break
+        }
         dispatch({
           type: 'fail',
-          message: String(ev.text ?? 'Unknown error'),
+          message,
         })
         window.setTimeout(() => dispatch({ type: 'idle' }), 4000)
         break
+      }
       default:
         break
     }

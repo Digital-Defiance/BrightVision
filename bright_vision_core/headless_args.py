@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from types import SimpleNamespace
 
 # Headless `/agent` — shorter command timeout; cecli still needs Finished tool to exit.
@@ -22,9 +23,10 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         tui=False,
         yes=yes,
         agent_config=_DEFAULT_AGENT_CONFIG,
-        yes_always_commands=False,
+        yes_always_commands=yes,
         fancy_input=False,
         show_speed=False,
+        show_thinking=os.environ.get("BV_SHOW_THINKING", "1") not in ("0", "false", "no", "off"),
         max_reflections=3,
         custom="{}",
         file_diffs=True,
@@ -36,4 +38,10 @@ def default_headless_args(*, yes: bool = False) -> SimpleNamespace:
         auto_save_session_name="brightvision",
         session_encrypt=False,
         session_key_file=None,
+        # Git commit attribution (cecli GitRepo.commit reads coder.args)
+        attribute_author=None,
+        attribute_committer=None,
+        attribute_co_authored_by=True,
+        attribute_commit_message_author=False,
+        attribute_commit_message_committer=False,
     )

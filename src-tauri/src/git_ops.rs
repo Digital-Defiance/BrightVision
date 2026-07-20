@@ -78,6 +78,14 @@ mod tests {
     use std::path::PathBuf;
     use std::process::Command;
 
+    fn os_devnull() -> &'static str {
+        if cfg!(windows) {
+            "nul"
+        } else {
+            "/dev/null"
+        }
+    }
+
     #[test]
     fn parse_graph_line_root_commit() {
         let line = "abc123def4567890\x1fabc123d\x1f\x1finitial\x1f1700000000";
@@ -106,7 +114,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let git = |args: &[&str]| {
+            // Isolate from global identity/hooks templates (e.g. ~/.git-templates/hooks).
+            let hooks = format!("core.hooksPath={}", os_devnull());
             let out = Command::new("git")
+                .env("GIT_CONFIG_GLOBAL", os_devnull())
+                .env("GIT_CONFIG_SYSTEM", os_devnull())
+                .args(["-c", &hooks])
                 .args(args)
                 .current_dir(&dir)
                 .output()
@@ -121,6 +134,7 @@ mod tests {
         };
         git(&["init"]);
         assert!(dir.join(".git").is_dir(), "expected fresh repo under {dir:?}");
+        git(&["config", "core.hooksPath", os_devnull()]);
         git(&["config", "user.email", "t@test.com"]);
         git(&["config", "user.name", "Test"]);
         fs::write(dir.join("a.txt"), "1\n").unwrap();

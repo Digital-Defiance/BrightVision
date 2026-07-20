@@ -8,33 +8,40 @@ import unittest
 try:
     from fastapi.testclient import TestClient
 
-    from bright_vision_core.http_api import app, _sessions
     from bright_vision_core.http_auth import configure_auth, reset_auth_for_tests
-    from bright_vision_core.todo_spec_jobs import spec_gen_timeout_s, spec_job_store
+    from bright_vision_core.todo_spec_jobs import spec_gen_timeout_s
 except ImportError:
     TestClient = None
-    app = None
     configure_auth = None
     reset_auth_for_tests = None
     spec_gen_timeout_s = None
-    spec_job_store = None
 
 from cecli.utils import GitTemporaryDirectory, make_repo
 
-from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
+from llm_ollama import (
+    ensure_ollama_for_llm_e2e,
+    ollama_reachable,
+    recover_local_llm_for_tests,
+    reset_vision_sessions_for_tests,
+    resolve_vision_model,
+    warmup_ollama_for_tests,
+)
+from llm_client import LlmVisionClient, create_llm_vision_client, wait_spec_job
 from spec_layer_assertions import assess_generated_spec_layers
 
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
 @unittest.skipIf(os.environ.get("E2E_LLM") != "1", "set E2E_LLM=1 to run real LLM tests")
-@unittest.skipIf(not ollama_reachable(), "Ollama not reachable")
+@unittest.skipIf(not ollama_reachable(), "Local LLM not reachable")
 class TestGenerateSpecLlm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         ensure_ollama_for_llm_e2e()
+        if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1":
+            warmup_ollama_for_tests()
 
     def setUp(self):
-        _sessions.clear()
+        reset_vision_sessions_for_tests()
         reset_auth_for_tests()
         configure_auth("127.0.0.1")
 
@@ -42,11 +49,33 @@ class TestGenerateSpecLlm(unittest.TestCase):
         reset_auth_for_tests()
 
     def test_generate_spec_produces_sane_layers(self):
+        """HTTP background generate-spec with real Ollama.
+
+        Test Lab (``BV_TEST_SUITE_ACTIVE=1``): one requirements layer only — validates
+        the job store + poll path in ~1–3 min. Full three-layer merge is covered by
+        ``test_phased_generate_spec_produces_sane_layers`` in the same file.
+
+        ``yarn test:llm:core`` (no suite flag): all layers in one background job.
+        """
+        in_suite = os.environ.get("BV_TEST_SUITE_ACTIVE") == "1"
+        if in_suite:
+            section = "requirements"
+            prompt = (
+                "Minimal health ping API. Only REQ-001 and REQ-002; each one short "
+                "WHEN/SHALL acceptance line. No introduction essay."
+            )
+        else:
+            section = "all"
+            prompt = (
+                "Ping counter API. Exactly REQ-001 and REQ-002 with WHEN and SHALL. "
+                "Keep each section short. Two numbered implementation tasks."
+            )
+
         model = resolve_vision_model()
         wait_s = spec_gen_timeout_s()
         with GitTemporaryDirectory() as temp_dir:
             make_repo(temp_dir)
-            client = TestClient(app)
+            client = create_llm_vision_client()
             sess = client.post(
                 "/sessions",
                 json={"workspace": temp_dir, "model": model, "auto_yes": True},
@@ -66,11 +95,9 @@ class TestGenerateSpecLlm(unittest.TestCase):
                 f"/workspaces/todos/{todo_id}/generate-spec"
                 f"?workspace={temp_dir}&session_id={session_id}",
                 json={
-                    "prompt": (
-                        "Ping counter API. Exactly REQ-001 and REQ-002 with WHEN and SHALL. "
-                        "Keep each section short. Two numbered implementation tasks."
-                    ),
+                    "prompt": prompt,
                     "mode": "generate",
+                    "section": section,
                     "apply": True,
                     "background": True,
                     "enforce_ears": True,
@@ -81,7 +108,7 @@ class TestGenerateSpecLlm(unittest.TestCase):
             self.assertTrue(job_id, started.text)
 
             try:
-                job = spec_job_store.wait(job_id, timeout_s=wait_s)
+                body = wait_spec_job(client, job_id, timeout_s=wait_s)
             except TimeoutError:
                 poll = client.get(f"/workspaces/todos/generate-spec/{job_id}")
                 status = poll.json().get("status") if poll.status_code == 200 else "unknown"
@@ -91,30 +118,26 @@ class TestGenerateSpecLlm(unittest.TestCase):
                     f"(E2E_OLLAMA_MODEL={os.environ.get('E2E_OLLAMA_MODEL', 'ollama_chat/llama3.2:3b')})"
                 )
 
-            body = {
-                "status": job.status,
-                "error": job.error,
-                "requirements": job.requirements,
-                "design": job.design,
-                "tasks_md": job.tasks_md,
-                "raw": job.raw,
-                "ears_blocked": job.ears_blocked,
-                "ears_issues": job.ears_issues,
-            }
             self.assertEqual(body.get("status"), "completed", body.get("error") or body)
             if body.get("ears_blocked"):
                 self.skipTest(
                     "Model output failed EARS enforce gate — tighten prompt or model: "
                     f"{body.get('ears_issues')}"
                 )
-            ok, issues = assess_generated_spec_layers(
-                body.get("requirements", ""),
-                body.get("design", ""),
-                body.get("tasks_md", ""),
-            )
-            self.assertTrue(ok, f"layer sanity: {issues}; raw_len={len(body.get('raw') or '')}")
+            if in_suite:
+                req = body.get("requirements") or ""
+                self.assertRegex(req, r"REQ-\d+", req[:500])
+                self.assertIn("SHALL", req)
+                recover_local_llm_for_tests()
+            else:
+                ok, issues = assess_generated_spec_layers(
+                    body.get("requirements", ""),
+                    body.get("design", ""),
+                    body.get("tasks_md", ""),
+                )
+                self.assertTrue(ok, f"layer sanity: {issues}; raw_len={len(body.get('raw') or '')}")
 
-    def _todo_item(self, client: TestClient, temp_dir: str, todo_id: str) -> dict:
+    def _todo_item(self, client: LlmVisionClient, temp_dir: str, todo_id: str) -> dict:
         listed = client.get(f"/workspaces/todos?workspace={temp_dir}")
         self.assertEqual(listed.status_code, 200, listed.text)
         for item in listed.json().get("todos") or []:
@@ -125,9 +148,8 @@ class TestGenerateSpecLlm(unittest.TestCase):
     def test_phased_generate_spec_produces_sane_layers(self):
         """Phased layer merge with Ollama on one light spec session.
 
-        HTTP background jobs (three cold Session.create calls) are covered by
-        ``test_generate_spec_produces_sane_layers`` and mock e2e; this test
-        targets ``generate_todo_layers`` section= wiring without triple init.
+        In Test Lab this is the full three-layer LLM gate; the background job test
+        in the same class only generates requirements (fast job-store smoke).
         """
         from bright_vision_core.session import Session
         from bright_vision_core.workspace_todos import WorkspaceTodos
@@ -135,7 +157,7 @@ class TestGenerateSpecLlm(unittest.TestCase):
         model = resolve_vision_model()
         with GitTemporaryDirectory() as temp_dir:
             make_repo(temp_dir)
-            client = TestClient(app)
+            client = create_llm_vision_client()
             created = client.post(
                 f"/workspaces/todos?workspace={temp_dir}",
                 json={"title": "LLM phased spec", "template": "spec-driven"},
@@ -197,6 +219,8 @@ class TestGenerateSpecLlm(unittest.TestCase):
                 item.tasks_md or "",
             )
             self.assertTrue(ok, f"phased layer sanity: {issues}")
+            if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1":
+                recover_local_llm_for_tests()
 
 
 if __name__ == "__main__":

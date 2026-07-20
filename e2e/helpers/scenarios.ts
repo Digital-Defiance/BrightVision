@@ -21,6 +21,7 @@ import {
   E2E_EDIT_BLOCK_REL,
   ensureAgentTodoCharSplitWorkspace,
   ensureEditBlockWorkspace,
+  ensureSpecProgressWorkspace,
   ensureTasksSeededWorkspace,
   fixtureDiskTauriHandlers,
 } from './fixtureWorkspaces'
@@ -38,6 +39,7 @@ export type ScenarioName =
   | 'session-transcript'
   | 'tasks-seeded'
   | 'agent-todo-char-split'
+  | 'spec-progress-merge'
   | 'markdown-answer'
 
 export interface ScenarioDefinition {
@@ -144,6 +146,12 @@ const SCENARIOS: Record<ScenarioName, ScenarioDefinition> = {
     workspace: 'agent-todo-char-split',
     agentTodoImportFromDisk: true,
   },
+  'spec-progress-merge': {
+    label: 'agent done merges into preserved spec tasks_md',
+    turns: [defaultTurnEvents()],
+    workspace: 'spec-progress-merge',
+    agentTodoImportFromDisk: true,
+  },
   'markdown-answer': {
     label: 'GFM markdown in assistant answer',
     turns: [markdownAnswerTurnEvents()],
@@ -158,9 +166,12 @@ export function listScenarioNames(): ScenarioName[] {
   return Object.keys(SCENARIOS) as ScenarioName[]
 }
 
-function resolveWorkspaceRoot(kind: 'edit-block' | 'tasks-seeded' | 'agent-todo-char-split'): string {
+function resolveWorkspaceRoot(
+  kind: 'edit-block' | 'tasks-seeded' | 'agent-todo-char-split' | 'spec-progress-merge'
+): string {
   if (kind === 'edit-block') return normalizeWorkspacePath(ensureEditBlockWorkspace())
   if (kind === 'agent-todo-char-split') return normalizeWorkspacePath(ensureAgentTodoCharSplitWorkspace())
+  if (kind === 'spec-progress-merge') return normalizeWorkspacePath(ensureSpecProgressWorkspace())
   return normalizeWorkspacePath(ensureTasksSeededWorkspace())
 }
 

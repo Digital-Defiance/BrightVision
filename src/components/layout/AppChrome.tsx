@@ -5,6 +5,7 @@ import { BrandLogo } from '../brand/BrandLogo'
 import type { ProcessSnapshot } from '../../progress/types'
 import type { TurnEtaEstimate } from '../../utils/turnEtaEstimate'
 import type { LiveThinkingState } from '../../utils/thinkingTiming'
+import type { ActivityPresentation } from '../../utils/progressDisplay'
 import type { ConnectionTone } from '../../utils/connectionStatus'
 import { VisionActivityBar, type SpecJobActivity } from '../progress/VisionActivityBar'
 
@@ -22,7 +23,12 @@ interface AppChromeProps {
   specJob?: SpecJobActivity | null
   liveTiming?: LiveThinkingState | null
   turnEta?: TurnEtaEstimate | null
+  formatDuration?: (ms: number) => string
+  activityPresentation?: ActivityPresentation | null
+  agentPhaseMs?: number | null
   headerExtra?: ReactNode
+  /** Current git project (open-folder UX). */
+  projectBar?: ReactNode
   /** Green = session live; amber = API up, no session; grey = stopped. */
   connectionTone?: ConnectionTone
   children: ReactNode
@@ -42,7 +48,11 @@ export function AppChrome({
   specJob = null,
   liveTiming = null,
   turnEta = null,
+  formatDuration,
+  activityPresentation = null,
+  agentPhaseMs = null,
   headerExtra,
+  projectBar,
   connectionTone = 'stopped',
   children,
   railFooter,
@@ -176,8 +186,17 @@ export function AppChrome({
           }}
         >
           <Toolbar variant="dense" sx={{ minHeight: 48, gap: 1.5 }}>
-            <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
+            <Box
+              sx={{
+                flexGrow: 1,
+                display: 'flex',
+                alignItems: 'center',
+                minWidth: 0,
+                gap: 1.5,
+              }}
+            >
               {wrapLogo('header', <BrandLogo variant="header" />)}
+              {projectBar}
             </Box>
             <Box
               data-testid="connection-status-dot"
@@ -195,6 +214,9 @@ export function AppChrome({
             specJob={specJob}
             liveTiming={liveTiming}
             turnEta={turnEta}
+            formatDuration={formatDuration}
+            activity={activityPresentation}
+            agentPhaseMs={agentPhaseMs}
           />
         </Paper>
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { VisionConfig } from '../ipc/config'
-import { CoreHttpClient } from '../ipc/httpClient'
+import { createCoreHttpClient } from '../ipc/httpClient'
 import { waitForVisionApi } from '../ipc/health'
 import { isTauriRuntime } from '../ipc/isTauri'
 import {
@@ -35,7 +35,7 @@ export function useVisionApiControls(
       return
     }
     try {
-      const client = new CoreHttpClient(baseUrl, config.coreApiToken || undefined)
+      const client = createCoreHttpClient(baseUrl, config.coreApiToken || undefined)
       await client.health()
       setApiReachable(true)
     } catch {
@@ -59,7 +59,7 @@ export function useVisionApiControls(
       onLogLines?.([`[vision-api] Spawning on :${VISION_API_DEFAULT_PORT}…`])
       const url = await spawnDesktopVisionApi(config)
       onApiUrl?.(url)
-      const client = new CoreHttpClient(url, config.coreApiToken || undefined)
+      const client = createCoreHttpClient(url, config.coreApiToken || undefined)
       await waitForVisionApi(client)
       setApiReachable(true)
       onLogLines?.([`[vision-api] OK ${url}`])

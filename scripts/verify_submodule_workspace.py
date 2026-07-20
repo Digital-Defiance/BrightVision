@@ -34,6 +34,11 @@ def main() -> int:
         print("FAIL: no cecli submodule (cecli/ or BrightVision-core/)")
         return 1
 
+    bd_root = ROOT / "brightdate-python"
+    if not (bd_root / "pyproject.toml").is_file():
+        print("FAIL: brightdate-python submodule missing (git submodule update --init brightdate-python)")
+        return 1
+
     try:
         event_io = __import__(f"{PKG}.event_io", fromlist=["EventIO"])
         git_ws = __import__(
@@ -51,7 +56,17 @@ def main() -> int:
         print("Install: source activate.sh")
         return 1
 
+    try:
+        import brightdate as _bd
+
+        checks_bd = abs(_bd.bd_from_unix_ms(_bd.J2000_UNIX_MS)) < 1e-12
+    except ImportError as err:
+        print(f"FAIL: cannot import brightdate ({err})")
+        print("Install: source activate.sh (pip install -e brightdate-python)")
+        return 1
+
     checks: list[tuple[str, bool]] = []
+    checks.append(("brightdate J2000 epoch", checks_bd))
 
     paths = discover_submodule_paths(str(ROOT))
     checks.append((f"git discovers {cecli_name} submodule", cecli_name in paths))

@@ -40,6 +40,32 @@ def run(argv: list[str] | None = None) -> None:
     else:
         print(startup_message(args.host))
 
+    # Eager-load FastAPI app (cecli + LiteLLM cold import can take 30s+). Log after load so
+    # e2e / Test Lab health polls do not time out while uvicorn is still importing the module.
+    import time
+
+    print("[bright-vision] loading http_api…", file=sys.stderr, flush=True)
+    t0 = time.monotonic()
+    from bright_vision_core.http_api import app
+
+    print(
+        f"[bright-vision] http_api loaded in {time.monotonic() - t0:.1f}s",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    try:
+        from bright_vision_core.agent_turn import AGENT_TURN_FEATURES
+
+        root = os.environ.get("BRIGHT_VISION_ROOT") or os.environ.get("BV_ROOT") or "unknown"
+        print(
+            f"[bright-vision] engine_root={root} agent_turn_features={AGENT_TURN_FEATURES}",
+            file=sys.stderr,
+            flush=True,
+        )
+    except Exception:
+        pass
+
     try:
         import uvicorn
     except ImportError:
@@ -47,7 +73,7 @@ def run(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     uvicorn.run(
-        "bright_vision_core.http_api:app",
+        app,
         host=args.host,
         port=args.port,
         reload=args.reload,

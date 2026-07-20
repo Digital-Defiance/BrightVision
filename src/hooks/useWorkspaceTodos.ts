@@ -7,6 +7,7 @@ import { exportTodoStore, importTodoStore } from '../todos/markdown'
 import { applyLayerTemplate, applyTodoTemplate } from '../todos/templates'
 import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from '../todos/earsTypes'
 import type { ChecklistItem, TodoItem, TodoStore, TodoStatus } from '../todos/types'
+import { workspacePathsEqual } from '../utils/workspacePath'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -20,6 +21,8 @@ export interface WorkspaceTodosApi {
   client: CoreHttpClient
   workspace: string
   sessionId?: string | null
+  /** Session workspace from createSession; used to sync agent todo.txt when it matches `workspace`. */
+  sessionWorkspace?: string | null
 }
 
 type TodoPatch = Partial<
@@ -67,6 +70,11 @@ export function useWorkspaceTodos(
   const reloadGenerationRef = useRef(0)
   const tauriLocal = isTauriRuntime()
 
+  useEffect(() => {
+    setStore(null)
+    setHttpReady(false)
+  }, [workingDir])
+
   const exportSpecToDisk = useCallback(
     async (id: string) => {
       if (httpReady && api) {
@@ -113,8 +121,6 @@ export function useWorkspaceTodos(
       if (api?.client) {
         try {
           await api.client.health()
-          // Agent todo.txt sync runs on session create (cecli), not on every list —
-          // re-import here resurrected tasks after delete.
           if (stale()) return
           const data = await api.client.listWorkspaceTodos(api.workspace)
           if (stale()) return
@@ -136,6 +142,20 @@ export function useWorkspaceTodos(
       if (!stale()) setLoading(false)
     }
   }, [api, workingDir, tauriLocal, mirrorToDisk])
+
+  const syncAgentTodoPlan = useCallback(async () => {
+    if (!httpReady || !api?.client || !api.sessionId) {
+      throw new Error('Sync agent plan requires a running Vision session')
+    }
+    const sessionWs = api.sessionWorkspace
+    if (!sessionWs || !workspacePathsEqual(sessionWs, api.workspace)) {
+      throw new Error('Session workspace does not match the open project')
+    }
+    const data = await api.client.importSessionAgentTodoPlan(api.sessionId)
+    setStore(data)
+    await mirrorToDisk(data)
+    return data
+  }, [httpReady, api, mirrorToDisk])
 
   useEffect(() => {
     void reload()
@@ -262,6 +282,19 @@ export function useWorkspaceTodos(
     async (id: string) => {
       if (httpReady && api) {
         await api.client.deleteWorkspaceTodo(api.workspace, id)
+        if (api.sessionId) {
+          try {
+            await api.client.clearSessionAgentTodoPlan(api.sessionId)
+          } catch {
+            /* best-effort */
+          }
+        }
+        setStore((prev) => {
+          if (!prev) return prev
+          const todos = prev.todos.filter((t) => t.id !== id)
+          const activeId = prev.activeId === id ? null : prev.activeId
+          return { ...prev, todos, activeId }
+        })
         await reload()
         return
       }
@@ -472,6 +505,7 @@ export function useWorkspaceTodos(
     tauriLocal,
     activeTodo,
     reload,
+    syncAgentTodoPlan,
     createTodo,
     updateTodo,
     deleteTodo,

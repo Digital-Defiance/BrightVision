@@ -6,9 +6,11 @@ import {
   ListItemText,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material'
-import { QUICK_COMMANDS, type VisionCommand } from '../../ipc/commands'
+import { QUICK_COMMAND_HINTS, QUICK_COMMANDS, type VisionCommand } from '../../ipc/commands'
+import { filterSlashCommandSuggestions } from '../../utils/commandComplete'
 
 interface CommandAssistProps {
   commands: VisionCommand[]
@@ -30,15 +32,7 @@ export function CommandAssist({
   onPickPath,
 }: CommandAssistProps) {
   const showPalette = inputValue.trim().startsWith('/')
-  const suggestions = showPalette
-    ? (() => {
-        const token = inputValue.trim().split(/\s/)[0] ?? ''
-        const lower = token.toLowerCase()
-        return commands
-          .filter((c) => c.name.toLowerCase().startsWith(lower))
-          .slice(0, 10)
-      })()
-    : []
+  const suggestions = showPalette ? filterSlashCommandSuggestions(commands, inputValue) : []
 
   return (
     <Stack spacing={1} sx={{ mb: 1 }}>
@@ -46,21 +40,32 @@ export function CommandAssist({
         <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
           Commands
         </Typography>
-        {QUICK_COMMANDS.map((cmd) => (
-          <Chip
-            key={cmd}
-            label={cmd}
-            size="small"
-            variant="outlined"
-            disabled={disabled}
-            onClick={() => onPickCommand(cmd + ' ')}
-            sx={{
-              fontSize: '0.7rem',
-              borderColor: 'divider',
-              '&:hover': { borderColor: 'primary.main', color: 'primary.light' },
-            }}
-          />
-        ))}
+        {QUICK_COMMANDS.map((cmd) => {
+          const hint = QUICK_COMMAND_HINTS[cmd]
+          const chip = (
+            <Chip
+              key={cmd}
+              label={cmd}
+              size="small"
+              variant="outlined"
+              disabled={disabled}
+              onClick={() => onPickCommand(cmd === '/hot-reload' ? cmd : `${cmd} `)}
+              data-testid={cmd === '/hot-reload' ? 'quick-command-hot-reload' : undefined}
+              sx={{
+                fontSize: '0.7rem',
+                borderColor: 'divider',
+                '&:hover': { borderColor: 'primary.main', color: 'primary.light' },
+              }}
+            />
+          )
+          return hint ? (
+            <Tooltip key={cmd} title={hint}>
+              <span>{chip}</span>
+            </Tooltip>
+          ) : (
+            chip
+          )
+        })}
         <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
           type <Box component="code">/</Box> for all · <Box component="code">/add path</Box> Tab
           completes paths (desktop)

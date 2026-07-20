@@ -21,7 +21,6 @@ import {
   type OllamaModelsSnapshot,
   resolveLocalLlmForConfig,
 } from '../../ipc/localLlm'
-import { WorkspaceBar } from '../WorkspaceBar'
 import type { AppearanceConfig } from '../../theme/appearance'
 import { AppearanceSection } from './AppearanceSection'
 import { ThinkingTimingSection } from './ThinkingTimingSection'
@@ -46,12 +45,19 @@ import { SessionPersistenceSection } from './SessionPersistenceSection'
 import { NtfyAlertsSection } from './NtfyAlertsSection'
 import { MobileRemoteSection } from './MobileRemoteSection'
 import { AgentsSection } from './AgentsSection'
+import { AgentGuardSection } from './AgentGuardSection'
+import type { AgentGuardPrefs } from '../../theme/agentGuardPrefs'
 import type { AppVersions } from '../../hooks/useAppVersions'
+import type { GithubReleaseInfo } from '../../utils/appUpdateCheck'
 import type { SubAgentInfo } from '../../ipc/agentCommands'
+import { SpecGenerationSection } from './SpecGenerationSection'
+import type { SpecGenTimeoutPrefs } from '../../theme/specGenTimeoutPrefs'
 import {
   SessionModeToggle,
   type SessionMode,
 } from '../session/SessionModeToggle'
+import type { CecliWorkspaceInfo } from '../../ipc/httpClient'
+import { CecliWorkspaceSection } from './CecliWorkspaceSection'
 
 interface SettingsPanelProps {
   config: VisionConfig
@@ -76,17 +82,27 @@ interface SettingsPanelProps {
   onEditorLanguagePrefsChange: (prefs: EditorLanguagePrefs) => void
   modelRouterPrefs: ModelRouterPrefs
   onModelRouterPrefsChange: (prefs: ModelRouterPrefs) => void
+  agentGuardPrefs: AgentGuardPrefs
+  onAgentGuardPrefsChange: (prefs: AgentGuardPrefs) => void
+  specGenTimeoutPrefs: SpecGenTimeoutPrefs
+  onSpecGenTimeoutPrefsChange: (prefs: SpecGenTimeoutPrefs) => void
   sessionModel: string
   onSessionModeChange: (mode: SessionMode) => void
   liveSessionMode?: SessionMode | null
   onSave: () => void
   onReset: () => void
   appVersions: AppVersions
+  updateRelease?: GithubReleaseInfo | null
   subagents: SubAgentInfo[]
   agentModeAvailable: boolean
   sessionActive: boolean
   sessionId?: string | null
   onExportSessionDebug?: () => void | Promise<void>
+  cecliWorkspace?: CecliWorkspaceInfo
+  cecliWorkspaceLoading?: boolean
+  cecliWorkspaceError?: string | null
+  onCecliWorkspaceRefresh?: () => void | Promise<void>
+  onOpenWorkspaceFileInEditor?: (relativePath: string) => void
 }
 
 export function SettingsPanel({
@@ -112,17 +128,27 @@ export function SettingsPanel({
   onEditorLanguagePrefsChange,
   modelRouterPrefs,
   onModelRouterPrefsChange,
+  agentGuardPrefs,
+  onAgentGuardPrefsChange,
+  specGenTimeoutPrefs,
+  onSpecGenTimeoutPrefsChange,
   sessionModel,
   onSessionModeChange,
   liveSessionMode = null,
   onSave,
   onReset,
   appVersions,
+  updateRelease = null,
   subagents,
   agentModeAvailable,
   sessionActive,
   sessionId,
   onExportSessionDebug,
+  cecliWorkspace,
+  cecliWorkspaceLoading,
+  cecliWorkspaceError,
+  onCecliWorkspaceRefresh,
+  onOpenWorkspaceFileInEditor,
 }: SettingsPanelProps) {
   const [bundledEnginePath, setBundledEnginePath] = useState<string>('')
   const [localLlmSnap, setLocalLlmSnap] = useState<LocalLlmSnapshot | null>(null)
@@ -166,9 +192,21 @@ export function SettingsPanel({
         Model & system
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Choose a <strong>project</strong> for git edits. Cecli + Vision API are bundled with
-        the app — you only set the project path, not a separate engine install per repo.
+        Open or switch the active <strong>project</strong> from the header folder control (not here).
+        Cecli + Vision API are bundled with the app — no per-repo engine install.
       </Typography>
+
+      {cecliWorkspace != null && onCecliWorkspaceRefresh && (
+        <CecliWorkspaceSection
+          workingDir={config.workingDir}
+          info={cecliWorkspace}
+          loading={cecliWorkspaceLoading ?? false}
+          error={cecliWorkspaceError ?? null}
+          onRefresh={onCecliWorkspaceRefresh}
+          onOpenInEditor={onOpenWorkspaceFileInEditor}
+          onMessage={onTimingStatsMessage}
+        />
+      )}
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
@@ -260,7 +298,11 @@ export function SettingsPanel({
                 <strong>Terminal → Local LLM</strong>.
               </Typography>
               {isOllamaVisionModel(config.model) ? (
-                <LocalLlmActionButtons controls={localLlmControls} showSecondary={false} />
+                <LocalLlmActionButtons
+                  controls={localLlmControls}
+                  showSecondary={false}
+                  showPull={localLlmControls.capabilities.supportsModelPull}
+                />
               ) : (
                 <Typography variant="caption" color="warning.main" display="block">
                   Set <strong>LLM model</strong> to <code>ollama_chat/&lt;tag&gt;</code> or click{' '}
@@ -298,17 +340,13 @@ export function SettingsPanel({
             value={config.extraParams}
             onChange={(e) => onChange({ ...config, extraParams: e.target.value })}
             slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: '0.85rem' } } }}
-            helperText="Passed as LITELLM_EXTRA_PARAMS when spawning the API on desktop."
+            helperText="LiteLLM defaults for every model (desktop → LITELLM_EXTRA_PARAMS). With the model router on, set per-hopper params in the hopper editor; omit think here."
           />
-          <Box>
-            <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
-              Project (git repository)
-            </Typography>
-            <WorkspaceBar
-              workingDir={config.workingDir}
-              onChange={(workingDir) => onChange({ ...config, workingDir })}
-            />
-          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            The git project you edit is chosen when {DISPLAY_VISION} opens (or via the project name in
+            the header), not here. Model, API, and session options below apply to whichever project is
+            open.
+          </Typography>
           <TextField
             label="Context files (one per line, relative to workspace)"
             fullWidth
@@ -444,6 +482,17 @@ export function SettingsPanel({
         sessionActive={sessionActive}
       />
 
+      <AgentGuardSection
+        prefs={agentGuardPrefs}
+        brightDateMode={thinkingTimingPrefs.brightDateMode}
+        onChange={onAgentGuardPrefsChange}
+      />
+
+      <SpecGenerationSection
+        prefs={specGenTimeoutPrefs}
+        onChange={onSpecGenTimeoutPrefsChange}
+      />
+
       <SuggestedFilesSection
         prefs={suggestedFilesPrefs}
         onChange={onSuggestedFilesPrefsChange}
@@ -458,6 +507,9 @@ export function SettingsPanel({
         prefs={modelRouterPrefs}
         sessionModel={sessionModel}
         ollamaSnapshot={ollamaTagsSnap}
+        localLlmSnap={localLlmSnap}
+        onRefreshCatalog={refreshLocalLlm}
+        modelRouterEnv={localLlmSnap?.modelRouter}
         onChange={onModelRouterPrefsChange}
       />
 
@@ -497,7 +549,7 @@ export function SettingsPanel({
         onExportSessionDebug={onExportSessionDebug}
       />
 
-      <AppVersionSection versions={appVersions} />
+      <AppVersionSection versions={appVersions} updateRelease={updateRelease} />
 
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>

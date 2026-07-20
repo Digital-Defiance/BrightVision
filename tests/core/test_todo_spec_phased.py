@@ -78,6 +78,23 @@ class TestTodoSpecPhased(unittest.TestCase):
         layers = parse_generated_layers(text, section="design")
         self.assertIn("Overview", layers["design"])
 
+    def test_parse_tasks_header_alias(self):
+        text = "## Requirements\n### REQ-001\nWHEN x THE system SHALL y.\n\n## Tasks\n- [ ] 1. Step (depends: none)\n"
+        layers = parse_generated_layers(text, section="tasks_md")
+        self.assertIn("1. Step", layers["tasks_md"])
+
+    def test_parse_deepen_pass_tail(self):
+        text = (
+            "## Implementation tasks\n- [ ] 1. Thin step (depends: none)\n\n"
+            "--- deepen pass ---\n\n"
+            "## Implementation tasks\n"
+            "- [ ] 1. Wire API for REQ-001 (depends: none)\n"
+            "- [ ] 2. Add tests for REQ-001 (depends: 1)\n"
+        )
+        layers = parse_generated_layers(text, section="tasks_md")
+        self.assertIn("Wire API", layers["tasks_md"])
+        self.assertIn("Add tests", layers["tasks_md"])
+
     def test_requirements_prompt_uses_kiro_structure(self):
         item = self._item()
         msg = build_generate_message("New feature", item=item, section="requirements")

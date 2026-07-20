@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 import type { TodoItem, TodoStore } from '../../src/todos/types'
 import {
   clearTurnEvents,
@@ -36,6 +36,8 @@ export interface MockCoreOptions {
   messageEventDelayMs?: number
   filesInChat?: string[]
   onSessionCreate?: (body: Record<string, unknown>) => void
+  /** When set, GET steering-files reports nonempty main file. */
+  steeringHasMain?: boolean
 }
 
 function cloneStore(store: TodoStore): TodoStore {
@@ -50,7 +52,7 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 
   const sessionId = opts.sessionId ?? E2E_SESSION_ID
-  const workspace = opts.workspacePath ?? '.'
+  const workspace = opts.workspacePath ?? process.cwd()
   const transcript = opts.sessionTranscript ?? []
   let healthHits = 0
   let todoStore = cloneStore(opts.initialTodos ?? emptyTodoStore())
@@ -65,6 +67,17 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
   let sessionAutoCommits = true
   let messageTurnIndex = 0
   const turns = opts.messageTurns ?? [defaultTurnEvents(), confirmTurnEvents()]
+  let steeringHasMain = opts.steeringHasMain ?? false
+
+  const steeringFilesJson = () =>
+    JSON.stringify({
+      has_content: steeringHasMain,
+      file_count: steeringHasMain ? 1 : 0,
+      main: steeringHasMain
+        ? { relpath: '.cecli/STEERING.md', size_bytes: 256, nonempty: true }
+        : null,
+      fragments: [],
+    })
 
   const nextTurn = () => {
     const events = turns[messageTurnIndex % turns.length] ?? defaultTurnEvents()
@@ -282,6 +295,47 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
 
   let agentPlanImportCount = 0
 
+  const fulfillAgentPlanImport = async (route: Route): Promise<boolean> => {
+    if (opts.agentPlanMissing) {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+      })
+      return true
+    }
+    agentPlanImportCount += 1
+    if (opts.agentTodoImportFromDisk && opts.workspacePath) {
+      try {
+        todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
+      } catch (err) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            detail: err instanceof Error ? err.message : String(err),
+          }),
+        })
+        return true
+      }
+    } else if (opts.agentPlanTodos) {
+      todoStore = cloneStore(opts.agentPlanTodos)
+    } else {
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
+      })
+      return true
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(todoStore),
+    })
+    return true
+  }
+
   await page.route(
     (url) => url.pathname.endsWith('/workspaces/todos/import-agent-plan'),
     async (route) => {
@@ -294,43 +348,84 @@ export async function installMockCoreApi(page: Page, opts: MockCoreOptions = {})
         await route.continue()
         return
       }
-      if (opts.agentPlanMissing) {
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
-        })
+      await fulfillAgentPlanImport(route)
+    }
+  )
+
+  await page.route(
+    (url) =>
+      new RegExp(`/sessions/${sessionId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/todos/import-agent-plan$`).test(
+        url.pathname
+      ),
+    async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
         return
       }
-      agentPlanImportCount += 1
-      if (opts.agentTodoImportFromDisk && opts.workspacePath) {
-        try {
-          todoStore = cloneStore(importAgentPlanFromDisk(opts.workspacePath))
-        } catch (err) {
-          await route.fulfill({
-            status: 500,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              detail: err instanceof Error ? err.message : String(err),
-            }),
-          })
-          return
-        }
-      } else if (opts.agentPlanTodos) {
-        todoStore = cloneStore(opts.agentPlanTodos)
-      } else {
-        // Real core: no agent todo.txt → 404; workspace todos.json unchanged.
-        await route.fulfill({
-          status: 404,
-          contentType: 'application/json',
-          body: JSON.stringify({ detail: 'No Cecli agent todo.txt in this workspace' }),
-        })
+      await fulfillAgentPlanImport(route)
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/cecli-workspace'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url)) {
+        await route.continue()
         return
       }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(todoStore),
+        body: JSON.stringify({
+          present: false,
+          filename: null,
+          name: null,
+          project_count: 0,
+          projects: [],
+          layout: null,
+          raw: null,
+        }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/steering-files/scaffold'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url) || route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      const created = steeringHasMain ? [] : ['.cecli/STEERING.md']
+      steeringHasMain = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          created,
+          has_content: true,
+          file_count: 1,
+          main: { relpath: '.cecli/STEERING.md', size_bytes: 256, nonempty: true },
+          fragments: [],
+        }),
+      })
+    }
+  )
+
+  await page.route(
+    (url) => url.pathname.endsWith('/workspaces/steering-files'),
+    async (route) => {
+      const url = new URL(route.request().url())
+      if (!wsMatch(url) || route.request().method() !== 'GET') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: steeringFilesJson(),
       })
     }
   )

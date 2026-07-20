@@ -1,20 +1,17 @@
-"""Apply a route decision to a live cecli Coder (swap main_model + Ollama keep_alive)."""
+"""Re-export from cecli.hopper.apply (BrightVision compatibility shim)."""
 
-from __future__ import annotations
+from cecli import models  # noqa: F401 — unittest.mock patch path
+from cecli.hopper.apply import (  # noqa: F401
+    apply_hopper_extra_params,
+    apply_route_to_coder,
+    apply_thinking_extra_params,
+    merge_extra_params,
+)
 
-from cecli import models
-
-from bright_vision_core.model_router import ModelRouterConfig, RouteDecision
-
-
-def apply_route_to_coder(coder, decision: RouteDecision, router: ModelRouterConfig) -> None:
-    """Point the coder at the routed model for this turn."""
-    prev = coder.main_model
-    new_model = models.Model(decision.model_name, from_model=prev)
-    if new_model.is_ollama():
-        new_model._ensure_extra_params_dict()
-        keep_alive = (
-            router.keep_alive_fast if decision.tier == "fast" else router.keep_alive_heavy
-        )
-        new_model.extra_params["keep_alive"] = keep_alive
-    coder.main_model = new_model
+__all__ = [
+    "apply_hopper_extra_params",
+    "apply_route_to_coder",
+    "apply_thinking_extra_params",
+    "merge_extra_params",
+    "models",
+]

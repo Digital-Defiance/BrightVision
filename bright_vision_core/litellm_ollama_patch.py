@@ -19,7 +19,7 @@ def _parse_tool_arguments_loose(raw: str) -> dict[str, Any]:
     if not text:
         return {}
     try:
-        from cecli.tools.utils.helpers import parse_tool_arguments
+        from cecli.helpers.responses import parse_tool_arguments
 
         parsed = parse_tool_arguments(text)
         return parsed if isinstance(parsed, dict) else {}

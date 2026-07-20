@@ -2,7 +2,7 @@
 
 Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain and follow it until the open backlog is complete.
 
-**Engine:** [Cecli](https://cecli.dev) in submodule **`cecli/`**, plus **`bright_vision_core/`** in this repo (Vision HTTP; PyPI package `bright-vision-core`). See [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md).
+**Engine:** [Cecli](https://cecli.dev) in submodule **`cecli/`**, plus **`bright_vision_core/`** in this repo (Vision HTTP; PyPI package `bright-vision-core`). See [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md). **Cecli bugfixes for upstream:** [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md) (`scripts/cecli-open-upstream-pr.sh`).
 
 **Project site:** [bright-vision.digitaldefiance.org](https://bright-vision.digitaldefiance.org) — static landing page in `docs/index.html`, deployed via [GitHub Pages](../.github/workflows/pages.yml) on pushes to `main` under `docs/`.
 
@@ -10,30 +10,66 @@ Product backlog and priorities: [ROADMAP.md](./ROADMAP.md) — agents maintain a
 
 - Node 18+ and Yarn
 - Rust toolchain (for Tauri)
-- Python 3.10+ (`source activate.sh` installs editable `cecli` + `bright_vision_core`)
+- Python 3.10+ (`git submodule update --init cecli brightdate-python`; `source activate.sh` installs editable `brightdate`, `cecli`, `bright_vision_core`)
 - **LLM:** local [Ollama](https://ollama.com/) recommended — see [LOCAL_LLM.md](./LOCAL_LLM.md)
 
 ## First-time setup
 
+Primary shell: **[BSH](https://bsh.digitaldefiance.org)** (zsh-compatible). `activate.sh` detects `BSH_VERSION` or `ZSH_VERSION` when sourced.
+
 ```bash
-git submodule update --init cecli
-source activate.sh   # venv + editable cecli + bright_vision_core
+git submodule update --init cecli brightdate-python
+source ./activate.sh   # BSH/zsh/bash — from repo root
 yarn install
 ```
+
+Quick check (no pip): `sh scripts/verify-activate-resolve.sh`
 
 **Optional `local-llm.env`:** `cp local-llm.env.example local-llm.env` at repo root (`DATA_MODEL`, `OLLAMA_HOST`; optional `MODEL_ROUTER`, `FAST_MODEL`, `HEAVY_MODEL` for the hopper). In-app **Local LLM** uses Rust; chat uses the Vision API — not `local-llm.sh`. See [LOCAL_LLM.md](./LOCAL_LLM.md).
 
 PyPI / release workflow for the Vision wheel: track in [UPSTREAM_CECLI.md](./UPSTREAM_CECLI.md) milestone U3. PyPI-only install: `BRIGHT_VISION_CORE_INSTALL=pypi source activate.sh`
+
+**brightdate:** submodule [BRIGHTDATE_PYTHON.md](./BRIGHTDATE_PYTHON.md) · PyPI package `brightdate` from [brightdate-python](https://github.com/Digital-Defiance/brightdate-python).
 
 ## Run the desktop app
 
 From the **superproject root** (e.g. `/Volumes/Code/BrightVision`):
 
 ```bash
+source ./activate.sh   # once per shell — venv + editable cecli + bright_vision_core
+yarn vision            # recommended daily entry (see below)
+```
+
+Equivalent without the wrapper:
+
+```bash
 yarn tauri dev
 ```
 
-On first launch, **project** defaults to the app repo (`detect_workspace`). The engine is resolved from the app install, not from inside your project. See [USER_WORKFLOW.md](./USER_WORKFLOW.md).
+### `yarn vision` (`scripts/vision.sh`)
+
+Preferred dev launcher after `source activate.sh`:
+
+1. Sets `BRIGHT_VISION_ROOT` / `BV_ROOT` to the repo root (same as `yarn tauri:dev`).
+2. Sources **`activate.sh`** (venv on `PATH`).
+3. Clears a stale listener on **`BV_CORE_PORT`** (default **`8751`** — Test Lab orchestrator port; Vision HTTP API is still **`:8741`** via Terminal → Start).
+4. Runs **`yarn tauri dev`** (Vite **`:1420`**, Tauri window).
+
+### `BV_VISION_SETUP` — force editable reinstall
+
+When you pull cecli or `bright_vision_core` changes and want a clean editable reinstall **before** the window opens:
+
+```bash
+BV_VISION_SETUP=1 yarn vision
+```
+
+This runs full `source activate.sh` (pip install -e cecli, brightdate, `.[dev]`, uvicorn) via `scripts/ensure-venv.sh`.
+
+**Normal daily use:** `yarn vision` activates in ~instant and only pip-installs when imports are missing (first run or broken venv). After submodule bumps use **`BV_VISION_SETUP=1 yarn vision`** or `BRIGHT_VISION_ACTIVATE_FORCE=1 source activate.sh`.
+
+Override pretend version manually: `BRIGHT_VISION_SCM_VERSION=0.2.1.post1 pip install -e .[dev]`
+
+On first launch, **project** defaults to the app repo (`detect_workspace`). The engine is resolved from the app install, not from inside your user project. See [USER_WORKFLOW.md](./USER_WORKFLOW.md).
 
 - **Project** — git repo the agent edits (any folder)
 - **Context files** — optional paths relative to project
@@ -113,6 +149,17 @@ yarn verify:submodule
 ```
 
 See [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md).
+
+## Cecli upstream PRs
+
+When a fix belongs in the **cecli** submodule (tools, coders, slash commands — not Vision HTTP):
+
+1. Read **[CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md)** — branch from `origin/main`, not `dev-integration`.
+2. Push `pr/<topic>` to **Digital-Defiance/cecli**.
+3. Open PR: `sh scripts/cecli-open-upstream-pr.sh pr/<topic> "title" "body"`.
+4. Cherry-pick the commit onto **`dev-integration`**, then pin `cecli` in the parent repo.
+
+Pin policy: [CECLI_PIN.md](./CECLI_PIN.md).
 
 ## Cutting a release
 

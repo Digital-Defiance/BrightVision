@@ -7,7 +7,7 @@ Humans and Cursor agents share one contract:
 | Who | How |
 |-----|-----|
 | **Agent / CI** | `yarn dogfood:agent` (or `yarn dogfood:gate` with optional `DOGFOOD_LLM=1`) |
-| **Human (optional)** | `yarn tauri dev` for native shell spot-checks only |
+| **Human (optional)** | `yarn vision` or `yarn tauri dev` for native shell spot-checks only |
 
 The desktop app is not the definition of done; the **automated gate** is.
 
@@ -107,7 +107,7 @@ When automated dogfood fails or an agent hits a new blocker:
 Use when you change **Tauri-only** behavior (tray, keychain, native apply, file dialogs, resource overlay):
 
 ```bash
-yarn tauri dev
+yarn vision   # or: yarn tauri dev
 ```
 
 In the app: project = repo root → **Terminal → Local LLM → Start** → **Terminal → Start**. Spot-check [SUBMODULE_VERIFICATION.md](./SUBMODULE_VERIFICATION.md) **A–D** before a release announcement — not before every merge.

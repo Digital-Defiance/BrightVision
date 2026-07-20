@@ -115,7 +115,8 @@ export function SessionPersistenceSection({
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Download a JSON bundle (messages, tool calls, recent events) when reporting tool-call or
-            streaming issues. Redact secrets before sharing.
+            streaming issues. Works for the active session or the last session if chat has ended.
+            Redact secrets before sharing.
           </Typography>
           <Button
             variant="outlined"

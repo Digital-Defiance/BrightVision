@@ -11,6 +11,45 @@ export async function expectNoAgentVerboseCrash(page: Page) {
 }
 
 /**
+ * Wait for a non-empty, settled assistant bubble (no specific phrase required).
+ *
+ * Use for turns where the model's exact wording is not the contract — e.g. small
+ * local models that may paraphrase or emit a tool-call. The caller still asserts the
+ * hard guarantees (no crash, no stall, turn settles).
+ */
+export async function expectLatestAssistantSettled(
+  page: Page,
+  timeoutMs: number,
+  minLen = 3
+) {
+  const assistant = page.getByTestId('chat-message-assistant').last()
+  const activity = page.getByTestId('vision-activity')
+  try {
+    await expect(assistant).toBeVisible({ timeout: timeoutMs })
+    await expect
+      .poll(async () => (await assistant.innerText().catch(() => '')).trim().length, {
+        timeout: Math.min(120_000, timeoutMs),
+      })
+      .toBeGreaterThan(minLen)
+  } catch (err) {
+    let extra = ''
+    try {
+      const activityText = (await activity.innerText()).trim()
+      const stall = (await page.getByText(/Turn stalled|likely stuck/i).count()) > 0
+      const slashTimeout = (await page.getByText(/slash commands timed out/i).count()) > 0
+      extra =
+        `Activity: ${activityText || '(none)'}\n` +
+        (stall ? 'Session stall banner visible.\n' : '') +
+        (slashTimeout ? 'Slash preproc timed out.\n' : '')
+    } catch {
+      extra = '(page closed — likely hit Playwright test timeout)\n'
+    }
+    throw new Error(`${err instanceof Error ? err.message : String(err)}\n${extra}`)
+  }
+  return assistant
+}
+
+/**
  * Wait for an assistant bubble matching `pattern` (uses the last assistant message).
  */
 export async function expectLatestAssistantReply(

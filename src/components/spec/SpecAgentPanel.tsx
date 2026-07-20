@@ -14,6 +14,7 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useRef } from 'react'
@@ -29,7 +30,12 @@ import {
   resolveSpecGeneratePrompt,
   truncatePromptPreview,
 } from '../../utils/specGeneratePrompt'
+import { layerHasContent, type SpecLayerSection } from '../../utils/specWizard'
+import { specGenerateBlockedReason } from '../../utils/specGenerateGate'
+import type { RecentSpecJob } from '../../utils/recentSpecJob'
 import { SessionContextChip } from '../session/SessionContextChip'
+import { SteeringFilesHint } from './SteeringFilesHint'
+import type { CoreHttpClient } from '../../ipc/httpClient'
 import type { SessionContextUsage } from '../../utils/contextUsage'
 import { isTauriRuntime } from '../../ipc/isTauri'
 import {
@@ -43,8 +49,11 @@ export interface SpecAgentPanelProps {
   isRunning: boolean
   isBusy: boolean
   sessionReady: boolean
+  sessionBusy?: boolean
+  workspaceMismatch?: boolean
   activeTodo: TodoItem | null
   specGenerating?: boolean
+  recentSpecJob?: RecentSpecJob | null
   earsLinting?: boolean
   specTracing?: boolean
   chatEndRef: React.RefObject<HTMLDivElement>
@@ -57,11 +66,12 @@ export interface SpecAgentPanelProps {
   sessionRunning?: boolean
   onSessionModeChange: (mode: SessionMode) => void
   specJobPrompt?: string | null
+  onExportSpecJobDebug?: () => void
   commands: VisionCommand[]
   pathSuggestions: string[]
   pathAssistActive: boolean
   onPickCommand: (command: string) => void
-  onGenerateSpec?: (prompt: string) => void
+  onGenerateSpec?: (prompt: string, section?: SpecLayerSection | 'all') => void
   onRefineSpec?: (prompt: string) => void
   onValidateEars?: () => void
   onTraceSpec?: () => void
@@ -74,6 +84,10 @@ export interface SpecAgentPanelProps {
   onOpenContextInEditor?: (path: string) => void
   onAttachContextDirectory?: () => void
   onAttachFolderPath?: (path: string) => void
+  projectPath?: string
+  steeringClient?: CoreHttpClient | null
+  steeringHttpReady?: boolean
+  onSteeringNotify?: (message: string, severity: 'info' | 'warning' | 'error') => void
 }
 
 export function SpecAgentPanel({
@@ -82,8 +96,11 @@ export function SpecAgentPanel({
   isRunning,
   isBusy,
   sessionReady,
+  sessionBusy = false,
+  workspaceMismatch = false,
   activeTodo,
   specGenerating,
+  recentSpecJob,
   earsLinting,
   specTracing,
   chatEndRef,
@@ -96,6 +113,7 @@ export function SpecAgentPanel({
   sessionRunning = false,
   onSessionModeChange,
   specJobPrompt = null,
+  onExportSpecJobDebug,
   commands,
   pathSuggestions,
   pathAssistActive,
@@ -113,6 +131,10 @@ export function SpecAgentPanel({
   onOpenContextInEditor,
   onAttachContextDirectory,
   onAttachFolderPath,
+  projectPath,
+  steeringClient,
+  steeringHttpReady = false,
+  onSteeringNotify,
 }: SpecAgentPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const { onKeyDown, onPickPath } = useFileCommandKeyboard({
@@ -132,9 +154,53 @@ export function SpecAgentPanel({
     : ''
   const usingDraftForGenerate = Boolean(inputValue.trim())
   const usingDraftForRefine = Boolean(inputValue.trim())
+  const hasRequirements = layerHasContent(activeTodo?.requirements)
+  const hasDesign = layerHasContent(activeTodo?.design)
+  const generateBlockedReason = specGenerateBlockedReason({
+    hasTask: Boolean(activeTodo),
+    visionSessionReady: sessionReady,
+    sessionBusy,
+    specGenerating,
+    workspaceMismatch,
+  })
   const pathCompleteHint = isTauriRuntime()
     ? 'Tab completes paths'
     : 'Path Tab completion on desktop app only'
+
+  const renderSpecGenerateButton = (
+    label: string,
+    onClick: () => void,
+    testId: string,
+    extraDisabled = false,
+    primary = false
+  ) => {
+    const disabled = Boolean(generateBlockedReason) || specGenerating || extraDisabled
+    const btn = (
+      <Button
+        size="small"
+        startIcon={
+          primary && specGenerating ? (
+            <CircularProgress size={14} />
+          ) : primary ? (
+            <AutoAwesomeIcon />
+          ) : undefined
+        }
+        disabled={disabled}
+        onClick={onClick}
+        data-testid={testId}
+        title={generatePrompt}
+      >
+        {label}
+      </Button>
+    )
+    return generateBlockedReason ? (
+      <Tooltip title={generateBlockedReason}>
+        <span>{btn}</span>
+      </Tooltip>
+    ) : (
+      btn
+    )
+  }
 
   return (
     <Box
@@ -186,6 +252,16 @@ export function SpecAgentPanel({
         {' '}Layer edits on Tasks. Attach files with <strong>/add path</strong> in the prompt below (Enter).
       </Alert>
 
+      {projectPath && steeringClient ? (
+        <SteeringFilesHint
+          workspace={projectPath}
+          client={steeringClient}
+          httpReady={steeringHttpReady}
+          onOpenInEditor={onOpenContextInEditor}
+          onNotify={onSteeringNotify}
+        />
+      ) : null}
+
       {!activeTodo && (
         <Alert severity="warning">
           Set an <strong>active task</strong> on the Tasks tab before using the spec agent.
@@ -215,7 +291,15 @@ export function SpecAgentPanel({
         </Alert>
       )}
 
-      {(specGenerating && specJobPrompt) || (sessionReady && activeTodo) ? (
+      {generateBlockedReason ? (
+        <Alert severity="warning" sx={{ py: 0.5 }} data-testid="spec-generate-blocked-hint">
+          {generateBlockedReason}
+        </Alert>
+      ) : null}
+
+      {(specGenerating && specJobPrompt) ||
+      recentSpecJob?.id ||
+      (sessionReady && activeTodo) ? (
         <Typography
           variant="caption"
           color="text.secondary"
@@ -225,11 +309,52 @@ export function SpecAgentPanel({
           {specGenerating && specJobPrompt ? (
             <>
               <strong>Running:</strong> {truncatePromptPreview(specJobPrompt, 120)}
+              {recentSpecJob?.id ? (
+                <>
+                  {' '}
+                  · job <Box component="code">{recentSpecJob.id.slice(0, 8)}…</Box>
+                  {onExportSpecJobDebug ? (
+                    <>
+                      {' '}
+                      ·{' '}
+                      <Button
+                        size="small"
+                        variant="text"
+                        sx={{ minWidth: 0, p: 0, verticalAlign: 'baseline' }}
+                        data-testid="spec-job-export-debug-spec-tab"
+                        onClick={onExportSpecJobDebug}
+                      >
+                        Export debug
+                      </Button>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : recentSpecJob?.id && !specGenerating ? (
+            <>
+              <strong>Last spec job</strong> {recentSpecJob.id.slice(0, 8)}… (
+              {recentSpecJob.outcome.replace('_', ' ')})
+              {onExportSpecJobDebug ? (
+                <>
+                  {' '}
+                  ·{' '}
+                  <Button
+                    size="small"
+                    variant="text"
+                    sx={{ minWidth: 0, p: 0, verticalAlign: 'baseline' }}
+                    data-testid="spec-job-export-debug-spec-tab"
+                    onClick={onExportSpecJobDebug}
+                  >
+                    Export debug
+                  </Button>
+                </>
+              ) : null}
             </>
           ) : (
             <>
-              <strong>Generate</strong> → {truncatePromptPreview(generatePrompt)}
-              {!usingDraftForGenerate ? ' (default — type above to override)' : ''}
+              <strong>Generate requirements</strong> → {truncatePromptPreview(generatePrompt)}
+              {!usingDraftForGenerate ? ' (default — type in the prompt box to override)' : ''}
               {' · '}
               <strong>Refine</strong> → {truncatePromptPreview(refinePrompt)}
               {!usingDraftForRefine ? ' (default)' : ''}
@@ -240,16 +365,32 @@ export function SpecAgentPanel({
 
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
         {onGenerateSpec && (
-          <Button
-            size="small"
-            startIcon={specGenerating ? <CircularProgress size={14} /> : <AutoAwesomeIcon />}
-            disabled={!sessionReady || !activeTodo || specGenerating}
-            onClick={() => onGenerateSpec(generatePrompt)}
-            data-testid="spec-agent-generate"
-            title={generatePrompt}
-          >
-            Generate
-          </Button>
+          <>
+            {renderSpecGenerateButton(
+              'Generate requirements',
+              () => onGenerateSpec(generatePrompt, 'requirements'),
+              'spec-agent-generate-requirements',
+              false,
+              true
+            )}
+            {renderSpecGenerateButton(
+              'Generate design',
+              () => onGenerateSpec(generatePrompt, 'design'),
+              'spec-agent-generate-design',
+              !hasRequirements
+            )}
+            {renderSpecGenerateButton(
+              'Generate tasks',
+              () => onGenerateSpec(generatePrompt, 'tasks_md'),
+              'spec-agent-generate-tasks',
+              !hasRequirements || !hasDesign
+            )}
+            {renderSpecGenerateButton(
+              'All layers',
+              () => onGenerateSpec(generatePrompt, 'all'),
+              'spec-agent-generate-all'
+            )}
+          </>
         )}
         {onRefineSpec && (
           <Button
@@ -301,7 +442,8 @@ export function SpecAgentPanel({
         {messages.length === 0 && (
           <Typography variant="body2" color="text.secondary" data-testid="spec-agent-empty">
             <strong>Send</strong> — spec chat. <strong>/add path</strong> + Enter attaches files for
-            Generate/Refine ({pathCompleteHint}). <strong>Generate / Refine</strong> use the prompt box below.
+            generation ({pathCompleteHint}). Type your feature prompt below, then{' '}
+            <strong>Generate requirements</strong> (or design/tasks when prior layers exist).
           </Typography>
         )}
         {messages.map((m) => (

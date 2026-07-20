@@ -51,8 +51,8 @@ test.describe('Spec agent rail (roadmap #20 E6)', () => {
     })
   })
 
-  test('Generate uses text from spec input box', async ({ page }) => {
-    let generateBody: { prompt?: string; mode?: string } = {}
+  test('Generate requirements uses prompt from spec input box', async ({ page }) => {
+    let generateBody: { prompt?: string; mode?: string; section?: string } = {}
     await page.route(
       (url) => /\/workspaces\/todos\/[^/]+\/generate-spec$/.test(url.pathname),
       async (route) => {
@@ -72,8 +72,9 @@ test.describe('Spec agent rail (roadmap #20 E6)', () => {
     await page.getByTestId('nav-spec').click()
     await page.getByTestId('spec-agent-input').fill('Add REQ-099 for export API')
     await expect(page.getByTestId('spec-job-prompt-preview')).toContainText('REQ-099')
-    await page.getByTestId('spec-agent-generate').click()
+    await page.getByTestId('spec-agent-generate-requirements').click()
     await expect.poll(() => generateBody.prompt).toBe('Add REQ-099 for export API')
+    expect(generateBody.section).toBe('requirements')
   })
 
   test('Trace gaps show refine hint and Refine to fix', async ({ page }) => {

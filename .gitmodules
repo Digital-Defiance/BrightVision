@@ -1,3 +1,7 @@
+[submodule "brightdate-python"]
+	path = brightdate-python
+	url = https://github.com/Digital-Defiance/brightdate-python.git
+	branch = main
 [submodule "cecli"]
 	path = cecli
 	url = https://github.com/Digital-Defiance/cecli.git

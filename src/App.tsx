@@ -16,7 +16,7 @@ import GitHubIcon from '@mui/icons-material/GitHub'
 import SettingsIcon from '@mui/icons-material/Settings'
 import TerminalIcon from '@mui/icons-material/Terminal'
 import CodeIcon from '@mui/icons-material/Code'
-import PlayArrowIcon from '@mui/icons-material/PlayArrow'
+import { ChipCpuStartIcon } from './components/icons/ActionChipIcons'
 import StopIcon from '@mui/icons-material/Stop'
 import { Alert, Box, Button, Chip, Paper, Snackbar, Stack, Typography } from '@mui/material'
 import { invoke } from '@tauri-apps/api/core'
@@ -38,11 +38,16 @@ import {
   type LocalLlmSnapshot,
 } from './ipc/localLlm'
 import { LocalLlmPanel } from './components/local-llm/LocalLlmPanel'
-import { type CoreConfirmEvent, type CoreEventBase } from './ipc/events'
+import { type CoreConfirmEvent, type CoreEventBase, isCoreEvent } from './ipc/events'
 import { SseIdleTimeoutError } from './ipc/sseIdle'
+import {
+  formatVisionStreamTransportError,
+  turnHadStartedBeforeSendError,
+} from './utils/abort'
 import {
   appendStreamingToken,
   capList,
+  initialAssistantBubbleChunk,
   MAX_CHAT_MESSAGES,
   MAX_TERMINAL_LINES,
   MAX_TOOL_EVENTS,
@@ -53,27 +58,32 @@ import {
   shiftPendingUserMessageId,
 } from './utils/chatStream'
 import { isTauriRuntime } from './ipc/isTauri'
-import { CoreHttpClient } from './ipc/httpClient'
+import { CoreHttpClient, createCoreHttpClient } from './ipc/httpClient'
 import { useVisionSession } from './hooks/useVisionSession'
 import { useTurnResourcePeak } from './hooks/useTurnResourcePeak'
 import { usePathCompletion } from './hooks/usePathCompletion'
 import { filesToUploadParts } from './utils/imageUpload'
-import { buildImplementStepMessage, buildStartWorkMessage } from './todos/formatContext'
+import { buildImplementStepMessage, buildResumeWorkMessage, buildStartWorkMessage } from './todos/formatContext'
 import type { ImplementationStep } from './todos/tasksMd'
 import type { TodoItem } from './todos/types'
 import { useCommandCatalog } from './hooks/useCommandCatalog'
-import { parseVisionClientCommand } from './ipc/visionClientCommands'
+import {
+  parseVisionClientCommand,
+  type VisionClientCommandId,
+} from './ipc/visionClientCommands'
+import { buildActivityPresentation } from './utils/progressDisplay'
+import { appendTurnsTableToChat } from './utils/turnsTable'
 import { fetchOllamaModelsSnapshot } from './utils/ollamaModelRows'
-import type { VisionClientCommandId } from './ipc/visionClientCommands'
 import type { OllamaModelsSnapshot } from './ipc/localLlm'
 import { useGitStatus } from './hooks/useGitStatus'
 import { autoStageEditedFiles } from './ipc/gitStatus'
 import { useSessionActivity } from './hooks/useSessionActivity'
 import {
   extractSuggestedFilePaths,
+  filterDesignOutlinePaths,
   filterPathsNotInChat,
   isAwaitingFilesCta,
-  mergeSuggestedPaths,
+  mergeSuggestedPathLists,
   normalizeAddCommandPath,
   parseAddCommandPath,
   pathsNotInChat,
@@ -86,6 +96,7 @@ import {
 } from './theme/suggestedFilesPrefs'
 import { loadSpecFocusPref, saveSpecFocusPref } from './theme/specFocusPrefs'
 import { SessionContextChip } from './components/session/SessionContextChip'
+import { MessageQueueChip } from './components/session/MessageQueueChip'
 import {
   buildEmptyLlmRetryMessage,
   isEmptyLlmWarning,
@@ -110,6 +121,8 @@ import {
   type SpecLayerSection,
 } from './utils/specWizard'
 import type { TraceabilityResult } from './todos/earsTypes'
+import { shouldBreakAssistantStreamForToolEvent } from './utils/assistantStreamBreak'
+import { resolveSendTodoOptions as resolveSendTodoMessageOptions } from './utils/sendTodoOptions'
 import { isRedundantEditToolOutput } from './utils/suppressDuplicateToolOutput'
 import { appendTimingStatsCsvRow } from './ipc/timingStatsCsv'
 import { ChatPanel, type ChatMessage, type ToolEvent } from './components/chat/ChatPanel'
@@ -122,6 +135,11 @@ import { TodoPanel } from './components/todos/TodoPanel'
 import { GitPanel } from './components/GitPanel'
 import { useWorkspaceTodos, type SpecLayerDraft } from './hooks/useWorkspaceTodos'
 import { WelcomePanel } from './components/onboarding/WelcomePanel'
+import { OpenProjectScreen } from './components/project/OpenProjectScreen'
+import { ProjectBar } from './components/project/ProjectBar'
+import { useOpenProject } from './hooks/useOpenProject'
+import { useCecliWorkspace } from './hooks/useCecliWorkspace'
+import { loadCurrentProject } from './ipc/openProject'
 import { AboutDialog } from './components/settings/AboutDialog'
 import { SettingsPanel } from './components/settings/SettingsPanel'
 import { VisionApiActionButtons } from './components/settings/VisionApiActionButtons'
@@ -133,7 +151,10 @@ const EditorPanel = lazy(() =>
 )
 import { ProcessProvider } from './progress/processStore'
 import { useProcess } from './progress/processStore'
-import { isSessionLifecycleActive } from './utils/sessionLifecycle'
+import {
+  isSessionLifecycleActive,
+  isSessionRestartInFlight,
+} from './utils/sessionLifecycle'
 import {
   applyAppearanceCssVars,
   DEFAULT_APPEARANCE,
@@ -163,9 +184,17 @@ import {
 } from './theme/ntfyAlertsPrefs'
 import { maybeNotifyTurnComplete, maybeNotifySpecJobComplete } from './ipc/ntfyAlerts'
 import { useAppVersions } from './hooks/useAppVersions'
+import { useAppUpdateCheck } from './hooks/useAppUpdateCheck'
+import { UpdateAvailableCard } from './components/UpdateAvailableCard'
 import { StderrBatcher } from './utils/stderrBatch'
 import { useThinkingTiming } from './hooks/useThinkingTiming'
 import { useSessionStallWatch } from './hooks/useSessionStallWatch'
+import { useAgentGuard } from './hooks/useAgentGuard'
+import {
+  loadAgentGuardPrefs,
+  saveAgentGuardPrefs,
+  type AgentGuardPrefs,
+} from './theme/agentGuardPrefs'
 import { useResourceOverlay } from './hooks/useResourceOverlay'
 import {
   clearAllThinkingStats,
@@ -174,8 +203,26 @@ import {
   loadThinkingStats,
   saveThinkingStats,
 } from './utils/thinkingStats'
+import type { CoreTurnCapture } from '@brightvision/vision-client'
+import { bdFromUnixMs } from '@brightvision/vision-client'
 import { estimateTurnEta } from './utils/turnEtaEstimate'
+import { estimateAgentPlanEta, mergeTurnAndPlanEta } from './utils/agentPlanEta'
+import {
+  mergeTurnCaptureWithResourceStats,
+  turnCaptureExtras,
+} from './utils/turnCapture'
 import { downloadSessionDebugBundle } from './utils/sessionDebugExport'
+import { downloadSpecJobDebugBundle } from './utils/specJobDebugExport'
+import type { RecentSpecJob, SpecJobOutcome } from './utils/recentSpecJob'
+import { SpecJobStatusChip } from './components/spec/SpecJobStatusChip'
+import {
+  extendedSpecGenTimeoutPrefs,
+  loadSpecGenTimeoutPrefs,
+  saveSpecGenTimeoutPrefs,
+  type SpecGenTimeoutPrefs,
+} from './theme/specGenTimeoutPrefs'
+import { isSpecJobTimeoutError, specJobTimeoutHint } from './utils/specJobTimeout'
+import { workspacePathsEqual } from './utils/workspacePath'
 import {
   resolveMessageTurnTiming,
   shouldRecordTurnInHistory,
@@ -193,12 +240,13 @@ import { buildGitStatusByPath } from './utils/editorGitStatus'
 import {
   applyLocalLlmHopperFromEnv,
   DEFAULT_MODEL_ROUTER_PREFS,
-  formatModelRouteEvent,
+  effectiveRouterEnabled,
   loadModelRouterPrefs,
   modelRouterApiPayload,
   saveModelRouterPrefs,
   type ModelRouterPrefs,
 } from './theme/modelRouterPrefs'
+import type { ModelHopperTier } from './theme/modelHopper'
 import type { ModelRouterApiConfig, SendMessageOptions } from './ipc/httpClient'
 import {
   ensureRoutedOllamaModel,
@@ -230,6 +278,55 @@ import {
 const WELCOME_DISMISSED_KEY = 'vision-welcome-dismissed'
 
 type TabId = 'chat' | 'spec' | 'terminal' | 'git' | 'editor' | 'settings' | 'tasks'
+
+interface EngineInstallInfo {
+  install_root: string
+  default_python_path: string
+}
+
+/**
+ * Estimate token usage from streamed assistant text when cecli's usage report
+ * didn't fire or wasn't parsed. Returns null if content is too short to matter.
+ */
+function estimateTokensFromStream(
+  streamedContent: string
+): { tokensSent: number; tokensReceived: number } | null {
+  const chars = (streamedContent || '').length
+  if (chars < 20) return null // too short to be a real response
+  const estimatedReceived = Math.ceil(chars / 4) // ~4 chars per token heuristic
+  // We can't estimate sent tokens from streaming — leave at 0 so TPS still works
+  // (TPS only uses tokensReceived)
+  return { tokensSent: 0, tokensReceived: estimatedReceived }
+}
+
+/** Drop stale Settings paths when the repo moved (e.g. /Users/.../Code vs /Volumes/Code). */
+function alignConfigWithInstallRoot(cfg: VisionConfig, info: EngineInstallInfo): VisionConfig {
+  const root = info.install_root.replace(/\\/g, '/').replace(/\/$/, '')
+  const py = cfg.pythonPath.replace(/\\/g, '/')
+  const wd = cfg.workingDir.replace(/\\/g, '/')
+  let next = cfg
+  if (py && root && !py.startsWith(`${root}/`)) {
+    next = { ...next, pythonPath: info.default_python_path }
+  }
+  // Repo duplicated under /Users/.../Code and /Volumes/Code — prefer paths matching open project.
+  if (
+    wd.includes('/Volumes/Code/BrightVision') &&
+    py.includes('/Users/jessica/Code/BrightVision')
+  ) {
+    next = {
+      ...next,
+      pythonPath: `${wd.replace(/\/$/, '')}/.venv/bin/python3`,
+      coreEnginePath: '.',
+    }
+  }
+  if (next.coreEnginePath.trim() && next.coreEnginePath !== '.' && next.coreEnginePath !== 'bright-vision-core') {
+    const engine = next.coreEnginePath.replace(/\\/g, '/')
+    if (root && engine.startsWith('/') && !engine.startsWith(`${root}/`)) {
+      next = { ...next, coreEnginePath: '.' }
+    }
+  }
+  return next
+}
 
 function migrateConfig(raw: Partial<VisionConfig> & Record<string, unknown>): VisionConfig {
   const merged: VisionConfig = { ...DEFAULT_CONFIG, ...raw }
@@ -324,6 +421,10 @@ function AppShell({
   setEditorLanguagePrefs,
   modelRouterPrefs,
   setModelRouterPrefs,
+  agentGuardPrefs,
+  setAgentGuardPrefs,
+  specGenTimeoutPrefs,
+  setSpecGenTimeoutPrefs,
 }: {
   appearance: AppearanceConfig
   setAppearance: React.Dispatch<React.SetStateAction<AppearanceConfig>>
@@ -339,9 +440,22 @@ function AppShell({
   setEditorLanguagePrefs: React.Dispatch<React.SetStateAction<EditorLanguagePrefs>>
   modelRouterPrefs: ModelRouterPrefs
   setModelRouterPrefs: React.Dispatch<React.SetStateAction<ModelRouterPrefs>>
+  agentGuardPrefs: AgentGuardPrefs
+  setAgentGuardPrefs: React.Dispatch<React.SetStateAction<AgentGuardPrefs>>
+  specGenTimeoutPrefs: SpecGenTimeoutPrefs
+  setSpecGenTimeoutPrefs: React.Dispatch<React.SetStateAction<SpecGenTimeoutPrefs>>
 }) {
   const ntfyAlertsPrefsRef = useRef(ntfyAlertsPrefs)
   ntfyAlertsPrefsRef.current = ntfyAlertsPrefs
+  const specGenTimeoutPrefsRef = useRef(specGenTimeoutPrefs)
+  specGenTimeoutPrefsRef.current = specGenTimeoutPrefs
+  const lastSpecGenerateRef = useRef<{
+    todoId: string
+    prompt: string
+    mode: 'generate' | 'refine'
+    section?: SpecLayerSection | 'all'
+    contextPaths?: string[]
+  } | null>(null)
 
   const [activeTab, setActiveTab] = useState<TabId>('chat')
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -376,6 +490,8 @@ function AppShell({
   const [gitRefreshKey, setGitRefreshKey] = useState(0)
   const [specFocusMode, setSpecFocusMode] = useState(() => loadSpecFocusPref())
   const [specGenerating, setSpecGenerating] = useState(false)
+  const [recentSpecJob, setRecentSpecJob] = useState<RecentSpecJob | null>(null)
+  const [lastExportableSessionId, setLastExportableSessionId] = useState<string | null>(null)
   const [specIndexRefreshToken, setSpecIndexRefreshToken] = useState(0)
   const [specAgentEarsLinting, setSpecAgentEarsLinting] = useState(false)
   const [specAgentTracing, setSpecAgentTracing] = useState(false)
@@ -396,9 +512,14 @@ function AppShell({
   const specPendingUserMessageIdsRef = useRef<number[]>([])
   const terminalEndRef = useRef<HTMLDivElement>(null)
   const streamingAssistantId = useRef<number | null>(null)
+  const agentTurnActiveRef = useRef(false)
+  const [agentTurnLive, setAgentTurnLive] = useState(false)
+  const lastToolSnippetRef = useRef('')
+  const [activityToolTick, setActivityToolTick] = useState(0)
   const pendingUserMessageIdsRef = useRef<number[]>([])
   const chatMessageIdSeqRef = useRef(0)
   const todoInjectedIdRef = useRef<string | null>(null)
+  const pendingSendTodoRef = useRef<{ id: string; injectTodoSpec: boolean } | null>(null)
   const recordTurnLinksRef = useRef<(links: string[]) => void | Promise<void>>(async () => {})
   const reloadTodosRef = useRef<() => void | Promise<void>>(async () => {})
   const savedConfigRef = useRef(savedConfig)
@@ -408,6 +529,9 @@ function AppShell({
   const specChatMessagesRef = useRef(specChatMessages)
   specChatMessagesRef.current = specChatMessages
   const ingestSuggestionsRef = useRef<(content: string) => void>(() => {})
+  const filterSuggestedPathsRef = useRef<
+    (paths: string[]) => Promise<string[]>
+  >(async (paths) => paths)
   const suggestedFilesPrefsRef = useRef(suggestedFilesPrefs)
   suggestedFilesPrefsRef.current = suggestedFilesPrefs
   const lastAssistantStreamRef = useRef('')
@@ -422,6 +546,9 @@ function AppShell({
   const turnAssistantMessageIdRef = useRef<number | null>(null)
   /** True once this turn streams at least one assistant token (vs. empty queued follow-up). */
   const turnHadAssistantOutputRef = useRef(false)
+  const pendingAssistantRouteRef = useRef<ModelRouteSnapshot | null>(null)
+  /** Last routed model for the in-flight turn; persists across tool breaks until the next user message. */
+  const activeAssistantRouteRef = useRef<ModelRouteSnapshot | null>(null)
   const [turnTokenUsage, setTurnTokenUsage] = useState<{
     tokensSent: number
     tokensReceived: number
@@ -443,7 +570,14 @@ function AppShell({
     recordCompletedTurn: (
       t: TurnThinkingTiming,
       resources?: import('./ipc/resourceSnapshot').TurnResourceStats,
-      tokens?: { tokensSent: number; tokensReceived: number }
+      tokens?: { tokensSent: number; tokensReceived: number },
+      extras?: {
+        startBd?: number
+        endBd?: number
+        memPressurePeak?: number
+        captureMode?: string
+      },
+      routedModel?: string
     ) => import('./utils/thinkingStats').TurnTimingRecord | null
   }>({
     beginTurn: () => {},
@@ -481,12 +615,18 @@ function AppShell({
   const [trackTurnResources, setTrackTurnResources] = useState(false)
   const [lastUserMessageForRetry, setLastUserMessageForRetry] = useState<string | null>(null)
   const lastUserMessageForRetryRef = useRef<string | null>(null)
-  const [lastModelRoute, setLastModelRoute] = useState<ModelRouteSnapshot | null>(null)
   const lastModelRouteRef = useRef<ModelRouteSnapshot | null>(null)
   const [routerEscalateOffer, setRouterEscalateOffer] = useState<RouterEscalateOffer | null>(null)
   const turnHadToolErrorRef = useRef(false)
-  const isLocalLlmModel = isOllamaVisionModel(savedConfig.model)
-  const modelRouterActive = modelRouterPrefs.enabled && isLocalLlmModel
+  const localLlmRef = useRef<LocalLlmSnapshot | null>(null)
+  const isLocalLlmModel =
+    isOllamaVisionModel(savedConfig.model) ||
+    savedConfig.model.trim().toLowerCase().startsWith('openai/')
+  const modelRouterActive = effectiveRouterEnabled(
+    modelRouterPrefs,
+    savedConfig.model,
+    localLlmRef.current?.modelRouter
+  )
   const [contextUsage, setContextUsage] = useState<SessionContextUsage>(EMPTY_CONTEXT_USAGE)
 
   useEffect(() => {
@@ -501,32 +641,35 @@ function AppShell({
         console.error('Failed to parse stored config', e)
       }
     }
+    const storedProject = loadCurrentProject()
+    if (storedProject) {
+      merged = { ...merged, workingDir: storedProject }
+    }
     const apply = (cfg: VisionConfig) => {
       setConfig(cfg)
       setSavedConfig(cfg)
     }
     if (isTauriRuntime()) {
       Promise.all([
-        invoke<string>('detect_workspace', { hint: merged.workingDir || null }),
-        merged.pythonPath.trim()
-          ? Promise.resolve(merged.pythonPath)
-          : invoke<string>('default_python_path'),
+        invoke<EngineInstallInfo>('engine_install_info'),
         invoke<LocalLlmSnapshot>('read_local_llm_config', {
           localLlmRoot: merged.localLlmRoot.trim() || null,
         }),
       ])
-        .then(([dir, pythonPath, localLlm]) => {
-          let next = {
-            ...merged,
-            workingDir: dir,
-            pythonPath: merged.pythonPath.trim() || pythonPath,
-          }
+        .then(([installInfo, localLlm]) => {
+          localLlmRef.current = localLlm
+          let next = alignConfigWithInstallRoot(
+            {
+              ...merged,
+              pythonPath: merged.pythonPath.trim() || installInfo.default_python_path,
+            },
+            installInfo
+          )
           next = applyLocalLlmToConfig(next, localLlm, true)
           setModelRouterPrefs((prefs) =>
             applyLocalLlmHopperFromEnv(prefs, localLlm, next.model, true)
           )
           if (
-            dir !== merged.workingDir ||
             next.pythonPath !== merged.pythonPath ||
             next.localLlmRoot !== merged.localLlmRoot ||
             next.ollamaApiBase !== merged.ollamaApiBase ||
@@ -563,23 +706,11 @@ function AppShell({
     localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
   }, [])
 
-  const handleChooseProject = useCallback(async () => {
-    if (!isTauriRuntime()) return
-    try {
-      const selected = await invoke<string | null>('pick_workspace_folder')
-      if (!selected) return
-      const next = { ...config, workingDir: selected }
-      setConfig(next)
-      setSavedConfig(next)
-      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
-      setSnackbar({ message: 'Project folder updated', severity: 'info' })
-    } catch (err) {
-      setSnackbar({
-        message: err instanceof Error ? err.message : String(err),
-        severity: 'error',
-      })
-    }
-  }, [config])
+  const openProjectShowPickerRef = useRef<() => void>(() => {})
+
+  const handleChooseProject = useCallback(() => {
+    openProjectShowPickerRef.current()
+  }, [])
 
   const stderrBatcherRef = useRef<StderrBatcher | null>(null)
   const flushStderrRef = useRef<(payload: string) => void>(() => {})
@@ -687,6 +818,14 @@ function AppShell({
     (command: VisionClientCommandId, snapshot: OllamaModelsSnapshot, userLabel: string) => {
       const userId = nextChatMessageId()
       const assistantId = nextChatMessageId()
+      // Build model name → tier map from the hopper for row color-coding
+      const tierMap: Record<string, ModelHopperTier> = {}
+      for (const entry of modelRouterPrefs.models) {
+        if (!entry.model?.trim()) continue
+        // Strip provider prefix to match backend model listings
+        const raw = entry.model.trim().replace(/^ollama_chat\//, '').replace(/^openai\//, '')
+        tierMap[raw] = entry.tier
+      }
       setChatMessages((prev) =>
         capList(
           [
@@ -696,7 +835,7 @@ function AppShell({
               id: assistantId,
               role: 'assistant' as const,
               content: '',
-              ollamaStatus: { command, snapshot },
+              ollamaStatus: { command, snapshot, tierMap },
             },
           ],
           MAX_CHAT_MESSAGES
@@ -712,13 +851,31 @@ function AppShell({
   }, [])
 
   const stallWatchRef = useRef<(type: string, detail?: string) => void>(() => {})
+  const releaseInflightAfterTurnRef = useRef<() => void>(() => {})
 
   const handleCoreEvent = useCallback((ev: CoreEventBase) => {
+    if (!isCoreEvent(ev)) return
     const progressDetail =
       ev.type === 'progress'
         ? String((ev as { message?: string }).message ?? (ev as { label?: string }).label ?? '')
         : undefined
     stallWatchRef.current(ev.type, progressDetail)
+    if (ev.type === 'tool_output' || ev.type === 'tool_error' || ev.type === 'tool_warning') {
+      const snippet = String((ev as { text?: string }).text ?? '').trim()
+      if (snippet) {
+        lastToolSnippetRef.current = snippet.slice(0, 240)
+        setActivityToolTick((n) => n + 1)
+      }
+    }
+    if (ev.type === 'done' || ev.type === 'error') {
+      if (agentTurnActiveRef.current && ev.type === 'done') {
+        agentGuard.endAgentPhase()
+      }
+      agentTurnActiveRef.current = false
+      setAgentTurnLive(false)
+      lastToolSnippetRef.current = ''
+      releaseInflightAfterTurnRef.current()
+    }
     process.ingestCoreEvent(ev)
     if (ev.type === 'done') bumpGitRefresh()
     const orderId = nextChatMessageId()
@@ -727,6 +884,8 @@ function AppShell({
       case 'user_message': {
         streamingAssistantId.current = null
         lastAssistantStreamRef.current = ''
+        pendingAssistantRouteRef.current = null
+        activeAssistantRouteRef.current = null
         if (!turnTimingActiveRef.current) {
           const wall = turnWallStartMsRef.current ?? Date.now()
           if (turnWallStartMsRef.current == null) turnWallStartMsRef.current = wall
@@ -756,28 +915,43 @@ function AppShell({
       case 'token': {
         const chunk = String(ev.text ?? '')
         if (!chunk) break
-        lastAssistantStreamRef.current = appendStreamingToken(
-          lastAssistantStreamRef.current,
-          chunk
-        )
         const specCap = specTurnCaptureRef.current
         const streamRef = specCap ? specStreamingAssistantId : streamingAssistantId
         const setMsgs = specCap ? setSpecChatMessages : setChatMessages
         let sid = streamRef.current
+        const priorStream = lastAssistantStreamRef.current
+        const mergedStream = appendStreamingToken(priorStream, chunk)
+
         if (sid === null) {
+          const initialContent = initialAssistantBubbleChunk(priorStream, chunk)
+          lastAssistantStreamRef.current = mergedStream
+          if (!initialContent && priorStream.length > 0) break
+
           sid = orderId
           streamRef.current = sid
           turnAssistantMessageIdRef.current = sid
           turnHadAssistantOutputRef.current = true
+          const route =
+            pendingAssistantRouteRef.current ?? activeAssistantRouteRef.current
+          if (pendingAssistantRouteRef.current) pendingAssistantRouteRef.current = null
           setMsgs((prev) => {
             const next = capList(
-              [...prev, { id: sid!, role: 'assistant' as const, content: chunk }],
+              [
+                ...prev,
+                {
+                  id: sid!,
+                  role: 'assistant' as const,
+                  content: initialContent,
+                  ...(route ? { modelRoute: route } : {}),
+                },
+              ],
               MAX_CHAT_MESSAGES
             )
-            if (!specCap) thinkingTimingRef.current.syncContent(chunk)
+            if (!specCap) thinkingTimingRef.current.syncContent(initialContent)
             return next
           })
         } else {
+          lastAssistantStreamRef.current = mergedStream
           const captureSid = sid
           turnHadAssistantOutputRef.current = true
           setMsgs((prev) => {
@@ -798,33 +972,44 @@ function AppShell({
       case 'progress':
         break
       case 'model_route': {
+        const tierRaw = String(ev.tier ?? ev.role ?? 'code')
+        const role =
+          tierRaw === 'think'
+            ? 'think'
+            : tierRaw === 'fast'
+              ? 'fast'
+              : 'code'
         const snapshot: ModelRouteSnapshot = {
-          tier: (ev.tier === 'heavy' ? 'heavy' : 'fast') as 'fast' | 'heavy',
+          tier: role,
+          role,
           model: String(ev.model ?? ''),
           estimated_tokens: ev.estimated_tokens as number | undefined,
           reasons: ev.reasons as string[] | undefined,
           escalated: Boolean(ev.escalated),
+          enable_thinking: ev.enable_thinking as boolean | null | undefined,
         }
+        pendingAssistantRouteRef.current = snapshot
+        activeAssistantRouteRef.current = snapshot
         lastModelRouteRef.current = snapshot
-        setLastModelRoute(snapshot)
-        const routeText = formatModelRouteEvent(snapshot)
         const specCapRoute = specTurnCaptureRef.current
-        const setRouteMsgs = specCapRoute ? setSpecChatMessages : setChatMessages
-        setRouteMsgs((prev) =>
-          capList(
-            [
-              ...prev,
-              {
-                id: orderId,
-                role: 'system' as const,
-                content: `Model router: ${routeText}`,
-              },
-            ],
-            MAX_CHAT_MESSAGES
+        const streamRef = specCapRoute ? specStreamingAssistantId : streamingAssistantId
+        const setMsgs = specCapRoute ? setSpecChatMessages : setChatMessages
+        const attachId = streamRef.current ?? turnAssistantMessageIdRef.current
+        if (attachId !== null) {
+          setMsgs((prev) =>
+            capList(
+              prev.map((m) => (m.id === attachId ? { ...m, modelRoute: snapshot } : m)),
+              MAX_CHAT_MESSAGES
+            )
           )
-        )
-        if (modelRouterPrefs.enabled) {
-          void ensureRoutedOllamaModel(savedConfigRef.current, modelRouterPrefs, snapshot).then(
+        }
+        if (modelRouterActive) {
+          void ensureRoutedOllamaModel(
+            savedConfigRef.current,
+            modelRouterPrefs,
+            snapshot,
+            localLlmRef.current?.modelRouter
+          ).then(
             (result) => {
               if (!result) return
               setTerminalLines((prev) => [
@@ -842,7 +1027,15 @@ function AppShell({
                 swapped: result.swapped,
               }
               lastModelRouteRef.current = enriched
-              setLastModelRoute(enriched)
+              activeAssistantRouteRef.current = enriched
+              pendingAssistantRouteRef.current = enriched
+              const aid = turnAssistantMessageIdRef.current
+              if (aid !== null) {
+                const patch = (prev: ChatMessage[]) =>
+                  prev.map((m) => (m.id === aid ? { ...m, modelRoute: enriched } : m))
+                setChatMessages(patch)
+                setSpecChatMessages(patch)
+              }
             }
           )
         }
@@ -871,7 +1064,10 @@ function AppShell({
         }
         if (!text.trim()) break
         if (isRedundantEditToolOutput(text, lastAssistantStreamRef.current)) break
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [
@@ -894,6 +1090,16 @@ function AppShell({
           const sid = sessionInfoIdRef.current
           if (client && sid) hydrateChatFromCoreRef.current(client, sid)
         }
+        // ContextManager added/created files — refresh file count mid-turn
+        if (
+          text.includes('Made editable') ||
+          text.includes('Created and made editable') ||
+          text.includes('directly to editable context')
+        ) {
+          void refreshSessionInfoRef.current().then((info) => {
+            if (info?.files_in_chat) syncSessionFilesRef.current(info.files_in_chat)
+          })
+        }
         break
       }
       case 'tool_error': {
@@ -901,7 +1107,10 @@ function AppShell({
         if (!raw.trim()) break
         turnHadToolErrorRef.current = true
         const text = rewriteAddFileToolMessage(raw, savedConfig.workingDir)
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [...prev, { id: orderId, type: 'tool_result' as const, name: 'error', output: text }],
@@ -915,7 +1124,10 @@ function AppShell({
         if (!raw.trim()) break
         const emptyLlm = isEmptyLlmWarning(raw)
         const text = rewriteEmptyLlmWarningIfNeeded(raw, isLocalLlmModel)
-        streamingAssistantId.current = null
+        if (shouldBreakAssistantStreamForToolEvent(text, lastAssistantStreamRef.current)) {
+          streamingAssistantId.current = null
+          specStreamingAssistantId.current = null
+        }
         setToolEvents((prev) =>
           capList(
             [
@@ -949,9 +1161,11 @@ function AppShell({
           )
         )
         if (c.auto_answered || !c.confirm_id) break
-        if (remainingAutoRef.current > 0) {
+        if (remainingAutoRef.current > 0 || agentTurnActiveRef.current) {
           void submitConfirmRef.current(c.confirm_id, true).then(() => {
-            setRemainingAutoApproves((p) => Math.max(0, p - 1))
+            if (remainingAutoRef.current > 0) {
+              setRemainingAutoApproves((p) => Math.max(0, p - 1))
+            }
           })
         } else {
           setPendingConfirmRef.current(c)
@@ -992,10 +1206,31 @@ function AppShell({
                 hadExplicitAssistantTarget: turnAssistantId != null,
               })
             ) {
+              const capture = ev.turn_capture as CoreTurnCapture | undefined
+              const resources = mergeTurnCaptureWithResourceStats(
+                takeTurnResourcePeakRef.current(),
+                capture
+              )
+              let captureExtras = turnCaptureExtras(capture)
+              if (
+                thinkingTimingPrefs.brightDateMode &&
+                wallStart != null &&
+                captureExtras.startBd == null
+              ) {
+                captureExtras = {
+                  ...captureExtras,
+                  startBd: bdFromUnixMs(wallStart),
+                  endBd: bdFromUnixMs(Date.now()),
+                }
+              }
               const recorded = thinkingTimingRef.current.recordCompletedTurn(
                 turnTiming,
-                takeTurnResourcePeakRef.current(),
-                turnTokenUsageRef.current ?? undefined
+                resources,
+                turnTokenUsageRef.current ??
+                  estimateTokensFromStream(lastAssistantStreamRef.current) ??
+                  undefined,
+                captureExtras,
+                activeAssistantRouteRef.current?.model ?? undefined
               )
               turnTokenUsageRef.current = null
               setTurnTokenUsage(null)
@@ -1057,14 +1292,18 @@ function AppShell({
                   return null
                 })()
               : null)
-          if (attachId === null || !turnTiming) return prev
+          if (attachId === null) return prev
+          const hasApplied = applied.length > 0
+          if (!turnTiming && !hasApplied) return prev
           return capList(
             prev.map((m) => {
               if (m.id !== attachId) return m
               return {
                 ...m,
-                ...(applied.length > 0 ? { appliedFiles: applied } : {}),
-                turnTiming: resolveMessageTurnTiming(m.turnTiming, turnTiming),
+                ...(hasApplied ? { appliedFiles: applied } : {}),
+                ...(turnTiming
+                  ? { turnTiming: resolveMessageTurnTiming(m.turnTiming, turnTiming) }
+                  : {}),
               }
             }),
             MAX_CHAT_MESSAGES
@@ -1084,16 +1323,16 @@ function AppShell({
             },
           ])
         }
-        if (
-          shouldOfferRouterEscalate(lastModelRouteRef.current, {
-            editedFiles: applied,
-            userMessage: lastUserMessageForRetryRef.current,
-            hadToolError: turnHadToolErrorRef.current,
-            escalateOnFailureEnabled: modelRouterPrefs.escalateOnFailure,
-          })
-        ) {
+        const escalate = shouldOfferRouterEscalate(lastModelRouteRef.current, {
+          editedFiles: applied,
+          userMessage: lastUserMessageForRetryRef.current,
+          hadToolError: turnHadToolErrorRef.current,
+          escalateOnFailureEnabled: modelRouterPrefs.escalateOnFailure,
+        })
+        if (escalate.offer) {
           setRouterEscalateOffer({
             message: lastUserMessageForRetryRef.current ?? '',
+            target: escalate.target,
           })
         } else {
           setRouterEscalateOffer(null)
@@ -1147,14 +1386,21 @@ function AppShell({
             setSuggestedAwaitingProceed(awaiting)
             const prefs = suggestedFilesPrefsRef.current
             if (awaiting && prefs.autoAddSuggested) {
-              const paths = filterPathsNotInChat(
-                extractSuggestedFilePaths(assistantText),
-                filesInChatRef.current
+              const raw = filterDesignOutlinePaths(
+                assistantText,
+                extractSuggestedFilePaths(assistantText)
               )
-              if (paths.length) {
-                void runSuggestedAddAndProceedRef.current(paths, {
-                  proceed: prefs.autoProceedAfterAdd,
-                })
+              const candidates = filterPathsNotInChat(raw, filesInChatRef.current)
+              if (candidates.length) {
+                void filterSuggestedPathsRef
+                  .current(candidates)
+                  .then((paths) => {
+                    if (paths.length) {
+                      void runSuggestedAddAndProceedRef.current(paths, {
+                        proceed: prefs.autoProceedAfterAdd,
+                      })
+                    }
+                  })
               }
             }
           } else {
@@ -1211,7 +1457,16 @@ function AppShell({
   filesInChatRef.current = filesInChat
 
   ingestSuggestionsRef.current = (content: string) => {
-    setSuggestedPaths((prev) => mergeSuggestedPaths(prev, content, filesInChatRef.current))
+    const raw = filterDesignOutlinePaths(content, extractSuggestedFilePaths(content))
+    const candidates = filterPathsNotInChat(raw, filesInChatRef.current)
+    if (!candidates.length) return
+    void filterSuggestedPathsRef.current(candidates).then((existing) => {
+      if (existing.length) {
+        setSuggestedPaths((prev) =>
+          mergeSuggestedPathLists(prev, existing, filesInChatRef.current)
+        )
+      }
+    })
   }
 
   useEffect(() => {
@@ -1247,13 +1502,16 @@ function AppShell({
     isStarting,
     isBusy,
     queuedCount,
+    queuedMessages,
     clearQueue,
+    removeQueuedAt,
     sessionInfo,
     httpClient,
     start,
     stop,
     send,
     cancelSend,
+    releaseInflightAfterTurn,
     submitConfirm,
     addFiles,
     uploadFiles,
@@ -1261,9 +1519,15 @@ function AppShell({
     refreshSessionInfo,
     patchSessionFiles,
   } = useVisionSession(wrapHandler(handleCoreEvent), { onOutboundMessage })
+  releaseInflightAfterTurnRef.current = releaseInflightAfterTurn
 
+  const isRunningRef = useRef(isRunning)
+  isRunningRef.current = isRunning
   httpClientRef.current = httpClient
   sessionInfoIdRef.current = sessionInfo?.session_id ?? null
+  useEffect(() => {
+    if (sessionInfo?.session_id) setLastExportableSessionId(sessionInfo.session_id)
+  }, [sessionInfo?.session_id])
   hydrateChatFromCoreRef.current = (client, sessionId) => {
     void client
       .getSessionTranscript(sessionId)
@@ -1352,7 +1616,18 @@ function AppShell({
     [syncSessionFiles, recordAddedContextEstimate, savedConfig.workingDir]
   )
 
-  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model)
+  const agentGuard = useAgentGuard(
+    agentGuardPrefs,
+    thinkingTimingPrefs.brightDateMode,
+    isRunning,
+    isBusy,
+    agentTurnLive
+  )
+
+  const stallWatch = useSessionStallWatch(isBusy, queuedCount, savedConfig.model, {
+    isAgentTurn: agentTurnLive,
+    brightDate: thinkingTimingPrefs.brightDateMode,
+  })
   const resourceOverlay = useResourceOverlay(resourceOverlayPrefs)
   const { resetPeak: resetTurnResourcePeak, takePeak: takeTurnResourcePeak } =
     useTurnResourcePeak(isRunning && trackTurnResources, resourceOverlayPrefs.pollIntervalSec)
@@ -1379,27 +1654,22 @@ function AppShell({
     turnTimingActiveRef.current = true
   }
 
-  const turnEta = useMemo(() => {
-    if (!thinkingTiming.live || !isRunning) return null
-    const liveTps =
-      turnTokenUsage && thinkingTiming.live.responseElapsedMs > 500
-        ? computeOutputTps(turnTokenUsage.tokensReceived, thinkingTiming.live.responseElapsedMs)
-        : null
-    return estimateTurnEta({
-      model: savedConfig.model,
-      promptChars: lastUserPromptCharsRef.current,
-      elapsedMs: thinkingTiming.live.responseElapsedMs,
-      statsStore: thinkingTiming.statsStore,
-      progressFraction: process.snapshot.progress,
-      liveOutputTps: liveTps,
+  const activityPresentation = useMemo(() => {
+    void activityToolTick
+    if (!process.snapshot.active) return null
+    return buildActivityPresentation({
+      processLabel: process.snapshot.label,
+      processDetail: process.snapshot.detail,
+      isAgentTurn: agentTurnLive,
+      lastToolSnippet: lastToolSnippetRef.current,
+      brightDate: thinkingTimingPrefs.brightDateMode,
     })
   }, [
-    thinkingTiming.live,
-    thinkingTiming.statsStore,
-    savedConfig.model,
-    process.snapshot.progress,
-    turnTokenUsage,
-    isRunning,
+    process.snapshot.active,
+    process.snapshot.label,
+    process.snapshot.detail,
+    activityToolTick,
+    thinkingTimingPrefs.brightDateMode,
   ])
 
   const handleCancelSend = useCallback(() => {
@@ -1416,10 +1686,17 @@ function AppShell({
     isRunning,
     isStarting
   )
+  const restartInFlight = isSessionRestartInFlight(process.snapshot, isStarting)
 
   const todoApiClient = useMemo(
-    () => new CoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
+    () => createCoreHttpClient(savedConfig.coreApiUrl, savedConfig.coreApiToken || undefined),
     [savedConfig.coreApiUrl, savedConfig.coreApiToken]
+  )
+
+  const cecliWorkspace = useCecliWorkspace(
+    savedConfig.workingDir,
+    savedConfig.coreApiUrl,
+    savedConfig.coreApiToken
   )
 
   const appVersions = useAppVersions(httpClient ?? todoApiClient, {
@@ -1429,15 +1706,36 @@ function AppShell({
     },
     refreshDeps: [isRunning, httpClient, activeTab === 'settings', aboutOpen],
   })
+  const appUpdate = useAppUpdateCheck(appVersions.app, { recheck: aboutOpen })
+  const updateRelease = appUpdate.updateAvailable ? appUpdate.release : null
 
   const workspaceTodosApi = useMemo(
     () => ({
       client: httpClient ?? todoApiClient,
       workspace: savedConfig.workingDir,
       sessionId: sessionInfo?.session_id ?? null,
+      sessionWorkspace: sessionInfo?.workspace ?? null,
     }),
-    [httpClient, todoApiClient, savedConfig.workingDir, sessionInfo?.session_id]
+    [
+      httpClient,
+      todoApiClient,
+      savedConfig.workingDir,
+      sessionInfo?.session_id,
+      sessionInfo?.workspace,
+    ]
   )
+
+  filterSuggestedPathsRef.current = async (paths: string[]) => {
+    const client = workspaceTodosApi.client
+    const workspace = workspaceTodosApi.workspace
+    if (!client || !paths.length) return paths
+    try {
+      const { existing } = await client.filterWorkspacePaths(workspace, paths)
+      return existing
+    } catch {
+      return paths
+    }
+  }
 
   const { paths: pathSuggestions, active: pathAssistActive } = usePathCompletion(
     savedConfig.workingDir,
@@ -1488,6 +1786,59 @@ function AppShell({
       void specLayersSavedRef.current(id, layers)
     },
   })
+
+  const visionSessionReady = isRunning && Boolean(sessionInfo?.session_id)
+  const sessionWorkspaceMismatch =
+    lifecycleActive &&
+    Boolean(sessionInfo?.workspace) &&
+    !workspacePathsEqual(sessionInfo!.workspace, savedConfig.workingDir)
+
+  useEffect(() => {
+    if (isRunning || !specGenerating) return
+    specGenerateAbortRef.current?.abort()
+    setSnackbar({
+      message:
+        'Session ended while spec generation was running — use the header chip to export debug',
+      severity: 'warning',
+    })
+  }, [isRunning, specGenerating])
+
+  const turnEta = useMemo(() => {
+    if (!thinkingTiming.live || !isRunning) return null
+    const liveTps =
+      turnTokenUsage && thinkingTiming.live.responseElapsedMs > 500
+        ? computeOutputTps(turnTokenUsage.tokensReceived, thinkingTiming.live.responseElapsedMs)
+        : null
+    const turn = estimateTurnEta({
+      model: savedConfig.model,
+      promptChars: lastUserPromptCharsRef.current,
+      elapsedMs: thinkingTiming.live.responseElapsedMs,
+      statsStore: thinkingTiming.statsStore,
+      progressFraction: process.snapshot.progress,
+      liveOutputTps: liveTps,
+      brightDate: thinkingTimingPrefs.brightDateMode,
+    })
+    const plan =
+      agentTurnLive && activeTodo?.tasks_md?.trim()
+        ? estimateAgentPlanEta({
+            tasksMd: activeTodo.tasks_md,
+            model: savedConfig.model,
+            statsStore: thinkingTiming.statsStore,
+            brightDate: thinkingTimingPrefs.brightDateMode,
+          })
+        : null
+    return mergeTurnAndPlanEta(turn, plan, thinkingTimingPrefs.brightDateMode)
+  }, [
+    thinkingTiming.live,
+    thinkingTiming.statsStore,
+    savedConfig.model,
+    process.snapshot.progress,
+    turnTokenUsage,
+    isRunning,
+    thinkingTimingPrefs.brightDateMode,
+    agentTurnLive,
+    activeTodo?.tasks_md,
+  ])
 
   const applySpecTraceResult = useCallback((result: TraceabilityResult, opts?: { afterSave?: boolean }) => {
     setSpecTraceHint(buildSpecTraceHint(result))
@@ -1645,6 +1996,7 @@ function AppShell({
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
     saveAppearance(appearance)
     saveThinkingTimingPrefs(thinkingTimingPrefs)
+    saveAgentGuardPrefs(agentGuardPrefs)
     saveResourceOverlayPrefs(resourceOverlayPrefs)
     saveNtfyAlertsPrefs(ntfyAlertsPrefs)
     saveEditorLanguagePrefs(editorLanguagePrefs)
@@ -1751,7 +2103,7 @@ function AppShell({
         detail: modelTag,
         progress: 0.22,
       })
-      if (modelRouterPrefs.enabled) {
+      if (modelRouterActive) {
         process.apply({
           phase: 'booting_api',
           label: 'Router models',
@@ -1760,7 +2112,8 @@ function AppShell({
         })
         const hopperLogs = await prepareModelRouterForSessionStart(
           savedConfig,
-          modelRouterPrefs
+          modelRouterPrefs,
+          localLlmRef.current?.modelRouter
         )
         if (hopperLogs.length) {
           appendTerminalLog(hopperLogs.map((l) => `[router] ${l}`))
@@ -1787,7 +2140,16 @@ function AppShell({
     }
     try {
       await ensureLocalLlm()
-      const routerPayload = modelRouterApiPayload(modelRouterPrefs, savedConfig.model)
+      const snap = localLlmRef.current
+      const routerPrefsForStart = snap
+        ? applyLocalLlmHopperFromEnv(modelRouterPrefs, snap, savedConfig.model, true)
+        : modelRouterPrefs
+      const routerPayload = modelRouterApiPayload(
+        routerPrefsForStart,
+        savedConfig.model,
+        snap?.modelRouter,
+        snap ?? undefined
+      )
       const { info, workingDir, transcript = [] } = await start(savedConfig, {
         modelRouter: routerPayload as ModelRouterApiConfig | undefined,
       })
@@ -1851,6 +2213,27 @@ function AppShell({
     }
   }
 
+  const applyProject = useCallback((path: string) => {
+    let base = savedConfigRef.current
+    const stored = readStorageItem(CONFIG_STORAGE_KEY)
+    if (stored) {
+      try {
+        base = migrateConfig({
+          ...DEFAULT_CONFIG,
+          ...(JSON.parse(stored) as Partial<VisionConfig>),
+        })
+      } catch {
+        /* keep ref snapshot */
+      }
+    }
+    const next = { ...base, workingDir: path }
+    setConfig(next)
+    setSavedConfig(next)
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next))
+    localStorage.setItem(WELCOME_DISMISSED_KEY, '1')
+    setShowWelcome(false)
+  }, [])
+
   const handleStop = async () => {
     try {
       await stop()
@@ -1882,6 +2265,29 @@ function AppShell({
       })
     }
   }
+
+  const handleStopRef = useRef<() => Promise<void>>(async () => {})
+  handleStopRef.current = handleStop
+
+  const {
+    gateOpen: projectGateOpen,
+    selectedPath: projectSelectedPath,
+    setSelectedPath: setProjectSelectedPath,
+    recents: projectRecents,
+    suggestedPath: projectSuggestedPath,
+    opening: projectOpening,
+    commitOpen: commitOpenProject,
+    pickFolder: pickProjectFolder,
+    showProjectPicker,
+    currentProject,
+  } = useOpenProject({
+    fallbackPath: savedConfig.workingDir,
+    onProjectOpened: applyProject,
+    isSessionActive: lifecycleActive,
+    stopSession: () => handleStopRef.current(),
+  })
+
+  openProjectShowPickerRef.current = showProjectPicker
 
   const handleNativeAttachImages = useCallback(async () => {
     if (!isRunning) return
@@ -1949,16 +2355,19 @@ function AppShell({
   }, [isRunning, terminalLines])
 
   const handleExportSessionDebug = useCallback(async () => {
-    const sid = sessionInfo?.session_id
+    const sid = sessionInfo?.session_id ?? lastExportableSessionId
     const client = httpClient ?? todoApiClient
     if (!sid) {
-      setSnackbar({ message: 'Start a session before exporting debug data', severity: 'info' })
+      setSnackbar({ message: 'No session to export — start a session first', severity: 'info' })
       return
     }
     try {
       await downloadSessionDebugBundle(client, sid)
       setSnackbar({
-        message: 'Session debug bundle downloaded (share when reporting tool-call issues)',
+        message:
+          sessionInfo?.session_id === sid
+            ? 'Session debug bundle downloaded (share when reporting tool-call issues)'
+            : 'Last session debug bundle downloaded (session may have ended)',
         severity: 'info',
       })
     } catch (err) {
@@ -1967,7 +2376,45 @@ function AppShell({
         severity: 'error',
       })
     }
-  }, [sessionInfo?.session_id, httpClient, todoApiClient])
+  }, [sessionInfo?.session_id, lastExportableSessionId, httpClient, todoApiClient])
+
+  const handleCopySpecJobId = useCallback(() => {
+    const jobId = recentSpecJob?.id
+    if (!jobId) return
+    void navigator.clipboard.writeText(jobId).then(
+      () =>
+        setSnackbar({
+          message: `Copied spec job ID ${jobId.slice(0, 8)}…`,
+          severity: 'info',
+        }),
+      () => setSnackbar({ message: 'Could not copy job ID', severity: 'warning' })
+    )
+  }, [recentSpecJob?.id])
+
+  const handleExportSpecJobDebug = useCallback(async () => {
+    const client = httpClient ?? todoApiClient
+    const jobId = recentSpecJob?.id
+    if (!jobId) {
+      setSnackbar({ message: 'No spec job to export yet', severity: 'info' })
+      return
+    }
+    try {
+      await downloadSpecJobDebugBundle(client, jobId)
+      setSnackbar({
+        message: 'Spec job debug bundle downloaded (use when reporting stalled generation)',
+        severity: 'info',
+      })
+    } catch (err) {
+      setSnackbar({
+        message: err instanceof Error ? err.message : String(err),
+        severity: 'error',
+      })
+    }
+  }, [recentSpecJob?.id, httpClient, todoApiClient])
+
+  const handleDismissRecentSpecJob = useCallback(() => {
+    setRecentSpecJob(null)
+  }, [])
 
   const handleAttachContextDirectory = useCallback(async () => {
     if (!isRunning || !isTauriRuntime()) return
@@ -2071,25 +2518,50 @@ function AppShell({
     setLastUserMessageForRetry(trimmed)
   }, [])
 
+  const resolveSendTodoOptionsForSend = useCallback(() => {
+    const pending = pendingSendTodoRef.current
+    if (pending) pendingSendTodoRef.current = null
+    return resolveSendTodoMessageOptions(
+      pending
+        ? { activeTodoId: pending.id, injectTodoSpec: pending.injectTodoSpec }
+        : null,
+      activeTodo,
+      todoInjectedIdRef.current
+    )
+  }, [activeTodo])
+
   const deliverUserMessage = useCallback(
     async (
       text: string,
       todoOptions?: { activeTodoId: string; injectTodoSpec: boolean },
       sendExtras?: SendMessageOptions
     ) => {
+      if (agentGuard.shouldBlockSend) {
+        setSnackbar({ message: agentGuard.blockMessage, severity: 'warning' })
+        return { queued: false }
+      }
       lastUserPromptCharsRef.current = text.length
       lastAssistantStreamRef.current = ''
+      const isAgentCmd = /^\/agent\b/i.test(text.trim())
+      agentTurnActiveRef.current = isAgentCmd
+      setAgentTurnLive(isAgentCmd)
+      if (isAgentCmd) agentGuard.beginAgentPhase()
+      lastToolSnippetRef.current = ''
+      setActivityToolTick((n) => n + 1)
       setRouterEscalateOffer(null)
       stallWatch.touchEvent('user_send')
       let merged: SendMessageOptions | undefined = todoOptions
         ? { activeTodoId: todoOptions.activeTodoId, injectTodoSpec: todoOptions.injectTodoSpec }
         : undefined
-      if (specFocusMode && activeTodo) {
-        merged = {
-          ...merged,
-          specFocus: true,
-          activeTodoId: merged?.activeTodoId ?? activeTodo.id,
-          injectTodoSpec: Boolean(merged?.injectTodoSpec ?? todoOptions?.injectTodoSpec),
+      if (specFocusMode) {
+        const focusId = merged?.activeTodoId ?? activeTodo?.id
+        if (focusId) {
+          merged = {
+            ...merged,
+            specFocus: true,
+            activeTodoId: focusId,
+            injectTodoSpec: Boolean(merged?.injectTodoSpec),
+          }
         }
       }
       const result = await send(text, { ...merged, ...sendExtras })
@@ -2105,8 +2577,17 @@ function AppShell({
       }
       return result
     },
-    [send, stallWatch, specFocusMode, activeTodo]
+    [send, stallWatch, specFocusMode, activeTodo, agentGuard]
   )
+
+  useEffect(() => {
+    if (!agentGuard.shouldInterrupt) return
+    handleCancelSend()
+    setSnackbar({
+      message: agentGuard.blockMessage || 'Agent limit reached — turn stopped.',
+      severity: 'warning',
+    })
+  }, [agentGuard.shouldInterrupt, agentGuard.blockMessage, handleCancelSend])
 
   const handleEscalateRouter = useCallback(async () => {
     const text = routerEscalateOffer?.message?.trim() || lastUserMessageForRetryRef.current?.trim()
@@ -2118,7 +2599,13 @@ function AppShell({
       : undefined
     try {
       await deliverUserMessage(text, todoOptions, { escalateFromLast: true })
-      setSnackbar({ message: 'Escalating to heavy model…', severity: 'info' })
+      setSnackbar({
+        message:
+          routerEscalateOffer?.target === 'think'
+            ? 'Escalating to think model…'
+            : 'Escalating to code model…',
+        severity: 'info',
+      })
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return
       setSnackbar({
@@ -2129,7 +2616,7 @@ function AppShell({
   }, [routerEscalateOffer, isRunning, activeTodo, deliverUserMessage])
 
   const handleForceRouterTier = useCallback(
-    async (tier: 'fast' | 'heavy') => {
+    async (tier: 'fast' | 'code' | 'think') => {
       const text = inputValue.trim() || lastUserMessageForRetryRef.current?.trim()
       if (!text || !isRunning) {
         setSnackbar({
@@ -2296,9 +2783,39 @@ function AppShell({
         checklist: todo.checklist,
       })
       todoInjectedIdRef.current = null
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: true }
       setActiveTab('chat')
       setInputValue(buildStartWorkMessage(todo, todoStore?.todos ?? []))
-      setSnackbar({ message: `Active task: ${todo.title}`, severity: 'info' })
+      setSnackbar({
+        message: `Active task: ${todo.title}`,
+        severity: 'info',
+      })
+    },
+    [setActiveTodo, updateTodo, todoStore?.todos]
+  )
+
+  const handleResumeWork = useCallback(
+    async (todo: TodoItem) => {
+      await setActiveTodo(todo.id)
+      await updateTodo(todo.id, {
+        title: todo.title,
+        spec: todo.spec,
+        requirements: todo.requirements,
+        design: todo.design,
+        tasks_md: todo.tasks_md,
+        depends_on: todo.depends_on,
+        branch: todo.branch,
+        pr_url: todo.pr_url,
+        checklist: todo.checklist,
+      })
+      todoInjectedIdRef.current = todo.id
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: false }
+      setActiveTab('chat')
+      setInputValue(buildResumeWorkMessage(todo, todoStore?.todos ?? []))
+      setSnackbar({
+        message: `Resuming: ${todo.title}`,
+        severity: 'info',
+      })
     },
     [setActiveTodo, updateTodo, todoStore?.todos]
   )
@@ -2317,10 +2834,24 @@ function AppShell({
         return
       }
       const section = options?.section ?? 'all'
+      lastSpecGenerateRef.current = {
+        todoId,
+        prompt,
+        mode,
+        section,
+        contextPaths: options?.contextPaths,
+      }
       specGenerateAbortRef.current?.abort()
       const ac = new AbortController()
       specGenerateAbortRef.current = ac
       setSpecGenerating(true)
+      setRecentSpecJob({
+        id: '',
+        outcome: 'running',
+        prompt,
+        mode,
+        section: section === 'all' ? null : section,
+      })
       setSpecJobMode(mode)
       setSpecJobSection(section === 'all' ? null : section)
       setSpecJobPrompt(prompt)
@@ -2347,6 +2878,7 @@ function AppShell({
         })
       }
       try {
+        const timeouts = specGenTimeoutPrefsRef.current
         const gen = await client.generateWorkspaceTodoSpec(
           savedConfig.workingDir,
           sid,
@@ -2359,10 +2891,28 @@ function AppShell({
             apply: true,
             enforce_ears: true,
             background: true,
+            wall_timeout_s: timeouts.wallTimeoutS,
+            turn_timeout_s: timeouts.turnTimeoutS,
           },
-          ac.signal
+          ac.signal,
+          {
+            onJobStarted: (jobId) =>
+              setRecentSpecJob((prev) =>
+                prev
+                  ? { ...prev, id: jobId, outcome: 'running' }
+                  : {
+                      id: jobId,
+                      outcome: 'running',
+                      prompt,
+                      mode,
+                      section: section === 'all' ? null : section,
+                    }
+              ),
+          }
         )
         await reloadTodos()
+        const finishOutcome: SpecJobOutcome = gen.ears_blocked ? 'ears_blocked' : 'saved'
+        setRecentSpecJob((prev) => (prev ? { ...prev, outcome: finishOutcome } : prev))
         if (gen.ears_blocked) {
           notifySpecJob('ears_blocked')
           setSnackbar({
@@ -2389,10 +2939,24 @@ function AppShell({
           })
         }
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return
+        if (err instanceof DOMException && err.name === 'AbortError') {
+        setRecentSpecJob((prev) =>
+          prev?.id
+            ? { ...prev, outcome: isRunningRef.current ? 'aborted' : 'session_lost' }
+            : prev
+        )
+          return
+        }
+        const errMsg = err instanceof Error ? err.message : String(err)
+        const timedOut = isSpecJobTimeoutError(errMsg)
+        setRecentSpecJob((prev) =>
+          prev ? { ...prev, outcome: timedOut ? 'timeout' : 'error' } : prev
+        )
         notifySpecJob('error')
         setSnackbar({
-          message: err instanceof Error ? err.message : String(err),
+          message: timedOut
+            ? specJobTimeoutHint(specGenTimeoutPrefsRef.current.wallTimeoutS)
+            : errMsg,
           severity: 'error',
         })
         throw err
@@ -2408,6 +2972,25 @@ function AppShell({
     },
     [sessionInfo?.session_id, httpClient, todoApiClient, isRunning, savedConfig.workingDir, reloadTodos, todoStore?.todos]
   )
+
+  const handleExtendSpecTimeoutsAndRetry = useCallback(() => {
+    const extended = extendedSpecGenTimeoutPrefs()
+    setSpecGenTimeoutPrefs(extended)
+    saveSpecGenTimeoutPrefs(extended)
+    specGenTimeoutPrefsRef.current = extended
+    const last = lastSpecGenerateRef.current
+    if (!last) {
+      setSnackbar({
+        message: 'Extended timeouts saved — run Generate again from Tasks',
+        severity: 'info',
+      })
+      return
+    }
+    void handleGenerateSpec(last.todoId, last.prompt, last.mode, {
+      section: last.section,
+      contextPaths: last.contextPaths,
+    })
+  }, [handleGenerateSpec, setSpecGenTimeoutPrefs])
 
   const handleRefineWithTraceHint = useCallback(() => {
     if (!activeTodo) return
@@ -2508,6 +3091,7 @@ function AppShell({
         checklist: todo.checklist,
       })
       todoInjectedIdRef.current = null
+      pendingSendTodoRef.current = { id: todo.id, injectTodoSpec: true }
       setActiveTab('chat')
       setInputValue(buildImplementStepMessage(step, todo))
       setSnackbar({
@@ -2524,9 +3108,48 @@ function AppShell({
     const clientCmd = parseVisionClientCommand(text)
     if (clientCmd) {
       setInputValue('')
+      if (clientCmd.id === 'pause') {
+        agentGuard.pause(true)
+        setSnackbar({
+          message: isBusy
+            ? 'Agent will pause after the current step — /resume to continue.'
+            : 'Agent paused — /resume to continue.',
+          severity: 'info',
+        })
+        return
+      }
+      if (clientCmd.id === 'resume') {
+        agentGuard.resume()
+        setSnackbar({ message: 'Agent resumed.', severity: 'info' })
+        return
+      }
+      if (clientCmd.id === 'turns') {
+        thinkingTiming.refreshStats()
+        appendTurnsTableToChat((msg) => {
+          const id = nextChatMessageId()
+          setChatMessages((prev) =>
+            capList(
+              [
+                ...prev,
+                {
+                  id,
+                  role: 'assistant' as const,
+                  content: msg.content,
+                  turnsTable: msg.turnsTable,
+                },
+              ],
+              MAX_CHAT_MESSAGES
+            )
+          )
+        }, { filterModel: null })
+        return
+      }
       try {
-        const snapshot = await fetchOllamaModelsSnapshot(savedConfig)
-        appendOllamaStatusToChat(clientCmd.id, snapshot, text)
+        const snapshot = await fetchOllamaModelsSnapshot(
+          savedConfig,
+          localLlmRef.current?.backend
+        )
+        appendOllamaStatusToChat(clientCmd.id as Exclude<VisionClientCommandId, 'turns'>, snapshot, text)
       } catch (err) {
         setSnackbar({
           message: err instanceof Error ? err.message : String(err),
@@ -2538,17 +3161,24 @@ function AppShell({
 
     setInputValue('')
     rememberUserMessageForRetry(text)
-    const injectSpec = Boolean(activeTodo && todoInjectedIdRef.current !== activeTodo.id)
-    const todoOptions = activeTodo
-      ? { activeTodoId: activeTodo.id, injectTodoSpec: injectSpec }
-      : undefined
+    const todoOptions = resolveSendTodoOptionsForSend()
     try {
       const result = await deliverUserMessage(text, todoOptions)
-      if (injectSpec && activeTodo) todoInjectedIdRef.current = activeTodo.id
+      if (todoOptions?.injectTodoSpec) {
+        todoInjectedIdRef.current = todoOptions.activeTodoId
+      }
       if (!result.queued) {
         void reloadTodos()
       }
     } catch (err) {
+      const hadTurnActivity = turnHadStartedBeforeSendError({
+        hadAssistantOutput: turnHadAssistantOutputRef.current,
+        wallStartMs: turnWallStartMsRef.current,
+      })
+      if (agentTurnActiveRef.current) {
+        agentTurnActiveRef.current = false
+        setAgentTurnLive(false)
+      }
       turnWallStartMsRef.current = null
       turnAssistantMessageIdRef.current = null
       turnHadAssistantOutputRef.current = false
@@ -2559,15 +3189,15 @@ function AppShell({
         setStatusMessage('Stopped')
         return
       }
-      removeLastPendingUserMessage()
-      setInputValue(text)
+      if (!hadTurnActivity) {
+        removeLastPendingUserMessage()
+        setInputValue(text)
+      }
       setSnackbar({
         message:
           err instanceof SseIdleTimeoutError
             ? err.message
-            : err instanceof Error
-              ? err.message
-              : String(err),
+            : formatVisionStreamTransportError(err),
         severity: 'error',
       })
     }
@@ -2598,10 +3228,13 @@ function AppShell({
   const handleClearChatHistory = useCallback(async () => {
     if (chatMessages.length === 0 && toolEvents.length === 0) return
     const syncCore = isRunning
+    const busyNote = syncCore && isBusy
+      ? 'The current turn is still running — /clear will queue after it finishes (use Stop first to abort the agent).\n\n'
+      : ''
     if (
       !window.confirm(
         syncCore
-          ? 'Clear all messages and tool output from this view, and send /clear so the agent forgets prior turns?\n\nFiles stay in context (/drop to remove). File edits are not undone.'
+          ? `${busyNote}Clear all messages and tool output from this view, and send /clear so the agent forgets prior turns?\n\nFiles stay in context (/drop to remove). File edits are not undone.`
           : 'Clear all messages and tool output from this view? File edits are not undone.'
       )
     ) {
@@ -2637,7 +3270,7 @@ function AppShell({
       // /clear SSE may append tool_output; keep the clear control disabled.
       setToolEvents([])
     }
-  }, [chatMessages.length, toolEvents.length, isRunning, send])
+  }, [chatMessages.length, toolEvents.length, isRunning, isBusy, send])
 
   const handleUndo = async () => {
     try {
@@ -2697,35 +3330,54 @@ function AppShell({
           variant="outlined"
         />
       )}
-      {specGenerating && (
+      {agentGuard.snapshot.turnsChip && (
         <Chip
-          label="Spec job running"
+          label={agentGuard.snapshot.turnsChip}
+          size="small"
+          color="secondary"
+          variant="outlined"
+          data-testid="agent-turns-chip"
+        />
+      )}
+      {agentGuard.snapshot.pauseState === 'paused' && (
+        <Chip label="Agent paused" size="small" color="warning" variant="filled" />
+      )}
+      {agentGuard.snapshot.pauseState === 'pause_after_turn' && isBusy && (
+        <Chip label="Pausing after step…" size="small" color="warning" variant="outlined" />
+      )}
+      {recentSpecJob?.id ? (
+        <SpecJobStatusChip
+          job={{
+            ...recentSpecJob,
+            outcome: specGenerating ? 'running' : recentSpecJob.outcome,
+          }}
+          onCancel={specGenerating ? () => specGenerateAbortRef.current?.abort() : undefined}
+          onCopyJobId={handleCopySpecJobId}
+          onExportDebug={() => void handleExportSpecJobDebug()}
+          onDismiss={specGenerating ? undefined : handleDismissRecentSpecJob}
+        />
+      ) : specGenerating ? (
+        <Chip
+          label="Spec job starting…"
           size="small"
           color="info"
           variant="outlined"
           data-testid="spec-generating-chip"
           onDelete={() => specGenerateAbortRef.current?.abort()}
         />
-      )}
+      ) : null}
       {queuedCount > 0 && (
-        <>
-          <Chip label={`${queuedCount} queued`} size="small" color="info" variant="outlined" />
-          <Button
-            size="small"
-            variant="text"
-            color="inherit"
-            data-testid="clear-message-queue"
-            onClick={() => {
-              clearQueue()
-              setSnackbar({
-                message: 'Cleared queued messages — current turn still runs until Stop or done',
-                severity: 'info',
-              })
-            }}
-          >
-            Clear queue
-          </Button>
-        </>
+        <MessageQueueChip
+          messages={queuedMessages}
+          onRemoveAt={removeQueuedAt}
+          onClearAll={() => {
+            clearQueue()
+            setSnackbar({
+              message: 'Cleared queued messages — current turn still runs until Stop or done',
+              severity: 'info',
+            })
+          }}
+        />
       )}
       {activeTodo && (
         <Chip
@@ -2739,6 +3391,20 @@ function AppShell({
       )}
     </Stack>
   )
+
+  if (projectGateOpen) {
+    return (
+      <OpenProjectScreen
+        selectedPath={projectSelectedPath}
+        onSelectedPathChange={setProjectSelectedPath}
+        recents={projectRecents}
+        suggestedPath={projectSuggestedPath}
+        opening={projectOpening}
+        onPickFolder={() => void pickProjectFolder()}
+        onOpen={(path) => void commitOpenProject(path)}
+      />
+    )
+  }
 
   return (
     <>
@@ -2765,7 +3431,19 @@ function AppShell({
         }
         liveTiming={thinkingTiming.live}
         turnEta={turnEta}
+        formatDuration={thinkingTiming.formatDuration}
+        activityPresentation={activityPresentation}
+        agentPhaseMs={agentTurnLive ? agentGuard.snapshot.agentPhaseMs : null}
         headerExtra={headerExtra}
+        projectBar={
+          currentProject ? (
+            <ProjectBar
+              projectPath={currentProject}
+              onOpenProject={showProjectPicker}
+              workspaceBadge={cecliWorkspace.multiRepoLabel}
+            />
+          ) : undefined
+        }
         connectionTone={connectionTone}
         onLogoClick={() => setAboutOpen(true)}
         railFooter={
@@ -2778,6 +3456,13 @@ function AppShell({
           ) : undefined
         }
       >
+          {appUpdate.updateAvailable && appVersions.app && appUpdate.release ? (
+            <UpdateAvailableCard
+              currentVersion={appVersions.app}
+              release={appUpdate.release}
+              onDismiss={appUpdate.dismiss}
+            />
+          ) : null}
           {activeTab === 'chat' && (
             <>
             {!isRunning && showWelcome && (
@@ -2802,7 +3487,7 @@ function AppShell({
                       activeModel: sessionInfo.model,
                       settingsModel: savedConfig.model,
                       onRestart: () => void handleRestartSession(),
-                      restarting: lifecycleActive,
+                      restarting: restartInFlight,
                     }
                   : undefined
               }
@@ -2828,7 +3513,7 @@ function AppShell({
               inputValue={inputValue}
               isRunning={isRunning}
               isBusy={isBusy}
-              queuedCount={queuedCount}
+              activityActive={process.snapshot.active}
               pendingConfirm={pendingConfirm}
               pathSuggestions={pathSuggestions}
               pathAssistActive={pathAssistActive}
@@ -2838,6 +3523,7 @@ function AppShell({
               onSend={handleSend}
               onCancelSend={handleCancelSend}
               thinkingTimingPrefs={thinkingTimingPrefs}
+              thinkingStatsStore={thinkingTiming.statsStore}
               turnActivityHint={stallWatch.hint}
               turnStalled={stallWatch.stalled}
               onConfirmAnswer={handleConfirmAnswer}
@@ -2875,7 +3561,6 @@ function AppShell({
                 isTauriRuntime() ? (id, seg) => handleApplyProposedEdit(id, seg) : undefined
               }
               modelRouterEnabled={modelRouterActive}
-              lastModelRoute={lastModelRoute}
               routerEscalateOffer={routerEscalateOffer}
               onEscalateRouter={() => void handleEscalateRouter()}
               onForceRouterTier={(tier) => void handleForceRouterTier(tier)}
@@ -2893,14 +3578,18 @@ function AppShell({
               inputValue={specInputValue}
               isRunning={isRunning}
               isBusy={isBusy}
-              sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
+              sessionReady={visionSessionReady}
+              sessionBusy={isBusy}
+              workspaceMismatch={sessionWorkspaceMismatch}
               activeTodo={activeTodo}
               sessionMode={savedConfig.sessionMode}
               liveSessionMode={liveSessionMode}
               sessionRunning={isRunning}
               onSessionModeChange={handleSessionModeChange}
               specGenerating={specGenerating}
+              recentSpecJob={recentSpecJob}
               specJobPrompt={specJobPrompt}
+              onExportSpecJobDebug={() => void handleExportSpecJobDebug()}
               earsLinting={specAgentEarsLinting}
               specTracing={specAgentTracing}
               chatEndRef={specChatEndRef}
@@ -2924,10 +3613,15 @@ function AppShell({
               onAttachFolderPath={
                 !isTauriRuntime() ? (path) => void handleAttachFolderPath(path) : undefined
               }
+              projectPath={savedConfig.workingDir}
+              steeringClient={workspaceTodosApi.client}
+              steeringHttpReady={todosHttpReady}
+              onSteeringNotify={(message, severity) => setSnackbar({ message, severity })}
               onGenerateSpec={
                 activeTodo && isRunning
-                  ? (prompt) =>
+                  ? (prompt, section = 'requirements') =>
                       void handleGenerateSpec(activeTodo.id, prompt, 'generate', {
+                        section,
                         contextPaths: sessionFiles,
                       })
                   : undefined
@@ -3084,14 +3778,24 @@ function AppShell({
               onSetActive={(id) => void setActiveTodo(id)}
               onMarkDone={(id) => void markDone(id)}
               onStartWork={(todo) => void handleStartWork(todo)}
+              onResumeWork={(todo) => void handleResumeWork(todo)}
               onImplementStep={(todo, step) => void handleImplementStep(todo, step)}
               httpReady={todosHttpReady}
               tauriLocal={todosTauriLocal}
               currentBranch={gitStatus?.branch ?? null}
-              sessionReady={isRunning && Boolean(sessionInfo?.session_id) && todosHttpReady}
+              sessionReady={visionSessionReady}
               sessionBusy={isBusy}
               specGenerating={specGenerating}
+              recentSpecJob={recentSpecJob}
+              onExportSpecJobDebug={() => void handleExportSpecJobDebug()}
+              onDismissRecentSpecJob={handleDismissRecentSpecJob}
+              onExtendSpecTimeoutsAndRetry={() => void handleExtendSpecTimeoutsAndRetry()}
+              specGenTimeoutPrefs={specGenTimeoutPrefs}
               specIndexRefreshToken={specIndexRefreshToken}
+              projectPath={savedConfig.workingDir}
+              sessionWorkspaceMismatch={sessionWorkspaceMismatch}
+              steeringClient={workspaceTodosApi.client}
+              onSteeringNotify={(message, severity) => setSnackbar({ message, severity })}
               onGenerateSpec={(id, prompt, mode, opts) => handleGenerateSpec(id, prompt, mode, opts)}
               contextPaths={sessionFiles}
               contextUsage={contextUsage}
@@ -3170,7 +3874,7 @@ function AppShell({
                 <Button
                   variant="contained"
                   color="success"
-                  startIcon={<PlayArrowIcon />}
+                  startIcon={<ChipCpuStartIcon />}
                   data-testid="terminal-start"
                   onClick={() => void handleStart()}
                   disabled={lifecycleActive}
@@ -3278,23 +3982,44 @@ function AppShell({
                 onEditorLanguagePrefsChange={handleEditorLanguagePrefsChange}
                 modelRouterPrefs={modelRouterPrefs}
                 onModelRouterPrefsChange={handleModelRouterPrefsChange}
+                agentGuardPrefs={agentGuardPrefs}
+                onAgentGuardPrefsChange={(prefs) => {
+                  setAgentGuardPrefs(prefs)
+                  saveAgentGuardPrefs(prefs)
+                }}
+                specGenTimeoutPrefs={specGenTimeoutPrefs}
+                onSpecGenTimeoutPrefsChange={(prefs) => {
+                  setSpecGenTimeoutPrefs(prefs)
+                  saveSpecGenTimeoutPrefs(prefs)
+                }}
                 sessionModel={config.model}
                 onSessionModeChange={handleSessionModeChange}
                 liveSessionMode={liveSessionMode}
                 onSave={handleSave}
                 onReset={handleReset}
                 appVersions={appVersions}
+                updateRelease={updateRelease}
                 subagents={subagents}
                 agentModeAvailable={agentModeAvailable}
                 sessionActive={isRunning}
-                sessionId={sessionInfo?.session_id}
+                sessionId={sessionInfo?.session_id ?? lastExportableSessionId}
                 onExportSessionDebug={handleExportSessionDebug}
+                cecliWorkspace={cecliWorkspace.info}
+                cecliWorkspaceLoading={cecliWorkspace.loading}
+                cecliWorkspaceError={cecliWorkspace.error}
+                onCecliWorkspaceRefresh={cecliWorkspace.refresh}
+                onOpenWorkspaceFileInEditor={handleOpenInEditor}
               />
             </Box>
           )}
       </AppChrome>
 
-      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} versions={appVersions} />
+      <AboutDialog
+        open={aboutOpen}
+        onClose={() => setAboutOpen(false)}
+        versions={appVersions}
+        updateRelease={updateRelease}
+      />
 
       <Snackbar
         open={snackbar !== null}
@@ -3332,6 +4057,12 @@ export default function App() {
   const [ntfyAlertsPrefs, setNtfyAlertsPrefs] = useState<NtfyAlertsPrefs>(() =>
     loadNtfyAlertsPrefs()
   )
+  const [agentGuardPrefs, setAgentGuardPrefs] = useState<AgentGuardPrefs>(() =>
+    loadAgentGuardPrefs()
+  )
+  const [specGenTimeoutPrefs, setSpecGenTimeoutPrefs] = useState<SpecGenTimeoutPrefs>(() =>
+    loadSpecGenTimeoutPrefs()
+  )
   const fonts = useMemo(() => resolveAppearanceFonts(appearance), [appearance])
   const theme = useMemo(() => createVisionTheme(fonts.ui), [fonts.ui])
 
@@ -3358,6 +4089,10 @@ export default function App() {
           setEditorLanguagePrefs={setEditorLanguagePrefs}
           modelRouterPrefs={modelRouterPrefs}
           setModelRouterPrefs={setModelRouterPrefs}
+          agentGuardPrefs={agentGuardPrefs}
+          setAgentGuardPrefs={setAgentGuardPrefs}
+          specGenTimeoutPrefs={specGenTimeoutPrefs}
+          setSpecGenTimeoutPrefs={setSpecGenTimeoutPrefs}
         />
       </ProcessProvider>
     </ThemeProvider>

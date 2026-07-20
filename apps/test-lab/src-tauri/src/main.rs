@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod lan_lab_remote;
 mod ntfy_notify;
 
 use std::path::{Path, PathBuf};
@@ -17,6 +18,8 @@ struct OrchState {
     engine_root: PathBuf,
     orch_port: u16,
     spawn_error: Mutex<Option<String>>,
+    lab_lan: tokio::sync::Mutex<Option<lan_lab_remote::LabLanRemoteHandle>>,
+    lab_lan_token: Mutex<String>,
 }
 
 impl OrchState {
@@ -265,6 +268,121 @@ async fn restart_orchestrator(state: State<'_, OrchState>) -> Result<(), String>
     start_orchestrator(&state).await
 }
 
+#[tauri::command]
+fn generate_lab_remote_token(state: State<'_, OrchState>) -> String {
+    let token = lan_lab_remote::generate_lab_remote_token();
+    if let Ok(mut guard) = state.lab_lan_token.lock() {
+        *guard = token.clone();
+    }
+    token
+}
+
+#[tauri::command]
+fn get_lab_remote_token(state: State<'_, OrchState>) -> String {
+    state
+        .lab_lan_token
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn list_lab_lan_addresses() -> Vec<String> {
+    lan_lab_remote::list_lan_ipv4_addresses()
+}
+
+#[tauri::command]
+async fn start_lab_lan_remote_proxy(
+    state: State<'_, OrchState>,
+    token: Option<String>,
+    proxy_port: Option<u16>,
+) -> Result<lan_lab_remote::LabLanRemoteStatus, String> {
+    let token = token
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| {
+            state
+                .lab_lan_token
+                .lock()
+                .ok()
+                .and_then(|g| {
+                    let t = g.clone();
+                    if t.is_empty() {
+                        None
+                    } else {
+                        Some(t)
+                    }
+                })
+                .unwrap_or_else(|| {
+                    let t = lan_lab_remote::generate_lab_remote_token();
+                    if let Ok(mut guard) = state.lab_lan_token.lock() {
+                        *guard = t.clone();
+                    }
+                    t
+                })
+        });
+    let proxy = proxy_port.unwrap_or(lan_lab_remote::DEFAULT_LAB_LAN_PROXY_PORT);
+    lan_lab_remote::start_lab_lan_remote(&state.lab_lan, token, state.orch_port, proxy).await
+}
+
+#[tauri::command]
+async fn stop_lab_lan_remote_proxy(state: State<'_, OrchState>) -> Result<(), String> {
+    lan_lab_remote::stop_lab_lan_remote(&state.lab_lan).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn lab_lan_remote_proxy_status(
+    state: State<'_, OrchState>,
+) -> Result<lan_lab_remote::LabLanRemoteStatus, String> {
+    Ok(lan_lab_remote::lab_lan_remote_status(&state.lab_lan, state.orch_port).await)
+}
+
+#[tauri::command]
+fn lab_device_name() -> String {
+    hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "Test Lab".into())
+}
+
+#[tauri::command]
+fn reveal_path_in_finder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("Path not found: {path}"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("open -R failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path.replace('/', "\\")))
+            .spawn()
+            .map_err(|e| format!("explorer failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let parent = p.parent().unwrap_or(&p);
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| format!("xdg-open failed: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", unix)))]
+    {
+        let _ = p;
+        Err("Reveal in file manager is not supported on this OS".into())
+    }
+}
+
 fn main() {
     let engine_root = resolve_engine_root();
     let orch_port = resolve_orch_port();
@@ -280,6 +398,8 @@ fn main() {
             engine_root: engine_root.clone(),
             orch_port,
             spawn_error: Mutex::new(None),
+            lab_lan: tokio::sync::Mutex::new(None),
+            lab_lan_token: Mutex::new(lan_lab_remote::generate_lab_remote_token()),
         })
         .invoke_handler(tauri::generate_handler![
             get_suite_base_url,
@@ -287,6 +407,14 @@ fn main() {
             get_engine_root,
             get_orchestrator_error,
             restart_orchestrator,
+            reveal_path_in_finder,
+            generate_lab_remote_token,
+            get_lab_remote_token,
+            list_lab_lan_addresses,
+            start_lab_lan_remote_proxy,
+            stop_lab_lan_remote_proxy,
+            lab_lan_remote_proxy_status,
+            lab_device_name,
             ntfy_notify::ntfy_send_push,
         ])
         .setup(|app| {
@@ -304,6 +432,7 @@ fn main() {
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let state = handle.state::<OrchState>();
+                    lan_lab_remote::stop_lab_lan_remote(&state.lab_lan).await;
                     stop_orchestrator(&state).await;
                 });
             }

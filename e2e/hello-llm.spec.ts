@@ -46,7 +46,10 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
     await expect(page.getByText(/likely stuck/i)).toHaveCount(0)
 
     // Answer can appear before SSE `done` (router / Ollama tail); allow post-answer wait.
-    await settleTurnAfterReply(page, 180_000)
+    await settleTurnAfterReply(page, 180_000, {
+      allowPostAnswerSettle: true,
+      postAnswerGraceMs: 45_000,
+    })
     await page.getByTestId('chat-input').fill('follow-up probe')
     await expect(page.getByTestId('chat-send')).toBeEnabled()
   })
@@ -54,6 +57,9 @@ test.describe('Hello LLM (real Ollama + Vision API)', () => {
 
 test.describe('Hello LLM metadata', () => {
   test('documents resolved model for operators', () => {
-    expect(resolveVisionModel() || 'ollama_chat/x').toMatch(/^ollama_chat\//)
+    const model = resolveVisionModel()
+    expect(model, 'E2E_OLLAMA_MODEL or local-llm.env should set a model').toBeTruthy()
+    // Local E2E: Ollama (ollama_chat/…) or LM Studio (openai/… via LiteLLM).
+    expect(model!).toMatch(/^(ollama_chat\/|openai\/)/)
   })
 })

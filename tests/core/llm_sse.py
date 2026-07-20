@@ -5,14 +5,37 @@ from __future__ import annotations
 import json
 
 
+def _load_sse_data_line(line: str) -> dict | None:
+    """Parse one ``data: …`` line; ignore comments, malformed JSON, and non-object payloads."""
+    if not line.startswith("data: "):
+        return None
+    try:
+        parsed = json.loads(line[6:])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def parse_sse_payload(raw: str) -> list[dict]:
     events: list[dict] = []
     for part in raw.split("\n\n"):
         for line in part.split("\n"):
-            if not line.startswith("data: "):
-                continue
-            events.append(json.loads(line[6:]))
+            ev = _load_sse_data_line(line)
+            if ev is not None:
+                events.append(ev)
     return events
+
+
+def parse_sse_chunk(buf: str) -> tuple[list[dict], str]:
+    """Return (events, remainder) from accumulated SSE text."""
+    events: list[dict] = []
+    while "\n\n" in buf:
+        part, buf = buf.split("\n\n", 1)
+        for line in part.split("\n"):
+            ev = _load_sse_data_line(line)
+            if ev is not None:
+                events.append(ev)
+    return events, buf
 
 
 def assistant_text(events: list[dict]) -> str:
@@ -24,6 +47,11 @@ def assistant_text(events: list[dict]) -> str:
             return from_done
     tokens = [e.get("text", "") for e in events if e.get("type") == "token"]
     return "".join(tokens)
+
+
+def user_message_text(events: list[dict]) -> str:
+    ev = next((e for e in events if e.get("type") == "user_message"), None)
+    return str(ev.get("text") or "") if ev else ""
 
 
 def _is_hex_part(part: str) -> bool:

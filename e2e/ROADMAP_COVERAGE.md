@@ -17,7 +17,7 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | **#12** `/add` Tab paths | Done (Tauri) | `path-completion.spec.ts` (mock Tauri) |
 | **#16** Images/PDF | Done | `file-upload.spec.ts` |
 | **#17** Prompt before commit | Done | `settings-config.spec.ts` |
-| **#18** Tasks / generate-spec | Done | `tasks-workspace.spec.ts`, `tasks-generate-spec.spec.ts` (activity bar, ears_blocked) |
+| **#18** Tasks / generate-spec | Done | `tasks-workspace.spec.ts`, `tasks-generate-spec.spec.ts` (activity bar, ears_blocked), `tasks-steering.spec.ts` |
 | **#23** Phased spec wizard | Done | `tasks-spec-wizard.spec.ts` (tab gates, nudges, per-section POST, All layers) |
 | **#19** Submodule / superproject | Done (automated) | `yarn dogfood:agent`, `test_superproject_dogfood.py`, `release-hygiene.spec.ts`, `test_git_workspace.py`, `test_superproject_integration.py`, `yarn verify:submodule`; LLM: `superproject-llm` (opt-in); **optional GUI:** [SUBMODULE_VERIFICATION.md](../docs/SUBMODULE_VERIFICATION.md) A–D |
 | **#23–24** Process + chat | Done | lifecycle + chat suites |
@@ -34,6 +34,8 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | **Real LLM hello** | Opt-in | `hello-llm.spec.ts`, `agent-llm.spec.ts`, `test_hello_llm.py`, `test_agent_llm.py` |
 | **Real LLM + file context** | Opt-in | `context-llm.spec.ts`, `test_context_llm.py` — `e2e/fixtures/context-workspace` |
 | **Real core integration** | Done | `yarn test:e2e:integration`; `test_http_agent_todo_import.py`, `test_agent_todos.py` |
+| **#51 implement workspace** | Partial | `implement-workspace.spec.ts` (UI POST + `inject_todo_spec`/`spec_focus`, resume, **spec-focus implement**), `integration/implement-workspace.spec.ts`, **`integration/implement-workspace-http.spec.ts`**; **`implement-llm.spec.ts`** + **`implement-resume-llm.spec.ts`** (default `e2e:llm` / Lab); **`implement-auto-advance-llm.spec.ts`** (opt-in); **`test_session_implement_auto_advance.py`** (mocked auto-advance contract in `test-local:release`); `test_implement_llm.py` |
+| **#50** Open project (IDE) | Done | `open-project.spec.ts`, `navigation.spec.ts` (project bar); helpers `openProject.ts` |
 | **#30** Web parity | Partial | context + settings + path-completion web branch — **Open:** `/add` Tab on web-only |
 | **#31** Release hygiene | Done (automated) | `release-hygiene.spec.ts`, [RELEASE.md](../docs/RELEASE.md) operator steps |
 | **#33** Session persistence | Partial | `settings-config.spec.ts`, `session-transcript-hydrate.spec.ts`, `shipped-scenarios` (`session-transcript`), `test_session_*` — **Open:** encrypt `chat.history` |
@@ -50,8 +52,10 @@ Run: `yarn test:full` or `sh scripts/test-local.sh full`. **Release tier:** `sh 
 | `session.ts` | `startMockSession({ tauri: true })`, tab navigation |
 | `integrationEnv.ts` / `integrationSession.ts` | Real core on `:8741` (no mock API; no mock Tauri) |
 | `chatSend.ts` | Optimistic send assertions |
-| `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config priming |
+| `fixtures.ts` / `sse.ts` / `testConfig.ts` | SSE turns, config + open-project priming |
+| `openProject.ts` | `vision-skip-project-gate`, `vision-current-project` for E2E |
 | `scenarios.ts` / `fixtureWorkspaces.ts` | Named scenarios + git workspaces with deterministic outputs |
+| `implementFixture.ts` / `implementBlockPreview.ts` | Implement workspace todo profiles + cecli inject preview (no LLM) |
 | `primeScenarioConfig.ts` | Per-scenario localStorage (e.g. auto-load) |
 
 ## Real desktop smoke

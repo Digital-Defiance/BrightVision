@@ -9,12 +9,16 @@
 export const LLM_E2E_SPEC_PHASED_FILE = 'spec-generate-phased-llm.spec.ts'
 export const LLM_E2E_SPEC_ALL_FILE = 'spec-generate-all-llm.spec.ts'
 
+export const LLM_E2E_IMPLEMENT_AUTO_ADVANCE_FILE = 'implement-auto-advance-llm.spec.ts'
+
 /** Files always run in the default LLM lane (checkbox off = all-layers only). */
 export const LLM_E2E_FILE_ORDER = [
   'hello-llm.spec.ts',
   'agent-llm.spec.ts',
   'context-llm.spec.ts',
   'edit-block-llm.spec.ts',
+  'implement-llm.spec.ts',
+  'implement-resume-llm.spec.ts',
   'todo-list-llm.spec.ts',
   'transcript-llm.spec.ts',
   'superproject-llm.spec.ts',

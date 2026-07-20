@@ -6,6 +6,8 @@ export interface OllamaModelRow {
   size?: string | null
   vram?: string | null
   expiresAt?: string | null
+  processor?: string | null
+  context?: number | null
 }
 
 export interface OllamaModelsSnapshot {
@@ -17,6 +19,8 @@ export interface OllamaModelsSnapshot {
   psText: string
   psRows?: OllamaModelRow[]
   tagsRows?: OllamaModelRow[]
+  /** Active local LLM backend from Rust (`ollama`, `lmstudio`, …). */
+  backend?: string
 }
 
 export interface LocalLlmRuntimeStatus {
@@ -85,6 +89,22 @@ export function formatLlmPingHint(r: LlmPingResult): string | null {
   return detail ? `${base} (${detail})` : base
 }
 
+/** A numbered tier slot binding a model to a tier position (from Rust `TierSlotEntry`). */
+export interface TierSlotEntry {
+  /** Tier label: "fast", "code", or "think". */
+  tier: 'fast' | 'code' | 'think'
+  /** Slot number: 0 = base key, 1–9 = numbered env vars. */
+  slot: number
+  /** Ollama model tag (e.g. `qwen2.5-coder:7b`). */
+  modelTag: string
+  /** Whether this model supports vision/multimodal input (from `*_VISION=1` env). */
+  vision?: boolean | null
+  /** Max context window in tokens (from `*_MAX_CONTEXT=N` env). */
+  maxContext?: number | null
+  /** Per-slot LiteLLM think mode (from `*_THINK=0|1` env). Overrides tier-level CODE_THINK/FAST_THINK. */
+  enableThinking?: boolean | null
+}
+
 export interface LocalLlmSnapshot {
   sources: string[]
   ollamaHost: string | null
@@ -92,41 +112,183 @@ export interface LocalLlmSnapshot {
   llmMode: string | null
   /** Ollama tag for router fast tier (`FAST_MODEL`). */
   fastModel?: string | null
-  /** Ollama tag for router heavy tier (`HEAVY_MODEL`; omit to use session LLM). */
+  /** Ollama tag for router code tier (`CODE_MODEL` or legacy `HEAVY_MODEL`). */
+  codeModel?: string | null
+  /** @deprecated Use `codeModel`. */
   heavyModel?: string | null
+  /** Ollama tag for router think/reasoning tier (`THINK_MODEL`). */
+  thinkModel?: string | null
   /** `MODEL_ROUTER=1` enables local model router when syncing env. */
   modelRouter?: boolean | null
+  /** `FAST_THINK=0|1` → hopper fast tier LiteLLM think (optional). */
+  fastThink?: boolean | null
+  /** `CODE_THINK=0|1` → hopper code tier LiteLLM think (optional). */
+  codeThink?: boolean | null
   /** App path when `local-llm.env` exists at repo root or under `local-llm/`. */
   repoLocalLlmRoot?: string | null
+  /** Multi-model tier slots parsed from env (base keys as slot 0, numbered as 1–9). */
+  tierSlots?: TierSlotEntry[]
+  /** Resolved priority list from `MODEL_PRIORITY` or derived default (model tags in priority order). */
+  priorityList?: string[]
+  /** Raw `MODEL_PRIORITY` env value (null when not set). */
+  modelPriorityRaw?: string | null
+  /** Warnings generated during parsing (e.g. unresolved tier labels in MODEL_PRIORITY). */
+  warnings?: string[]
+  /** When true, prefer already-loaded models over cold-starting the highest-priority one. */
+  preferWarm?: boolean | null
+  /** Active local LLM backend from Rust config resolver (defaults to `ollama`). */
+  backend?: string
+  /** Derived UI capabilities; optional when computed client-side from `backend`. */
+  capabilities?: BackendCapabilities
 }
 
-/** Map an Ollama tag from `local-llm.env` to a LiteLLM model id for Vision. */
+/** Lifecycle features exposed by the active local LLM backend. */
+export interface BackendCapabilities {
+  supportsVramQuery: boolean
+  supportsModelPull: boolean
+  supportsContextWindowQuery: boolean
+}
+
+const OLLAMA_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: true,
+  supportsModelPull: true,
+  supportsContextWindowQuery: true,
+}
+
+const EXTERNAL_BACKEND_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: false,
+  supportsModelPull: false,
+  supportsContextWindowQuery: false,
+}
+
+const LMSTUDIO_CAPABILITIES: BackendCapabilities = {
+  supportsVramQuery: false,
+  supportsModelPull: false,
+  supportsContextWindowQuery: true,
+}
+
+/** Map backend name → UI capabilities (REQ-004). */
+export function capabilitiesForBackend(backend: string | null | undefined): BackendCapabilities {
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'ollama') return OLLAMA_CAPABILITIES
+  if (name === 'lmstudio') return LMSTUDIO_CAPABILITIES
+  return EXTERNAL_BACKEND_CAPABILITIES
+}
+
+/** Strip LiteLLM provider prefix → bare local model id (Ollama tag or LM Studio modelKey). */
+export function localModelTagFromVisionModel(model: string): string | null {
+  const m = model.trim()
+  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
+  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
+  if (m.startsWith('openai/')) return m.slice('openai/'.length)
+  return null
+}
+
+/** Map a local model id from env to a LiteLLM model id for the active backend. */
+export function visionModelFromLocalTag(tag: string, backend?: string | null): string {
+  const t = tag.trim()
+  if (!t) return DEFAULT_CONFIG.model
+  if (t.startsWith('ollama_chat/') || t.startsWith('ollama/') || t.startsWith('openai/')) {
+    return t
+  }
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'ollama') return `ollama_chat/${t}`
+  if (name === 'lmstudio' || name === 'vllm' || name === 'tgi' || name === 'llamacpp' || name === 'mlx-lm') {
+    return `openai/${t}`
+  }
+  return `ollama_chat/${t}`
+}
+
+export function localLlmListLabels(backend?: string | null): {
+  statusTitle: string
+  tagsTitle: string
+  psTitle: string
+  tagsHost: string
+  psHost: string
+  tagsEmpty: string
+  psEmpty: string
+  configuredInPs: string
+  configuredNotInPs: string
+  unreachable: string
+  loadedChipYes: string
+  loadedChipNo: string
+} {
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'lmstudio') {
+    return {
+      statusTitle: 'LM Studio status',
+      tagsTitle: 'lms ls — models on disk',
+      psTitle: 'lms ps — loaded in RAM',
+      tagsHost: 'lms ls --json',
+      psHost: 'lms ps --json',
+      tagsEmpty: 'No models on disk (download in LM Studio or run lms get)',
+      psEmpty: 'No models loaded (run lms load or Local LLM → Start)',
+      configuredInPs: 'in lms ps',
+      configuredNotInPs: 'not in lms ps',
+      unreachable:
+        'LM Studio CLI not reachable. Install lms and ensure it is on PATH.',
+      loadedChipYes: 'In lms ps',
+      loadedChipNo: 'Not in lms ps',
+    }
+  }
+  return {
+    statusTitle: 'Ollama status',
+    tagsTitle: '/api/tags — pulled models',
+    psTitle: '/api/ps — loaded in RAM',
+    tagsHost: 'GET /api/tags',
+    psHost: 'GET /api/ps',
+    tagsEmpty: 'No models in /api/tags (run ollama pull or Local LLM → Start)',
+    psEmpty: 'No models in /api/ps (empty — model may have unloaded; use Local LLM → Start)',
+    configuredInPs: 'in /api/ps',
+    configuredNotInPs: 'not in /api/ps',
+    unreachable: 'Ollama not reachable. Start Ollama or check Settings → Ollama API base.',
+    loadedChipYes: 'In /api/ps',
+    loadedChipNo: 'Not in /api/ps',
+  }
+}
+
+/** True when Settings model matches the active local backend provider prefix. */
+export function isLocalBackendVisionModel(model: string, backend?: string | null): boolean {
+  const m = model.trim().toLowerCase()
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'lmstudio') {
+    return m.startsWith('openai/')
+  }
+  return isOllamaVisionModel(model)
+}
+
 export function isOllamaVisionModel(model: string): boolean {
   const m = model.trim().toLowerCase()
   return m.startsWith('ollama_chat/') || m.startsWith('ollama/')
 }
 
+/** @deprecated Use {@link localModelTagFromVisionModel}. */
 export function ollamaTagFromVisionModel(model: string): string | null {
-  const m = model.trim()
-  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
-  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
-  return null
+  return localModelTagFromVisionModel(model)
 }
 
-export function resolveLocalLlmForConfig(cfg: VisionConfig): {
+/** Strip provider prefix for row matching against backend listings. */
+export function bareLocalModelId(model: string): string {
+  return localModelTagFromVisionModel(model) ?? model.trim()
+}
+
+export function resolveLocalLlmForConfig(
+  cfg: VisionConfig,
+  backend?: string | null
+): {
   ollamaHost: string
   modelTag: string | null
 } {
-  const host = cfg.ollamaApiBase.trim() || 'http://127.0.0.1:11434'
-  const modelTag = ollamaTagFromVisionModel(cfg.model)
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  const defaultHost =
+    name === 'lmstudio' ? 'http://127.0.0.1:1234' : 'http://127.0.0.1:11434'
+  const host = cfg.ollamaApiBase.trim() || defaultHost
+  const modelTag = localModelTagFromVisionModel(cfg.model)
   return { ollamaHost: host, modelTag }
 }
 
-export function ollamaChatModelFromTag(tag: string): string {
-  const t = tag.trim()
-  if (!t) return DEFAULT_CONFIG.model
-  if (t.includes('/')) return t
-  return `ollama_chat/${t}`
+export function ollamaChatModelFromTag(tag: string, backend?: string | null): string {
+  return visionModelFromLocalTag(tag, backend ?? 'ollama')
 }
 
 function isDefaultOllamaModel(model: string): boolean {
@@ -149,7 +311,7 @@ export function applyLocalLlmToConfig(
   }
   const tag = snap.dataModel?.trim()
   if (tag && (!fillEmpty || isDefaultOllamaModel(cfg.model))) {
-    next = { ...next, model: ollamaChatModelFromTag(tag) }
+    next = { ...next, model: visionModelFromLocalTag(tag, snap.backend) }
   }
   return next
 }
@@ -185,8 +347,12 @@ export function formatLocalLlmEnvPanel(snap: LocalLlmSnapshot): string {
   if (snap.dataModel?.trim()) effective.push(`DATA_MODEL=${snap.dataModel.trim()}`)
   if (snap.ollamaHost?.trim()) effective.push(`OLLAMA_HOST=${snap.ollamaHost.trim()}`)
   if (snap.fastModel?.trim()) effective.push(`FAST_MODEL=${snap.fastModel.trim()}`)
-  if (snap.heavyModel?.trim()) effective.push(`HEAVY_MODEL=${snap.heavyModel.trim()}`)
+  const codeTag = snap.codeModel?.trim() || snap.heavyModel?.trim()
+  if (codeTag) effective.push(`CODE_MODEL=${codeTag}`)
+  if (snap.thinkModel?.trim()) effective.push(`THINK_MODEL=${snap.thinkModel.trim()}`)
   if (snap.modelRouter != null) effective.push(`MODEL_ROUTER=${snap.modelRouter ? '1' : '0'}`)
+  if (snap.fastThink != null) effective.push(`FAST_THINK=${snap.fastThink ? '1' : '0'}`)
+  if (snap.codeThink != null) effective.push(`CODE_THINK=${snap.codeThink ? '1' : '0'}`)
   const parts = [
     'Read order — later files override earlier:',
     ...lines,

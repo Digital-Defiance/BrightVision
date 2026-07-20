@@ -5,6 +5,7 @@ import { isTurnEtaVisible } from '../../utils/turnEtaEstimate'
 import type { TurnEtaEstimate } from '../../utils/turnEtaEstimate'
 import type { LiveThinkingState } from '../../utils/thinkingTiming'
 import type { ProcessSnapshot } from '../../progress/types'
+import type { ActivityPresentation } from '../../utils/progressDisplay'
 import './VisionActivityBar.scss'
 
 /** Background spec generate/refine job (does not use core SSE progress). */
@@ -19,6 +20,9 @@ interface VisionActivityBarProps {
   specJob?: SpecJobActivity | null
   liveTiming?: LiveThinkingState | null
   turnEta?: TurnEtaEstimate | null
+  formatDuration?: (ms: number) => string
+  activity?: ActivityPresentation | null
+  agentPhaseMs?: number | null
 }
 
 export function VisionActivityBar({
@@ -26,6 +30,9 @@ export function VisionActivityBar({
   specJob = null,
   liveTiming = null,
   turnEta = null,
+  formatDuration,
+  activity = null,
+  agentPhaseMs = null,
 }: VisionActivityBarProps) {
   const specActive = Boolean(specJob?.active)
   const chatActive = process.active
@@ -57,14 +64,20 @@ export function VisionActivityBar({
       ? 'vision-activity--reasoning vision-activity--spec-job'
       : 'vision-activity--reasoning'
   const primaryLabel = chatActive
-    ? process.label
+    ? activity
+      ? `${activity.brand} ${activity.headline}`
+      : process.label
     : showingSpec
       ? (specJob?.label ?? 'GENERATING SPEC')
       : (liveTiming?.phaseLabel.toUpperCase() ?? 'WORKING')
   const detailLine = chatActive
-    ? countLabel && process.detail
-      ? `${countLabel} · ${process.detail}`
-      : countLabel || process.detail
+    ? activity?.detail
+      ? countLabel
+        ? `${countLabel} · ${activity.detail}`
+        : activity.detail
+      : countLabel && process.detail
+        ? `${countLabel} · ${process.detail}`
+        : countLabel || process.detail
     : showingSpec
       ? specJob?.detail
       : undefined
@@ -117,7 +130,14 @@ export function VisionActivityBar({
         </Box>
         {(liveTiming || (etaVisible && etaPct != null)) && (
           <Box className="vision-activity__meta-trailing">
-            {liveTiming && <ThinkingTimerInline live={liveTiming} eta={turnEta} />}
+            {liveTiming && (
+              <ThinkingTimerInline
+                live={liveTiming}
+                eta={turnEta}
+                agentMs={agentPhaseMs}
+                formatDuration={formatDuration}
+              />
+            )}
             {etaVisible && etaPct != null && (
               <LinearProgress
                 className="vision-activity__bar vision-activity__bar--eta"

@@ -9,7 +9,7 @@ import unittest
 try:
     from fastapi.testclient import TestClient
 
-    from bright_vision_core.http_api import app, _sessions
+    from bright_vision_core.http_api import app
     from bright_vision_core.http_auth import configure_auth, reset_auth_for_tests
 except ImportError:
     TestClient = None
@@ -19,8 +19,13 @@ except ImportError:
 
 from cecli.utils import GitTemporaryDirectory
 
-from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
-from llm_client import stream_session_message
+from llm_ollama import (
+    ensure_ollama_for_llm_e2e,
+    ollama_reachable,
+    reset_vision_sessions_for_tests,
+    resolve_vision_model,
+)
+from llm_client import create_llm_vision_client, stream_session_message
 
 
 def _parse_sse_payload(raw: str) -> list[dict]:
@@ -35,52 +40,59 @@ def _parse_sse_payload(raw: str) -> list[dict]:
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
 @unittest.skipIf(os.environ.get("E2E_LLM") != "1", "set E2E_LLM=1 to run real LLM tests")
-@unittest.skipIf(not ollama_reachable(), "Ollama not reachable")
+@unittest.skipIf(not ollama_reachable(), "Local LLM not reachable")
 class TestHelloLlm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         ensure_ollama_for_llm_e2e()
 
     def setUp(self):
-        _sessions.clear()
+        reset_vision_sessions_for_tests()
         reset_auth_for_tests()
         configure_auth("127.0.0.1")
 
     def tearDown(self):
+        reset_vision_sessions_for_tests()
         reset_auth_for_tests()
 
     def test_hello_message_streams_tokens_and_done(self):
         model = resolve_vision_model()
         with GitTemporaryDirectory() as root:
-            client = TestClient(app)
-            res = client.post("/sessions", json={"workspace": root, "model": model})
-            if res.status_code == 400:
-                self.skipTest(f"Could not create session: {res.text}")
-            self.assertEqual(res.status_code, 200, res.text)
-            session_id = res.json()["session_id"]
+            client = create_llm_vision_client()
+            try:
+                res = client.post("/sessions", json={"workspace": root, "model": model})
+                if res.status_code == 400:
+                    self.skipTest(f"Could not create session: {res.text}")
+                self.assertEqual(res.status_code, 200, res.text)
+                session_id = res.json()["session_id"]
 
-            events = stream_session_message(
-                client,
-                session_id,
-                "Reply with exactly: hello from pytest",
-                preproc=False,
-            )
-            types = [e.get("type") for e in events]
-            errors = [e for e in events if e.get("type") == "error"]
-            self.assertFalse(errors, errors)
-            self.assertIn("user_message", types)
-            self.assertIn("done", types, f"events: {types}")
-            done = next(e for e in events if e.get("type") == "done")
-            assistant = (done.get("assistant_text") or "").strip()
-            if not assistant:
-                tokens = [e.get("text", "") for e in events if e.get("type") == "token"]
-                assistant = "".join(tokens).strip()
-            self.assertGreater(
-                len(assistant),
-                3,
-                f"expected non-empty assistant reply, got {assistant[:500]!r}",
-            )
-            self.assertFalse(done.get("error"), done)
+                events = stream_session_message(
+                    client,
+                    session_id,
+                    "Reply with exactly: hello from pytest",
+                    preproc=False,
+                )
+                types = [e.get("type") for e in events]
+                errors = [e for e in events if e.get("type") == "error"]
+                self.assertFalse(errors, errors)
+                self.assertIn("user_message", types)
+                self.assertIn("done", types, f"events: {types}")
+                done = next(e for e in events if e.get("type") == "done")
+                assistant = (done.get("assistant_text") or "").strip()
+                if not assistant:
+                    tokens = [e.get("text", "") for e in events if e.get("type") == "token"]
+                    assistant = "".join(tokens).strip()
+                self.assertGreater(
+                    len(assistant),
+                    3,
+                    f"expected non-empty assistant reply, got {assistant[:500]!r}",
+                )
+                self.assertFalse(done.get("error"), done)
+            finally:
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
 
 if __name__ == "__main__":

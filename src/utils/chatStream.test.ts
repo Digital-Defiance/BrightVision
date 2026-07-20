@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendStreamingToken,
+  initialAssistantBubbleChunk,
   mergeChatTimeline,
   popPendingUserMessageId,
   reconcileUserMessageInChat,
@@ -9,6 +10,7 @@ import {
   getActiveAssistantSection,
   splitAssistantSections,
   suffixPrefixOverlap,
+  withInheritedModelRoutes,
 } from './chatStream'
 
 describe('splitAssistantSections', () => {
@@ -107,6 +109,40 @@ describe('appendStreamingToken', () => {
   it('merges overlapping chunks', () => {
     expect(suffixPrefixOverlap('In Progress', 'Progress more')).toBe(8)
     expect(appendStreamingToken('In Progress', 'Progress more')).toBe('In Progress more')
+  })
+})
+
+describe('initialAssistantBubbleChunk', () => {
+  it('returns full chunk for the first bubble in a turn', () => {
+    expect(initialAssistantBubbleChunk('', 'Hello')).toBe('Hello')
+  })
+
+  it('strips prior assistant text when provider resends cumulative snapshot', () => {
+    const prior = "I'll start by examining the relevant files."
+    const chunk = `${prior}{"tasks":[]}`
+    expect(initialAssistantBubbleChunk(prior, chunk)).toBe('{"tasks":[]}')
+  })
+
+  it('returns empty when chunk adds nothing new', () => {
+    const prior = 'Done.'
+    expect(initialAssistantBubbleChunk(prior, 'Done.')).toBe('')
+    expect(initialAssistantBubbleChunk(prior, prior)).toBe('')
+  })
+})
+
+describe('withInheritedModelRoutes', () => {
+  it('carries route across assistant bubbles until the next user message', () => {
+    const route = { tier: 'code', role: 'code', model: 'qwen3.6:27b' }
+    const out = withInheritedModelRoutes([
+      { id: 1, role: 'user', content: 'go' },
+      { id: 2, role: 'assistant', content: 'a', modelRoute: route },
+      { id: 3, role: 'assistant', content: 'b' },
+      { id: 4, role: 'user', content: 'again' },
+      { id: 5, role: 'assistant', content: 'c' },
+    ])
+    expect(out[1].modelRoute).toEqual(route)
+    expect(out[2].modelRoute).toEqual(route)
+    expect(out[4].modelRoute).toBeUndefined()
   })
 })
 

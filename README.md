@@ -118,7 +118,7 @@ cd BrightVision
 git submodule update --init cecli
 yarn install
 source activate.sh
-yarn tauri dev
+yarn vision          # or: yarn tauri dev
 ```
 
 1. Install [Ollama](https://ollama.com/) and copy `local-llm.env.example` → `local-llm.env` (`DATA_MODEL`; optional `FAST_MODEL` / `HEAVY_MODEL` / `MODEL_ROUTER` — [docs/LOCAL_LLM.md](docs/LOCAL_LLM.md))  
@@ -150,6 +150,12 @@ yarn tauri dev
 | [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Dev setup |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Stuck sessions, `:8741` |
 | [TESTING.md](docs/TESTING.md) | Test matrix |
+
+## VS Code Extension
+
+Kiro users might find this VS Code Extension handy:
+
+- [https://marketplace.visualstudio.com/items?itemName=DigitalDefiance.kiro-brightvision-sync](https://marketplace.visualstudio.com/items?itemName=DigitalDefiance.kiro-brightvision-sync)
 
 ## License
 

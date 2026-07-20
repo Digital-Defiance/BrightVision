@@ -29,8 +29,15 @@ yarn verify:submodule
 
 step "TypeScript unit + types"
 yarn test:fast
+yarn test:lab
 
 if [ -x .venv/bin/python3 ]; then
+  step "Cecli spec unit tests"
+  yarn verify:cecli-spec
+
+  step "Cecli hopper unit tests"
+  yarn verify:cecli-hopper
+
   step "Bright core pytest"
   .venv/bin/python3 -m pytest \
     tests/core/test_workspace_paths.py \
@@ -47,6 +54,10 @@ if [ -x .venv/bin/python3 ]; then
     tests/core/test_http_ears_index_trace.py \
     tests/core/test_generate_spec_parse.py \
     tests/core/test_http_generate_spec_mock.py \
+    tests/core/test_http_steering_files.py \
+    tests/core/test_spec_progress.py \
+    tests/core/test_implement_progress.py \
+    tests/core/test_implement_verify.py \
     -q
 fi
 

@@ -1,0 +1,10 @@
+# Example multi-repo workspace for BrightVision / cecli (path: local git roots).
+# Copy to your open project as `.cecli.workspaces.yml` and adjust paths.
+name: my-workspace
+projects:
+  - name: app
+    path: /absolute/path/to/primary-repo
+    primary: true
+  - name: lib
+    path: /absolute/path/to/sibling-library
+    readonly: false

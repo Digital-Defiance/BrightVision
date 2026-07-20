@@ -41,4 +41,4 @@ EOF
 
 echo "Branch $TARGET_BRANCH ready. Push and open PR:"
 echo "  git push -u origin $TARGET_BRANCH"
-echo "  See docs/PR_UPSTREAM_CECLI.md"
+  echo "  See docs/CECLI_UPSTREAM_PR.md"

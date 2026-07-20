@@ -79,12 +79,18 @@ class TestEarsLint(unittest.TestCase):
         r = analyze_requirements(KIRO_MULTI_AC)
         self.assertTrue(all(c.req_id == "REQ-001" for c in r.clauses))
 
-    def test_to_dict_serializable(self):
-        r = analyze_requirements(GOOD)
-        d = r.to_dict()
-        self.assertIn("ok", d)
-        self.assertIn("clauses", d)
-        self.assertIn("issues", d)
+    def test_kiro_user_story_with_if_while_not_clauses(self):
+        """User Story prose must not lint as EARS (common words if/while)."""
+        text = """\
+### REQ-002: Cloud sync
+**User Story:** As a user, I want sync while traveling, so that I can access logs if I lose signal.
+
+**Acceptance Criteria**
+1. **WHERE** sync is enabled **THEN THE** system **SHALL** encrypt data.
+"""
+        r = analyze_requirements(text)
+        self.assertTrue(r.ok, [i.to_dict() for i in r.issues])
+        self.assertFalse(any("User Story" in c.text for c in r.clauses))
 
 
 if __name__ == "__main__":

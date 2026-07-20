@@ -70,6 +70,11 @@ python -m pytest \
   cecli/tests/basic/test_commands.py::TestCommands::test_cmd_add_skips_create_on_attachment_staging_path -q
 # Or full cecli session + commands module:
 # python -m pytest cecli/tests/basic/test_session_*.py cecli/tests/basic/test_commands.py -q
+# Cecli spec/EARS/todos (upstream PR #574 — no BrightVision HTTP):
+yarn verify:cecli-spec
+# Cecli model hopper / router (fast/code/think tiers, pool, classify):
+yarn verify:cecli-hopper
+# Or: python -m pytest cecli/tests/spec/ -q
 # BrightVision integration
 python -m pytest \
   tests/core/test_session_crypto.py \
@@ -78,7 +83,11 @@ python -m pytest \
   tests/core/test_http_session_persistence.py -q
 ```
 
-Or `yarn test:bright-core` (BrightVision `tests/core/*` modules; run cecli tests before upstream PR).
+Or `yarn test:bright-core` (BrightVision `tests/core/*` modules, including spec/implement/steering HTTP tests). **`yarn test:llm-backends`** (config/registry/clients, prefix mapping, preload/warmup; mocked only, no live vLLM) runs as its own Test Lab step **`llm:backends`** and standalone via `yarn test:llm-backends`. Before cecli upstream PRs, run **`yarn verify:cecli-spec`** (143 cecli `tests/spec/` unit tests) and **`yarn verify:ears`** (cecli unit + HTTP EARS/steering routes) — see [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md).
+
+**Test Lab unit tests:** `yarn test:lab` (`apps/test-lab` Vitest — suite resume, progress parser). Included in `yarn dogfood:check`. Default Lab plan includes **`llm:backends`** after **`verify:cecli-spec`**.
+
+**Spec implementation progress** (checklist ↔ `tasks_md` ↔ agent todo): cecli `tests/spec/test_progress.py`, `tests/helpers/test_tool_json_edittext.py`; BrightVision `tests/core/test_spec_progress.py`, `test_implement_progress.py`, `test_session_implement_auto_mark.py`, **`test_session_implement_auto_advance.py`** (mocked nested `run_message` + verify gate + **SSE `tool_output` parity**), `test_http_implementation_progress.py`, **`test_http_implement_turn.py`** + **`test_implement_turn_contracts.py`** (Session/HTTP expanded prompt, yield guard, EditText JSON coercion, code-tier routing, **spec-focus implement**), **`test_implement_llm.py`** (`E2E_LLM=1`, CODE model, implement fixture); `test_http_agent_todo_import.py`; mocked e2e `e2e/implement-progress.spec.ts`, **`e2e/implement-workspace.spec.ts`** (named-path, resume, **spec-focus + implement**); integration `e2e/integration/implement-workspace.spec.ts`, **`e2e/integration/implement-workspace-http.spec.ts`** (live `:8741` SSE parity with `implementMessagePreview.ts`); LLM e2e **`e2e/implement-llm.spec.ts`**, **`implement-resume-llm.spec.ts`** (default `e2e:llm` on Lab 3B); **`implement-auto-advance-llm.spec.ts`** (default `e2e:llm`; Lab passes `E2E_CODE_MODEL` for implement turns); real-core `e2e/integration/implement-progress.spec.ts` (`yarn test:e2e:integration`). Headless CLI: `bright-vision-tasks materialize|progress|sync-agent|repair-pubspec` (after `pip install -e .`). **Test Lab** (`yarn lab` / `yarn test:everything`) runs the full implement envelope: contract pytest in **`test-local:release`** → `yarn test:bright-core` (HTTP/Session contracts + auto-advance), **`llm:core`** → `test_implement_llm.py`, **`e2e:llm`** → implement LLM trio; manifest parity enforced in `tests/core/test_test_suite.py`.
 
 ## Rust (Tauri git_ops)
 
@@ -120,6 +129,9 @@ yarn test:e2e
 | `tasks-ears.spec.ts` | Validate EARS (mock lint) |
 | `spec-generate-all-llm.spec.ts` | Real Ollama all-layers generate-spec (default LLM lane) |
 | `spec-generate-phased-llm.spec.ts` | Real Ollama phased wizard (opt-in: Test Lab checkbox / `E2E_SPEC_GEN_PHASED=1`) |
+| `implement-llm.spec.ts` | Real LLM named-path implement (`E2E_CODE_MODEL` from Lab/`local-llm.env`) |
+| `implement-auto-advance-llm.spec.ts` | Verify + auto-advance (2-step checklist; **opt-in** — Lab checkbox or `E2E_IMPLEMENT_AUTO_ADVANCE_LLM=1`; mocked contract: `test_session_implement_auto_advance.py`) |
+| `open-project.spec.ts` | Launch gate vs primed skip; header project bar; open confirm |
 | `settings-config.spec.ts` | Settings persistence; Cecli session encrypt/auto-save API flags |
 | `tauri-git.spec.ts` | Git panel (mock Tauri) |
 | `path-completion.spec.ts` | `/add` Tab (desktop vs web) |
@@ -128,7 +140,9 @@ yarn test:e2e
 | `release-hygiene.spec.ts` | RELEASE / submodule file checks |
 | `roadmap-gaps.spec.ts` | Open roadmap smoke |
 
-Helpers live in `e2e/helpers/` (`mockCoreApi`, `mockTauri`, `session`, `fixtures`, `testConfig`).
+Helpers live in `e2e/helpers/` (`mockCoreApi`, `mockTauri`, `session`, `fixtures`, `testConfig`, `openProject`).
+
+**Open project:** Production shows a launch gate until you open a repo. E2E skips it via `primeVisionApp` / `primeVisionAppConfig` (sets `vision-skip-project-gate` + `vision-current-project`). Tests that use custom `addInitScript` before `startMockSession` should call `primeOpenProject(page, workingDir)` and pass `skipConfigPrime: true`. See `e2e/helpers/openProject.ts`.
 
 Use `startMockSession(page, { tauri: true })` for desktop-only UI in the browser.
 
@@ -142,7 +156,7 @@ yarn playwright test --ui                        # debug interactively
 
 Playwright uses **`vite.config.ts`** only (do not commit a stale `vite.config.js` — Vite prefers `.js` over `.ts` and will skip the E2E health stub + enable the `:8741` proxy).
 
-Playwright starts a fresh `E2E=1` preview via `scripts/e2e-preview.sh` (kills anything listening on port **4173** first). If preview still fails:
+Playwright starts a fresh `E2E=1` preview via `scripts/e2e-preview.sh` (kills anything listening on port **4173** first). In Test Lab / `yarn test:everything`, **`test-local:release` already builds `dist/`** — later `e2e:llm` skips rebuild when `BV_TEST_SUITE_ACTIVE=1` **only if** `dist/index.html` is newer than key UI sources (`src/App.tsx`, `packages/vision-client/…`). If you changed the React head after release, preview rebuilds automatically; set `BV_E2E_FORCE_BUILD=1` to force rebuild anyway. LLM Playwright config allows **300s** for preview startup (`E2E_PREVIEW_WEBSERVER_TIMEOUT_MS` to override). If preview still fails:
 
 ```bash
 lsof -ti tcp:4173 | xargs kill -9   # macOS/Linux
@@ -151,7 +165,7 @@ yarn test:e2e
 
 If you see `[vite] http proxy error: /health`, an old preview without `E2E=1` was reused — re-run (do not use `reuseExistingServer` for default e2e).
 
-`gotoVision()` installs Playwright API mocks **before** `page.goto()` so health checks never hit a real Vision API.
+`gotoVision()` primes open-project + config, installs Playwright API mocks **before** `page.goto()` so health checks never hit a real Vision API.
 
 ### Real LLM e2e (Ollama + Vision API)
 
@@ -194,8 +208,11 @@ E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:llm:core
 E2E_OLLAMA_MODEL=ollama_chat/llama3.2:3b E2E_LLM=1 yarn test:e2e:llm
 # Example bigger model:
 E2E_OLLAMA_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_LLM=1 yarn test:e2e:llm
-# Router lane with explicit fast/heavy tags:
-E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_HEAVY_MODEL=ollama_chat/qwen3.6:27b-q4_K_M yarn test:e2e:llm:router
+# Prompt behavioral eval (scores one scoped /agent edit turn — see below):
+E2E_OLLAMA_MODEL=ollama_chat/qwen3-coder:30b yarn eval:prompts
+# Router lane with explicit fast/code tags (think optional):
+E2E_FAST_MODEL=ollama_chat/qwen2.5-coder:7b E2E_CODE_MODEL=ollama_chat/qwen3.6:27b-q4_K_M E2E_THINK_MODEL=ollama_chat/deepseek-r1:32b yarn test:e2e:llm:router
+# Mocked role chips (no Ollama): yarn playwright test e2e/model-router-roles.spec.ts
 ```
 
 Optional env:
@@ -205,29 +222,40 @@ Optional env:
 | `E2E_OLLAMA_MODEL` | LiteLLM id or bare Ollama tag (`ollama_chat/…` or `llama3.2:3b`); `openai/…` / `azure/…` pass through unchanged |
 | `E2E_MODEL_ROUTER` | `1` required for `yarn test:e2e:llm:router` (`router-llm.spec.ts`) |
 | `E2E_FAST_MODEL` | Router fast tier model tag/id (falls back to `FAST_MODEL`) |
-| `E2E_HEAVY_MODEL` | Router heavy tier model tag/id (falls back to `HEAVY_MODEL`) |
-| Router lane (Test Lab / suite) | Requires **both** `FAST_MODEL` and `HEAVY_MODEL` in `local-llm.env` (distinct tags). Using only `llama3.2:3b` for both is rejected — not a real router test. `router-llm.spec.ts` asserts chip + reply, then allows **post-answer settle** (60s grace) when SSE `done` lags after the answer is visible. |
+| `E2E_CODE_MODEL` | Router code/implement tier (falls back to `CODE_MODEL`, then `HEAVY_MODEL`) |
+| `E2E_THINK_MODEL` | Router think/reasoning tier (falls back to `THINK_MODEL`; think-tier LLM test skips when unset) |
+| `E2E_HEAVY_MODEL` | Legacy alias for code tier |
+| Router lane (Test Lab / suite) | Requires **distinct** fast and code tags. **Suite default** (unless `BV_SUITE_USE_ENV_MODEL=1`): small tiers only — Ollama `llama3.2:3b` / `qwen2.5-coder:7b` / `llama3.2:1b`; LM Studio `llama-3.2-3b-instruct` / `qwen2.5-coder-7b-instruct` / `llama-3.2-1b-instruct`. Dogfood `local-llm.env` (27B code, 70B think) is for daily use, not CI. `router-llm.spec.ts` checks routing chips only. **LM Studio:** global setup warms fast+code; think-tier test exclusive-loads `THINK_MODEL`. `model-router-roles.spec.ts`: mocked SSE. |
 | `BV_SUITE_STRICT_PHASED_PYTEST` | `1` on `llm:core`: phased pytest fails on EARS gate instead of skip. With `BV_COMPACT_SPEC_GEN=1`, deterministic repair adds SHALL to any parsed EARS clause missing normative text (bullets, WHEN/IF/WHERE/WHILE prose) before the gate runs. |
-| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar) |
+| `BV_SUITE_USE_ENV_MODEL` | `1` on Test Lab / `yarn test:everything`: use shell `E2E_OLLAMA_MODEL` / `DATA_MODEL` for `llm:core` warmup and pytest (default pins `llama3.2:3b` so a heavy `local-llm.env` does not slow the bar). Same flag: use your `FAST_MODEL` / `CODE_MODEL` / `THINK_MODEL` for `e2e:llm:router` instead of suite pins (`llama3.2:3b` + `qwen2.5-coder:7b` + `llama3.2:1b`, or LM Studio `openai/…` equivalents). |
 | `PYTHONSAFEPATH` | `1` on suite/LLM pytest (do not put repo root on `PYTHONPATH` — it shadows the `cecli` submodule). Vision API spawn sets this via `buildVisionCoreEnv()` |
 | `BV_SUITE_USE_ENV_TIMEOUTS` | `1`: keep your shell `LLM_*_TIMEOUT_S` values instead of suite defaults |
 | `BV_SUITE_USE_BRIGHTDATE` | `1`: step/run durations and ETC in BrightDate (BD/md); `btime --no-color`. BD wall bounds (`start_bd`/`end_bd`) are always parsed from `btime` and saved in timing history; Test Lab shows a BD interval chip when present |
+| `BV_USE_BRIGHTDATE` | Optional env mirror of desktop Settings → **BrightDate mode** |
+
+**Desktop BrightDate:** Settings → **Response & think timing** → **BrightDate mode** formats response time, ETA, and timing history as BD / millidays (e.g. `9648.48633`). Each chat turn attaches `turn_capture` on the `done` SSE event: **bgpucap** `--pid` on Apple Silicon when installed, else **heartbeat** fallback (same as Test Lab). Tauri resource polling is still merged when present.
 | `E2E_OLLAMA_AUTO_PULL` | `1` (default): run `ollama pull` when the model is missing; `0` to fail fast |
 | `E2E_OLLAMA_HOST` | Ollama base URL (default `http://127.0.0.1:11434`) |
 | `E2E_FIXTURE_PACK_ROOT` | Optional absolute path to a custom fixture repo collection (supports submodule-based packs) |
 | `E2E_SUPERPROJECT_LLM` | `1` runs `superproject-llm.spec.ts` (BrightVision repo root; slow) |
 | `DOGFOOD_LLM` | `1` with `yarn dogfood:gate` runs `test:llm:core` + `test:e2e:llm` when Ollama is up |
-| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. |
+| `BV_COMPACT_SPEC_GEN` | `1` in LLM lanes: shorter generate-spec prompts (faster `llama3.2:3b`). Unset in desktop app for full Kiro-grade output. Also disables **#53** explore/deepen agent. |
+| `BV_SPEC_GEN_AGENT` | `1` (default): read-only `/agent` explore before write. Set `0` to restore one-shot only. |
+| `BV_SPEC_GEN_RICHNESS_GATE` | `1` (default): auto deepen pass when output is thin. Set `0` to skip. Disabled when `BV_COMPACT_SPEC_GEN=1`. |
 | `E2E_SPEC_GEN_PHASED` | `1` runs phased wizard LLM e2e (3 jobs). Also: `yarn test:e2e:llm:phased`, Test Lab **Phased spec-gen LLM**, `yarn test:everything --spec-gen-phased`. Must appear in `suite env:` on the `e2e:llm` step (export alone is not enough if the orchestrator was started without it). |
+| `E2E_CODE_MODEL` | Test Lab `llm:core` / `e2e:llm` inject from `local-llm.env` `CODE_MODEL` (or default `qwen2.5-coder-7b-instruct` on LM Studio). Implement LLM specs warm this model before `/agent` turns. |
 | `BV_SKIP_SPEC_GEN_E2E` | `1` omits both `spec-generate-*-llm.spec.ts` from `yarn test:e2e:llm` (faster iteration; full bar still needs all-layers) |
 | `LLM_SPEC_GEN_TIMEOUT_S` | Background generate-spec job wall clock (pytest, HTTP job store, UI poll via `VITE_LLM_SPEC_GEN_TIMEOUT_S` at e2e build, `spec-generate-llm` active poll). Defaults **`1800`** in `yarn test:llm:core`, `yarn test:e2e:llm`, Test Lab `llm:core` / `e2e:llm`, and Vision API spawn (`e2e/helpers/realCoreServer.ts`). |
 | `LLM_SPEC_GEN_TURN_TIMEOUT_S` | Per one-shot LLM turn inside generate-spec (`run_one_shot`; same `1200` defaults as above; CLI `900` when unset) |
 | `LLM_TEST_TURN_TIMEOUT_S` | Per-turn SSE read cap in pytest (`900` in `yarn test:llm:core`; `1200` in Test Lab `llm:core` step) |
 | `VISION_AGENT_PREPROC_TIMEOUT_S` | `/agent` preproc cap (`0` = no cap, recommended for local LLM; positive value limits slash phase only) |
 | `VISION_SLASH_PREPROC_TIMEOUT_S` | Cap for other slash preproc (`300` in `test:llm:core`, `360` in Test Lab suite) |
-| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/ollama-warmup-for-tests.sh` before suite `llm:core` |
+| `SKIP_OLLAMA_WARMUP` | `1` skips `scripts/local-llm-warmup-for-tests.sh` before suite `llm:core` (dispatches to Ollama or LM Studio via `BRIGHTVISION_LLM_BACKEND`) |
+| `OLLAMA_WARMUP_EXCLUSIVE` | `1` (default in Test Lab / suite `llm:core`): `ollama stop` other loaded models before warmup so a pinned heavy model (e.g. `qwen3.6:27b` with `keep_alive=-1`) does not block `llama3.2:3b`. Set `0` to keep all models loaded. |
 | `DOGFOOD_SUPERPROJECT_LLM` | `1` with `dogfood:gate` also runs superproject LLM lane |
 | `E2E_PYTHON` | Venv shim for spawning Vision API (default `.venv/bin/python3`; `test:e2e:llm` sets this — do not point at Homebrew `python3.14` alone) |
+| `E2E_CORE_HEALTH_TIMEOUT_MS` | Playwright global setup wait for `GET /health` on `:8741` (default **`300000`**). Also caps the one-time `http_api` prewarm import. Cold import is often **30–90s**; under Test Lab CPU/RAM load allow headroom. |
+| `E2E_SKIP_HTTP_API_PREWARM` | Set to `1` to skip the pre-spawn `http_api` import warm-up (slightly faster setup when page cache is already hot). |
 | `E2E_VISION_MODEL` | Full LiteLLM id for cloud lanes (`openai/gpt-4o-mini`, `azure/…`); preferred over `E2E_OLLAMA_MODEL` for non-Ollama models |
 
 E2E clears **`PYTHONPATH`**. Do not export `PYTHONPATH=$PWD` — the repo’s `cecli/` folder is not the Python package and will break `import cecli` (`unknown location`).
@@ -296,7 +324,41 @@ yarn test:e2e:integration
 
 See [e2e/ROADMAP_COVERAGE.md](../e2e/ROADMAP_COVERAGE.md#real-core-integration-no-mocked-apicore).
 
-`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
+`/agent` LLM tests use a strict no-tools prompt; local models may need **6–10+ minutes** (slash preproc default 300s + Ollama). Playwright timeout **15m** on `agent-llm.spec.ts`. The assistant reply can appear **minutes before** slash preproc finishes and SSE `done` — `agent-llm` uses post-answer settle (same as router e2e) after asserting reply text. Prefer `yarn test:llm:core` for a faster API-level check of `/agent` + `verbose`.
+
+## Measuring prompt quality (agent system prompt)
+
+Changing the agent system prompt (`cecli/cecli/prompts/agent.yml`) has effects that the
+"does it run" gates miss. There are three layers, cheapest first:
+
+| Layer | What it proves | Command | LLM? |
+|-------|----------------|---------|------|
+| **Contract** | The prompt *states* the rules (ReadRange→EditText, one file/call, empty-file markers, scope, no-loop) and renders with no stray `{}`; sub-agent inherits the agent identity; `{final_reminders}` reaches the prompt once | `pytest cecli/tests/basic/test_agent_prompt_contract.py` | No |
+| **Scorer** | The behavioral scorer turns an SSE event stream into objective signals (edit failures, ReadRange-before-edit, ls-spam, token limit, rounds) | `pytest tests/core/test_agent_eval.py` | No |
+| **Judge parsing** | The LLM-judge transcript rendering + JSON parsing are robust to fences, prose, out-of-range, and missing dims | `pytest tests/core/test_agent_judge.py` | No |
+| **Behavioral** | A real model, on a fixed scoped edit task, *follows* the contract: edits the file, no edit/readrange errors, ReadRange precedes the edit | `yarn eval:prompts` (or `E2E_OLLAMA_MODEL=… yarn eval:prompts`) | Yes (Ollama) |
+| **Subjective (judge)** | A capable model grades the turn transcript against a rubric (scope discipline, directness, investigation, summary quality) | `BV_PROMPT_JUDGE=1 yarn eval:prompts` | Yes (Ollama) |
+
+The behavioral eval (`tests/core/test_agent_prompt_eval.py`) prints a one-line objective
+score via `bright_vision_core.agent_eval.summarize_metrics`, and — when `BV_PROMPT_JUDGE=1`
+— a one-line subjective rubric via `bright_vision_core.agent_judge.summarize_verdict`:
+
+```
+[ollama_chat/qwen3-coder:30b] score=0.8 contract=ok edits_ok=1 edit_fail=0 rr_ok=1 rr_err=0 ls=0 rounds=4 tokens=21000 token_limit=False
+[ollama_chat/qwen3-coder:30b] judge overall=5.0 scope_discipline=5 directness=5 investigation=5 summary_quality=5
+  judge notes: Stayed strictly within scope; investigated before editing; clear summary.
+```
+
+The judge is opt-in (`BV_PROMPT_JUDGE=1`, model via `BV_PROMPT_JUDGE_MODEL`, defaults to the
+agent model) and never fails the test on judge unavailability — it is a signal, not a gate.
+Use a capable model as the judge; a 3b model makes a noisy grader.
+
+**To compare two prompt versions:** run `yarn eval:prompts` (add `BV_PROMPT_JUDGE=1` for the
+rubric) on the current prompt, note the metrics + judge lines, edit `agent.yml`, re-run, and
+diff. Lower failure counters, higher `score`, and higher judge `overall` mean the prompt
+steers the model better. The objective scorer reuses the same signal parsers as the live
+loop-guard in `bright_vision_core/agent_turn.py`, so the score reflects real product
+behavior, not a separate definition of "good".
 
 ## Manual smoke (not Playwright)
 
@@ -304,8 +366,10 @@ After `yarn test:full`, when you change engine or desktop integration:
 
 ```bash
 source activate.sh
-yarn tauri dev
+yarn vision          # recommended; BV_VISION_SETUP=1 after engine/submodule pulls
 ```
+
+Or `yarn tauri dev` (same window; `yarn vision` also clears stale orchestrator on `:8751`).
 
 Check: Terminal Start/Stop, Chat send, Tasks tab, Git tab (real `git`), attach images.
 

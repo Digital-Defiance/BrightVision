@@ -16,7 +16,7 @@ cp local-llm.env.example local-llm.env   # optional but recommended for Ollama
 yarn tauri dev
 ```
 
-On launch, **project** defaults to the app repo. Use Chat welcome or Settings to point at another repo if needed.
+On launch, **Open a project** (IDE-style gate) — pick or confirm the git repo you are editing. Switch anytime via the **project name in the header** (recents included). Settings hold model/API options only, not the project path.
 
 **Self-dev on this repo:** [DOGFOOD.md](./DOGFOOD.md).
 
@@ -26,9 +26,9 @@ For local Ollama: set **`local-llm.env`** (`DATA_MODEL`, optional `OLLAMA_HOST`;
 
 ## Day-to-day use
 
-1. **Open the app** — project path is auto-detected or restored from last session.
-2. **Choose project** (optional) — welcome card or Settings → folder picker. This is the git repo the agent edits.
-3. **Settings** (optional) — model (local: `ollama_chat/…`), LiteLLM params, context files → **Save**.
+1. **Open the app** — **Open a project** screen: confirm last repo, pick from recents, or choose a folder.
+2. **Settings** (optional) — model (local: `ollama_chat/…`), LiteLLM params, context files → **Save**.
+3. **Switch project** (anytime) — header project button; active chat session stops when you open a different repo.
 4. **Terminal → Start** — spawns core from the app bundle, opens an HTTP session on your project.
 5. **Chat** — send prompts; git activity appears on the Git tab.
 

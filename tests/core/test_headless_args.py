@@ -29,6 +29,11 @@ _HEADLESS_ATTRS = (
     "auto_save_session_name",
     "session_encrypt",
     "session_key_file",
+    "attribute_author",
+    "attribute_committer",
+    "attribute_co_authored_by",
+    "attribute_commit_message_author",
+    "attribute_commit_message_committer",
 )
 
 
@@ -46,6 +51,11 @@ def test_default_headless_args_verbose_defaults_false():
 def test_default_headless_args_yes_flag():
     assert default_headless_args(yes=False).yes is False
     assert default_headless_args(yes=True).yes is True
+
+
+def test_default_headless_args_yes_always_commands_follows_yes():
+    assert default_headless_args(yes=False).yes_always_commands is False
+    assert default_headless_args(yes=True).yes_always_commands is True
 
 
 def test_default_headless_args_includes_agent_config_json():

@@ -1,11 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { OllamaModelRow, OllamaModelsSnapshot } from '../ipc/localLlm'
-import { resolveLocalLlmForConfig } from '../ipc/localLlm'
+import { bareLocalModelId, resolveLocalLlmForConfig } from '../ipc/localLlm'
 import { isTauriRuntime } from '../ipc/isTauri'
 import type { VisionConfig } from '../ipc/config'
 
 function modelName(entry: Record<string, unknown>): string | null {
-  const name = entry.name ?? entry.model
+  const name =
+    entry.identifier ?? entry.modelKey ?? entry.name ?? entry.model
   return typeof name === 'string' && name.trim() ? name.trim() : null
 }
 
@@ -21,21 +22,78 @@ function formatBytes(n: number): string {
 function entryToRow(entry: Record<string, unknown>): OllamaModelRow | null {
   const name = modelName(entry)
   if (!name) return null
-  const sizeNum = typeof entry.size === 'number' ? entry.size : null
+  const sizeNum =
+    typeof entry.sizeBytes === 'number'
+      ? entry.sizeBytes
+      : typeof entry.size === 'number'
+        ? entry.size
+        : null
   const vramNum = typeof entry.size_vram === 'number' ? entry.size_vram : null
   const expires =
-    typeof entry.expires_at === 'string' && entry.expires_at.trim()
-      ? entry.expires_at.trim()
-      : null
+    typeof entry.selectedVariant === 'string' && entry.selectedVariant.trim()
+      ? entry.selectedVariant.trim()
+      : typeof entry.expires_at === 'string' && entry.expires_at.trim()
+        ? entry.expires_at.trim()
+        : typeof entry.ttlMs === 'number'
+          ? `ttl ${entry.ttlMs}ms`
+          : null
+  let processor: string | null = null
+  if (typeof entry.status === 'string' && entry.status.trim()) {
+    const parts = [entry.status.trim().toUpperCase()]
+    if (typeof entry.parallel === 'number' && entry.parallel > 0) {
+      parts.push(`parallel ${entry.parallel}`)
+    }
+    processor = parts.join(' · ')
+  } else if (sizeNum && sizeNum > 0 && vramNum !== null) {
+    const gpuPct = Math.round((vramNum / sizeNum) * 100)
+    if (gpuPct >= 100) {
+      processor = '100% GPU'
+    } else if (gpuPct <= 0) {
+      processor = '100% CPU'
+    } else {
+      processor = `${gpuPct}% GPU / ${100 - gpuPct}% CPU`
+    }
+  } else if (typeof entry.architecture === 'string' && entry.architecture.trim()) {
+    processor = entry.architecture.trim()
+  }
+  const context =
+    typeof entry.contextLength === 'number'
+      ? entry.contextLength
+      : typeof entry.context_length === 'number'
+        ? entry.context_length
+        : typeof entry.maxContextLength === 'number'
+          ? entry.maxContextLength
+          : typeof entry.num_ctx === 'number'
+            ? entry.num_ctx
+            : null
   return {
     name,
     size: sizeNum && sizeNum > 0 ? formatBytes(sizeNum) : null,
-    vram: vramNum && vramNum > 0 ? `VRAM ${formatBytes(vramNum)}` : null,
+    vram:
+      typeof entry.deviceIdentifier === 'string' && entry.deviceIdentifier.trim()
+        ? entry.deviceIdentifier.trim()
+        : vramNum && vramNum > 0
+          ? `VRAM ${formatBytes(vramNum)}`
+          : entry.type === 'llm'
+            ? 'Local'
+            : null,
     expiresAt: expires,
+    processor,
+    context,
   }
 }
 
+/** Parse Ollama `/api/*` bodies or raw `lms ls/ps --json` arrays. */
 export function rowsFromOllamaApiBody(body: unknown): OllamaModelRow[] {
+  if (Array.isArray(body)) {
+    const rows = body
+      .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+      .filter((entry) => entry.type !== 'embedding')
+      .map(entryToRow)
+      .filter((r): r is OllamaModelRow => r !== null)
+    rows.sort((a, b) => a.name.localeCompare(b.name))
+    return rows
+  }
   if (!body || typeof body !== 'object') return []
   const models = (body as { models?: unknown }).models
   if (!Array.isArray(models)) return []
@@ -56,7 +114,32 @@ async function fetchOllamaEndpoint(host: string, path: 'api/ps' | 'api/tags'): P
   return res.json()
 }
 
-async function fetchSnapshotWeb(host: string, modelTag: string): Promise<OllamaModelsSnapshot> {
+function psMatchesTag(rows: OllamaModelRow[], modelTag: string): boolean {
+  const bare = bareLocalModelId(modelTag)
+  return rows.some(
+    (r) => r.name === bare || r.name.startsWith(`${bare}:`) || r.name.startsWith(`${bare}@`)
+  )
+}
+
+async function fetchSnapshotWeb(
+  host: string,
+  modelTag: string,
+  backend?: string | null
+): Promise<OllamaModelsSnapshot> {
+  const name = (backend ?? 'ollama').trim().toLowerCase()
+  if (name === 'lmstudio') {
+    return {
+      ollamaHost: host,
+      reachable: false,
+      configuredTag: modelTag,
+      configuredInPs: false,
+      tagsText: 'lms ls --json requires the desktop app (Tauri)',
+      psText: 'lms ps --json requires the desktop app (Tauri)',
+      tagsRows: [],
+      psRows: [],
+      backend: 'lmstudio',
+    }
+  }
   try {
     const [tagsBody, psBody] = await Promise.all([
       fetchOllamaEndpoint(host, 'api/tags'),
@@ -65,9 +148,7 @@ async function fetchSnapshotWeb(host: string, modelTag: string): Promise<OllamaM
     const tagsRows = rowsFromOllamaApiBody(tagsBody)
     const psRows = rowsFromOllamaApiBody(psBody)
     const tag = modelTag.trim()
-    const configuredInPs =
-      !!tag &&
-      psRows.some((r: OllamaModelRow) => r.name === tag || r.name.startsWith(`${tag}:`))
+    const configuredInPs = !!tag && psMatchesTag(psRows, tag)
     return {
       ollamaHost: host,
       reachable: true,
@@ -77,6 +158,7 @@ async function fetchSnapshotWeb(host: string, modelTag: string): Promise<OllamaM
       psText: '',
       tagsRows,
       psRows,
+      backend: 'ollama',
     }
   } catch (err) {
     return {
@@ -88,15 +170,17 @@ async function fetchSnapshotWeb(host: string, modelTag: string): Promise<OllamaM
       psText: '',
       tagsRows: [],
       psRows: [],
+      backend: 'ollama',
     }
   }
 }
 
-/** Latest Ollama model listings for Settings and `/ps` in chat. */
+/** Latest local model listings for Settings and `/ps` in chat. */
 export async function fetchOllamaModelsSnapshot(
-  config: VisionConfig
+  config: VisionConfig,
+  backend?: string | null
 ): Promise<OllamaModelsSnapshot> {
-  const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config)
+  const { ollamaHost, modelTag } = resolveLocalLlmForConfig(config, backend)
   const tag = modelTag ?? ''
   if (isTauriRuntime()) {
     return invoke<OllamaModelsSnapshot>('ollama_models_snapshot', {
@@ -104,5 +188,5 @@ export async function fetchOllamaModelsSnapshot(
       modelTag: tag,
     })
   }
-  return fetchSnapshotWeb(ollamaHost, tag)
+  return fetchSnapshotWeb(ollamaHost, tag, backend)
 }

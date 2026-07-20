@@ -53,6 +53,15 @@ export function ThinkingTimingSection({
         <FormControlLabel
           control={
             <Switch
+              checked={prefs.brightDateMode}
+              onChange={(_, v) => onChange({ ...prefs, brightDateMode: v })}
+            />
+          }
+          label="BrightDate mode (BD / millidays for response time, ETA, and history)"
+        />
+        <FormControlLabel
+          control={
+            <Switch
               checked={prefs.showLiveTimer}
               onChange={(_, v) => onChange({ ...prefs, showLiveTimer: v })}
             />

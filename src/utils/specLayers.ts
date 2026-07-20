@@ -26,20 +26,93 @@ export function designReferencesRequirements(requirements: string, design: strin
   return false
 }
 
+const TASK_NUMBERED_RE = /(?:^|\n)\s*(?:-\s*\[[ xX]\]\s*)?\d+\.\s+/m
+
+function tasksHaveNumberedSteps(tasksMd: string): boolean {
+  return TASK_NUMBERED_RE.test(tasksMd || '')
+}
+
+/** Mirror of Python ``normalize_tasks_md_numbering`` (small-model guard). */
+export function normalizeTasksMdNumbering(tasksMd: string): string {
+  const tasks = (tasksMd || '').trim()
+  if (!tasks || tasksHaveNumberedSteps(tasks)) return tasksMd || ''
+
+  const lines = tasks.split('\n')
+  const out: string[] = []
+  let n = 0
+  for (const line of lines) {
+    const stripped = line.trim()
+    if (!stripped) {
+      out.push('')
+      continue
+    }
+    const plainNum = stripped.match(/^(\d+)\.\s+(.+)$/)
+    if (plainNum) {
+      n = Math.max(n, Number(plainNum[1]))
+      out.push(`- [ ] ${plainNum[1]}. ${plainNum[2]}`)
+      continue
+    }
+    const numberedCheckbox = stripped.match(/^[-*]\s*(?:\[[ xX]\]\s*)?(\d+)[.)]\s+(.+)$/)
+    if (numberedCheckbox) {
+      n = Math.max(n, Number(numberedCheckbox[1]))
+      out.push(`- [ ] ${numberedCheckbox[1]}. ${numberedCheckbox[2]}`)
+      continue
+    }
+    const checkbox = stripped.match(/^[-*]\s*\[[ xX]\]\s*(.+)$/)
+    if (checkbox) {
+      const body = checkbox[1].trim()
+      if (/^\d+\.\s+/.test(body)) {
+        out.push(line)
+        continue
+      }
+      n += 1
+      out.push(`- [ ] ${n}. ${body}`)
+      continue
+    }
+    const bullet = stripped.match(/^[-*]\s+(.+)$/)
+    if (bullet) {
+      const body = bullet[1].trim()
+      const embedded = body.match(/^(\d+)\.\s+(.+)$/)
+      if (embedded) {
+        n = Math.max(n, Number(embedded[1]))
+        out.push(`- [ ] ${body}`)
+        continue
+      }
+      n += 1
+      out.push(`- [ ] ${n}. ${body}`)
+      continue
+    }
+    const taskLabel = stripped.match(/^(?:task\s*)?(\d+)\s*[:.)]\s*(.+)$/i)
+    if (taskLabel) {
+      n = Math.max(n, Number(taskLabel[1]))
+      out.push(`- [ ] ${taskLabel[1]}. ${taskLabel[2].trim()}`)
+      continue
+    }
+    out.push(line)
+  }
+
+  const result = out.join('\n').trim()
+  return tasksHaveNumberedSteps(result) ? result : tasksMd
+}
+
 /** Mirror of Python ``normalize_spec_layer_traceability`` (small-model guard). */
 export function normalizeSpecLayerTraceability(layers: SpecLayers): SpecLayers {
   const req = (layers.requirements || '').trim()
   const design = (layers.design || '').trim()
   const ids = [...req.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase())
   const unique = [...new Set(ids)]
-  if (!unique.length || designReferencesRequirements(req, design)) {
-    return layers
+  let next = layers
+  if (unique.length && !designReferencesRequirements(req, design)) {
+    const trace = `Covers ${unique.join(', ')}.`
+    next = !design
+      ? { ...next, design: `## Traceability\n${trace}` }
+      : { ...next, design: `${design.replace(/\s+$/, '')}\n\n## Traceability\n${trace}` }
   }
-  const trace = `Covers ${unique.join(', ')}.`
-  if (!design) {
-    return { ...layers, design: `## Traceability\n${trace}` }
+  const tasks = normalizeTasksMdNumbering(next.tasks_md || '')
+  if (tasks.trim()) {
+    next = { ...next, tasks_md: tasks }
   }
-  return { ...layers, design: `${design.replace(/\s+$/, '')}\n\n## Traceability\n${trace}` }
+  return next
 }
 
 export function assessGeneratedSpecLayers(layers: SpecLayers): SpecLayerAssessment {
@@ -121,7 +194,7 @@ export function assessSpecRichness(layers: SpecLayers): SpecLayerAssessment {
     }
     const criteria = (req.match(/^\s*\d+\.\s+/gm) || []).length
     const ids = new Set([...req.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()))
-    if (ids.size < 2 && criteria < 2) {
+    if (ids.size < 2 || criteria < 4) {
       suggestions.push('requirements: add more requirements and acceptance criteria')
     }
   }

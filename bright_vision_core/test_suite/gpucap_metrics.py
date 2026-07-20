@@ -10,12 +10,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from brightdate import format_bd_bounds, parse_bd_bounds
+
+from bright_vision_core.brightdate import GPUCAP_FMT_BRIGHTDATE
 from bright_vision_core.test_suite.timing import GPUCAP_FMT, parse_btime_seconds, parse_gpucap_line
-from bright_vision_core.test_suite.brightdate_timing import (
-    GPUCAP_FMT_BRIGHTDATE,
-    format_bd_bounds,
-    parse_btime_bd_bounds,
-)
+
+parse_btime_bd_bounds = parse_bd_bounds
 
 # Matches bgpucap 0.1.4+ JSON summary on stdout (schema "1").
 # Group name is ``memory-detail`` (not ``mem-detail``); see ``bgpucap --list-metrics``.
@@ -145,7 +145,7 @@ def wrap_step_argv(
     use_json: bool,
     use_brightdate: bool = False,
 ) -> list[str]:
-    from bright_vision_core.test_suite.brightdate_timing import btime_command_argv
+    from bright_vision_core.brightdate import btime_command_argv
 
     btime_argv = btime_command_argv(step_argv, use_brightdate=use_brightdate)
     if use_json:

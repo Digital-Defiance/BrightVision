@@ -15,9 +15,14 @@ from bright_vision_core.agent_todos import (
     parse_agent_todo_txt,
     plan_title_from_rows,
     rows_from_todo_item,
+    rows_to_tasks_md,
     format_agent_todo_txt,
     AgentTodoRow,
+    AgentTodoSanitizeContext,
     _recover_char_split_agent_rows,
+    load_agent_todo_rows,
+    current_agent_todo_row,
+    sanitize_agent_todo_rows,
 )
 from bright_vision_core.workspace_todos import ChecklistItem, TodoItem, WorkspaceTodos, _now_iso
 
@@ -139,6 +144,95 @@ def test_import_merges_into_active_task(tmp_path: Path):
     assert agent_todo_link_for(rel) in item.links
 
 
+def test_import_agent_plan_preserves_spec_tasks_md(tmp_path: Path):
+    from bright_vision_core.agent_todos import preserve_spec_tasks_md_on_agent_import
+
+    spec_tasks = (
+        "- [ ] 1. Wire generate-spec API for REQ-001 (depends: none)\n"
+        "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+    )
+    agent_tasks = rows_to_tasks_md(
+        [
+            AgentTodoRow(text="Step A", done=False, current=True),
+            AgentTodoRow(text="Step B", done=False, current=False),
+        ]
+    )
+    item = TodoItem(
+        id="user1",
+        title="My feature",
+        tasks_md=spec_tasks,
+        status="in_progress",
+        links=[],
+        checklist=[],
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+    )
+    assert preserve_spec_tasks_md_on_agent_import(item, agent_tasks) is True
+
+    api = WorkspaceTodos(tmp_path)
+    store = api.load()
+    store.todos.append(item)
+    store.active_id = item.id
+    api.save(store)
+
+    agents = tmp_path / ".cecli" / "agents" / "2026-05-27" / "sess"
+    agents.mkdir(parents=True)
+    rel = ".cecli/agents/2026-05-27/sess/todo.txt"
+    (agents / "todo.txt").write_text("Remaining:\n→ Step A\n○ Step B\n", encoding="utf-8")
+
+    store2 = import_agent_plan_for_workspace(tmp_path, agent_todo_relpath=rel)
+    merged = store2.todos[0]
+    assert merged.tasks_md == spec_tasks
+    assert len(merged.checklist) == 2
+
+
+def test_import_agent_plan_merges_numbered_agent_done_into_spec_tasks_md(tmp_path: Path):
+    spec_tasks = (
+        "- [ ] 1. Wire generate-spec API for REQ-001 (depends: none)\n"
+        "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+    )
+    api = WorkspaceTodos(tmp_path)
+    store = api.load()
+    item = TodoItem(
+        id="user1",
+        title="My feature",
+        tasks_md=spec_tasks,
+        status="in_progress",
+        links=[],
+        checklist=[],
+        created_at=_now_iso(),
+        updated_at=_now_iso(),
+    )
+    store.todos.append(item)
+    store.active_id = item.id
+    api.save(store)
+
+    agents = tmp_path / ".cecli" / "agents" / "2026-06-03" / "sess"
+    agents.mkdir(parents=True)
+    rel = ".cecli/agents/2026-06-03/sess/todo.txt"
+    (agents / "todo.txt").write_text(
+        "\n".join(
+            [
+                "Done:",
+                "✓ 1. Wire generate-spec API for REQ-001 (depends: none)",
+                "",
+                "Remaining:",
+                "→ 2. Add tests for REQ-002 (depends: 1)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    store2 = import_agent_plan_for_workspace(tmp_path, agent_todo_relpath=rel)
+    merged = store2.todos[0]
+    assert "- [x] 1. Wire generate-spec" in merged.tasks_md
+    assert "REQ-001" in merged.tasks_md
+    assert "- [ ] 2. Add tests" in merged.tasks_md
+    assert merged.checklist[0].done is True
+    assert merged.checklist[1].done is False
+
+
 def test_export_roundtrip(tmp_path: Path):
     rows = [
         AgentTodoRow(text="Done step", done=True, current=False),
@@ -167,3 +261,55 @@ def test_export_roundtrip(tmp_path: Path):
     parsed = parse_agent_todo_txt(path.read_text(encoding="utf-8"))
     assert [r.text for r in parsed] == [r.text for r in rows]
     assert format_agent_todo_txt(rows) in path.read_text(encoding="utf-8")
+
+
+def test_sanitize_reverts_premature_done_beyond_focus():
+    rows = [
+        AgentTodoRow(text="1.3 Write unit tests", done=True, current=False),
+        AgentTodoRow(text="2.1 Create entities", done=True, current=False),
+    ]
+    ctx = AgentTodoSanitizeContext(focus_step="1.3", flutter_test_ok=None)
+    sanitized, warnings = sanitize_agent_todo_rows(
+        rows,
+        ctx=ctx,
+        prior_done_texts=frozenset(),
+    )
+    assert sanitized[0].done is True
+    assert sanitized[1].done is False
+    assert warnings
+
+
+def test_sanitize_reverts_test_done_without_flutter_pass():
+    rows = [AgentTodoRow(text="1.3 Write unit tests for NetworkInterceptor", done=True, current=False)]
+    ctx = AgentTodoSanitizeContext(focus_step="1.3", flutter_test_ok=False)
+    sanitized, warnings = sanitize_agent_todo_rows(
+        rows,
+        ctx=ctx,
+        prior_done_texts=frozenset(),
+    )
+    assert sanitized[0].done is False
+    assert warnings
+
+
+def test_current_agent_todo_row_prefers_marked_current(tmp_path: Path):
+    rows = [
+        AgentTodoRow(text="Done step", done=True, current=False),
+        AgentTodoRow(text="3.1 Encrypted storage", done=False, current=True),
+        AgentTodoRow(text="3.2 Later", done=False, current=False),
+    ]
+    row = current_agent_todo_row(rows)
+    assert row is not None
+    assert row.text.startswith("3.1")
+
+
+def test_load_agent_todo_rows_from_latest(tmp_path: Path):
+    agents = tmp_path / ".cecli" / "agents" / "2026-06-07" / "abc"
+    agents.mkdir(parents=True)
+    (agents / "todo.txt").write_text(
+        "Remaining:\n→ 3.1 Develop EncryptedStorageRepository\n",
+        encoding="utf-8",
+    )
+    rows = load_agent_todo_rows(tmp_path)
+    assert len(rows) == 1
+    assert rows[0].current
+    assert "3.1" in rows[0].text

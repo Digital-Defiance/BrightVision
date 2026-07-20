@@ -27,6 +27,8 @@ export interface TurnEtaInput {
   progressFraction?: number | null
   /** Live output TPS from current turn usage line when available. */
   liveOutputTps?: number | null
+  /** Format durations/ETC as BrightDate (BD / md). */
+  brightDate?: boolean
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -43,6 +45,7 @@ function promptScale(promptChars: number, baselineChars: number): number {
  * optional progress fraction, and historical output TPS when logged.
  */
 export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
+  const fmt = (ms: number) => formatDurationMs(ms, { brightDate: input.brightDate })
   const model = input.model.trim() || 'unknown'
   const view = buildTimingStatsView(input.statsStore, model)
   const n = view.response.count
@@ -85,9 +88,9 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
 
   const lines: string[] = [
     `Model: ${model}`,
-    `History: ${n} turn${n === 1 ? '' : 's'} (median ${formatDurationMs(median)}, p90 ${formatDurationMs(p90)})`,
+    `History: ${n} turn${n === 1 ? '' : 's'} (median ${fmt(median)}, p90 ${fmt(p90)})`,
     `Prompt scale: ×${scale.toFixed(2)} (${input.promptChars.toLocaleString()} chars vs ~${Math.round(avgPrompt).toLocaleString()} avg)`,
-    `Estimated total: ~${formatDurationMs(Math.round(estimatedTotal))}`,
+    `Estimated total: ~${fmt(Math.round(estimatedTotal))}`,
   ]
 
   if (tps != null && tps > 0) {
@@ -102,7 +105,7 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
     lines.push(`Progress: ${Math.round(progress * 100)}% (blended into estimate)`)
   }
 
-  lines.push(`Typical range: ${formatDurationMs(remaining)} – ${formatDurationMs(p90Remaining)} remaining`)
+  lines.push(`Typical range: ${fmt(remaining)} – ${fmt(p90Remaining)} remaining`)
   lines.push(
     'GPU % (when logged) is not used for this estimate — correlation with time-left needs dogfood data (#34).'
   )
@@ -117,8 +120,7 @@ export function estimateTurnEta(input: TurnEtaInput): TurnEtaEstimate {
     estimatedTotal = Math.max(estimatedTotal, input.elapsedMs + remaining)
   }
 
-  const shortLabel =
-    remaining > 0 ? `~${formatDurationMs(remaining)} left*` : null
+  const shortLabel = remaining > 0 ? `~${fmt(remaining)} left*` : null
 
   return {
     remainingMs: remaining > 0 ? remaining : null,

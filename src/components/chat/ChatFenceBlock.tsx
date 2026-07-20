@@ -10,6 +10,62 @@ import {
   normalizeFenceLanguage,
 } from '../../utils/fenceLanguage'
 import { MermaidFence } from './MermaidFence'
+import { CollapsibleJsonBlock } from './CollapsibleJsonBlock'
+import { parseAgentJsonText } from '../../utils/jsonParse'
+
+/**
+ * Strip cecli hashline prefixes (`abcd::`) from code content for display.
+ * These are 4-char hex/alnum IDs used by cecli's ReadRange/EditText tools
+ * to let the model reference specific lines. Not useful for the user.
+ */
+function stripHashlinePrefixes(text: string): string {
+  // Pattern: line starts with exactly 4 alphanumeric chars + `::`
+  // Only strip if most lines match (avoid false positives on normal code)
+  const lines = text.split('\n')
+  const hashlinePattern = /^[a-zA-Z0-9~]{4}::/
+  const matchCount = lines.filter((l) => hashlinePattern.test(l)).length
+  // Strip if at least 60% of non-empty lines match the pattern
+  const nonEmpty = lines.filter((l) => l.trim()).length
+  if (nonEmpty > 0 && matchCount / nonEmpty >= 0.6) {
+    return lines.map((l) => (hashlinePattern.test(l) ? l.slice(6) : l)).join('\n')
+  }
+  return text
+}
+
+/** Strip `<file path="...">` / `</file>` wrapper tags from code content. */
+function stripFileWrapperTags(text: string): { body: string; filePath: string | null } {
+  const lines = text.split('\n')
+  let filePath: string | null = null
+  let startIdx = 0
+  let endIdx = lines.length
+
+  // Check first non-empty line for <file path="...">
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    if (!trimmed) continue
+    const m = trimmed.match(/^<file\s+path="([^"]+)"[^>]*>$/)
+    if (m) {
+      filePath = m[1]
+      startIdx = i + 1
+    }
+    break
+  }
+
+  // Check last non-empty line for </file>
+  for (let i = lines.length - 1; i >= startIdx; i--) {
+    const trimmed = lines[i].trim()
+    if (!trimmed) continue
+    if (trimmed === '</file>') {
+      endIdx = i
+    }
+    break
+  }
+
+  if (filePath) {
+    return { body: lines.slice(startIdx, endIdx).join('\n'), filePath }
+  }
+  return { body: text, filePath: null }
+}
 
 interface ChatFenceBlockProps {
   language: string
@@ -19,9 +75,15 @@ interface ChatFenceBlockProps {
 
 export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps) {
   const [copied, setCopied] = useState(false)
-  const label = fenceLanguageLabel(language)
+  const { body: unwrappedBody, filePath } = useMemo(() => stripFileWrapperTags(body), [body])
+  const displayBody = useMemo(() => stripHashlinePrefixes(unwrappedBody), [unwrappedBody])
+  const label = filePath || fenceLanguageLabel(language)
   const langId = normalizeFenceLanguage(language)
   const mermaid = isMermaidFence(language)
+  const jsonValue = useMemo(
+    () => (!mermaid ? parseAgentJsonText(displayBody) : null),
+    [displayBody, mermaid]
+  )
 
   const extensions = useMemo(
     () => (mermaid ? [] : fenceLanguageExtensions(language)),
@@ -75,9 +137,11 @@ export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ p: mermaid ? 1.5 : 0, minHeight: mermaid ? 48 : 0 }}>
-        {mermaid ? (
-          <MermaidFence source={body} complete={complete} />
+      <Box sx={{ p: jsonValue ? 1 : mermaid ? 1.5 : 0, minHeight: mermaid ? 48 : 0 }}>
+        {jsonValue ? (
+          <CollapsibleJsonBlock value={jsonValue} text={displayBody.trim()} />
+        ) : mermaid ? (
+          <MermaidFence source={displayBody} complete={complete} />
         ) : extensions.length > 0 ? (
           <Box
             sx={{
@@ -88,7 +152,7 @@ export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps
             }}
           >
             <CodeMirror
-              value={body}
+              value={displayBody}
               theme={vscodeDark}
               extensions={extensions}
               editable={false}
@@ -109,7 +173,7 @@ export function ChatFenceBlock({ language, body, complete }: ChatFenceBlockProps
               fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace',
             }}
           >
-            {body}
+            {displayBody}
           </Typography>
         )}
       </Box>

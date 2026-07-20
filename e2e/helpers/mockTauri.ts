@@ -77,8 +77,37 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
       return null
     },
     stop_core_api: async () => null,
+    cancel_vision_message: async () => null,
+    engine_install_info: async () => ({
+      install_root: process.cwd(),
+      default_python_path: process.platform === 'win32' ? 'python' : '/usr/bin/python3',
+    }),
+    git_restore_worktree_paths: async () => {
+      log.commands.push('git_restore_worktree_paths')
+      return null
+    },
     /** Match {@link E2E_CONFIG.coreApiUrl} so Playwright routes in mockCoreApi intercept fetches. */
     start_core_api: async () => '/api/core',
+    read_local_llm_config: async () => ({
+      sources: ['mock/local-llm.env'],
+      ollamaHost: 'http://127.0.0.1:11434',
+      dataModel: 'test/model',
+      llmMode: null,
+      fastModel: null,
+      codeModel: null,
+      heavyModel: null,
+      thinkModel: null,
+      modelRouter: null,
+      fastThink: null,
+      codeThink: null,
+      repoLocalLlmRoot: null,
+      tierSlots: [],
+      priorityList: [],
+      modelPriorityRaw: null,
+      warnings: [],
+      preferWarm: null,
+      backend: 'ollama',
+    }),
     local_llm_refresh_keep_alive: async () => ['test/model: keep_alive=-1 refreshed'],
     local_llm_status: async () => ({
       ollamaRunning: true,
@@ -119,6 +148,7 @@ function defaultHandlers(log: TauriInvokeLog): Record<string, TauriHandler> {
         },
       ],
       tagsRows: [{ name: 'test/model', size: '4.0 GB', vram: null, expiresAt: null }],
+      backend: 'ollama',
     }),
     get_resource_snapshot: async () => ({
       cpuPct: 12.5,
@@ -165,11 +195,105 @@ export async function installMockTauri(page: Page, opts: MockTauriOptions = {}) 
   })
 
   await page.addInitScript(() => {
+    async function parseSseStream(
+      response: Response,
+      channel: { onmessage?: (event: unknown) => void }
+    ) {
+      const reader = response.body?.getReader()
+      if (!reader) return
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        for (const part of parts) {
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const event = JSON.parse(line.slice(6)) as unknown
+              channel.onmessage?.(event)
+            } catch {
+              /* ignore malformed chunk */
+            }
+          }
+        }
+      }
+    }
+
     const invoke = async (
       cmd: string,
       args: Record<string, unknown> = {},
       _options?: unknown
-    ) => (window as unknown as { __e2eTauriInvoke: typeof invoke }).__e2eTauriInvoke(cmd, args)
+    ) => {
+      const bridge = window as unknown as {
+        __e2eTauriInvoke: typeof invoke
+      }
+      if (cmd === 'create_vision_session') {
+        const baseUrl = String(args.baseUrl ?? '/api/core').replace(/\/$/, '')
+        const res = await fetch(`${baseUrl}/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(args.body ?? {}),
+        })
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(`POST /sessions ${res.status}: ${text}`)
+        }
+        return res.json()
+      }
+      if (cmd === 'vision_api_fetch') {
+        const baseUrl = String(args.baseUrl ?? '/api/core').replace(/\/$/, '')
+        const path = String(args.path ?? '').replace(/^\//, '')
+        const method = String(args.method ?? 'GET').toUpperCase()
+        const headers: Record<string, string> = {}
+        if (args.body != null) headers['Content-Type'] = 'application/json'
+        const token = args.bearerToken
+        if (typeof token === 'string' && token.trim()) {
+          headers.Authorization = `Bearer ${token.trim()}`
+        }
+        const res = await fetch(`${baseUrl}/${path}`, {
+          method,
+          headers,
+          body: args.body != null ? JSON.stringify(args.body) : undefined,
+        })
+        const text = await res.text()
+        let body: unknown = text
+        try {
+          body = JSON.parse(text) as unknown
+        } catch {
+          /* plain text */
+        }
+        return { status: res.status, body }
+      }
+      if (cmd === 'send_vision_message') {
+        const baseUrl = String(args.baseUrl ?? '/api/core').replace(/\/$/, '')
+        const sessionId = String(args.sessionId ?? '')
+        const channel = args.onEvent as { onmessage?: (event: unknown) => void }
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        const token = args.bearerToken
+        if (typeof token === 'string' && token.trim()) {
+          headers.Authorization = `Bearer ${token.trim()}`
+        }
+        const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(args.body ?? {}),
+        })
+        if (!res.ok) {
+          const text = await res.text()
+          throw new Error(`POST /messages ${res.status}: ${text}`)
+        }
+        await parseSseStream(res, channel)
+        return
+      }
+      if (cmd === 'cancel_vision_message') {
+        return null
+      }
+      return bridge.__e2eTauriInvoke(cmd, args)
+    }
 
     const internals = {
       invoke,

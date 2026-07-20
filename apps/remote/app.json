@@ -6,6 +6,9 @@
     "orientation": "portrait",
     "scheme": "brightvision-remote",
     "userInterfaceStyle": "automatic",
+    "autolinking": {
+      "searchPaths": ["../../node_modules", "node_modules"]
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "org.digitaldefiance.brightvision.remote"

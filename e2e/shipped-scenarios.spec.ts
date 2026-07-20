@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectOptimisticSend } from './helpers/chatSend'
+import { expectOptimisticSend, expectTurnIdle } from './helpers/chatSend'
 import { E2E_EDIT_BLOCK_NEW, E2E_EDIT_BLOCK_REL } from './helpers/fixtureWorkspaces'
 import { listScenarioNames } from './helpers/scenarios'
 import { openChat, openTasks, startMockSession } from './helpers/session'
@@ -47,13 +47,14 @@ for (const name of listScenarioNames()) {
           break
         case 'proposed-edit':
           await expect(page.getByText('Proposed only')).toBeVisible({ timeout: 15_000 })
-          await page.getByRole('button', { name: new RegExp(E2E_EDIT_BLOCK_REL) }).click()
+          await page.getByText(E2E_EDIT_BLOCK_REL).click()
           await page.getByTestId('proposed-edit-apply').click()
           await expect.poll(() => writes.length).toBeGreaterThan(0)
           expect(String(writes.at(-1)?.content ?? '')).toContain(E2E_EDIT_BLOCK_NEW.trim())
           break
         case 'applied-edit':
-          await expect(page.getByText('Applied', { exact: true })).toBeVisible({ timeout: 15_000 })
+          await expectTurnIdle(page, 30_000)
+          await expect(page.getByTestId('proposed-edit-applied')).toBeVisible({ timeout: 15_000 })
           break
         case 'display-fence':
           await expect(page.getByTestId('chat-fence-block')).toBeVisible({ timeout: 15_000 })

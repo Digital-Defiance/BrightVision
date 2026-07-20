@@ -2,6 +2,7 @@ import { Box, Link, Typography } from '@mui/material'
 import type { Components } from 'react-markdown'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { withMarkdownHardBreaks } from '../../utils/markdownNewlines'
 import { ChatFenceBlock } from './ChatFenceBlock'
 
 const markdownComponents: Components = {
@@ -94,10 +95,13 @@ interface ChatMarkdownProps {
 export function ChatMarkdown({ content }: ChatMarkdownProps) {
   const trimmed = content.trim()
   if (!trimmed) return null
+  // Fix sentences running together without space (e.g. "complete.Tasks" → "complete. Tasks")
+  // This happens when cecli streaming drops newlines between paragraphs.
+  const normalized = trimmed.replace(/\.([A-Z])/g, '. $1')
   return (
     <Box className="vision-chat-markdown" data-testid="chat-markdown">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
+        {withMarkdownHardBreaks(normalized)}
       </ReactMarkdown>
     </Box>
   )

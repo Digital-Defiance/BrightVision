@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from pathlib import Path
 
 from bright_vision_core.test_suite.manifest import (
     SuiteRunOptions,
     SuiteStep,
+    bright_core_implement_test_files,
     llm_core_pytest_argv,
+    llm_core_test_files,
     plan_steps,
 )
 from bright_vision_core.test_suite.capture_mode import gpu_capture_bin
-from bright_vision_core.test_suite.runner import build_step_env
+from bright_vision_core.test_suite.runner import build_step_env, _LLM_GPU_STALL_ABORT_ENABLED
 from bright_vision_core.test_suite.timing import (
     GPUCAP_FMT,
     expectations_for_steps,
@@ -45,17 +48,24 @@ def test_build_step_env_llm_lane_sets_e2e_llm():
     assert "E2E_OLLAMA_MODEL" in env
 
 
-def test_build_step_env_release_smoke_unsets_e2e_llm():
+def test_build_step_env_release_smoke_unsets_e2e_llm(tmp_path: Path):
     step = SuiteStep(
         "test-local:release",
         "release",
         ("sh", "scripts/test-local.sh", "release"),
         touches_core_port=True,
     )
-    env = build_step_env(step, suite_run=True, base={"E2E_LLM": "1"})
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    venv_py = venv_bin / "python3"
+    venv_py.write_text("#!/bin/sh\n", encoding="utf8")
+    venv_py.chmod(0o755)
+    env = build_step_env(step, suite_run=True, base={"E2E_LLM": "1"}, cwd=tmp_path)
     assert env.get("E2E_LLM") is None
     assert env["BV_TEST_SUITE_SMOKE_E2E"] == "1"
     assert env["BV_TEST_SUITE_ACTIVE"] == "1"
+    assert env["E2E_PYTHON"] == str(venv_py.resolve())
+    assert env["PATH"].split(":")[0] == str(venv_bin.resolve())
 
 
 def test_gpu_capture_bin_prefers_bgpucap(monkeypatch):
@@ -85,17 +95,131 @@ def test_llm_core_step_env_longer_timeouts_in_suite(monkeypatch):
     env = llm_core_step_env(suite_run=True)
     assert env["LLM_TEST_TURN_TIMEOUT_S"] == "1200"
     assert env["VISION_AGENT_PREPROC_TIMEOUT_S"] == "0"
+    assert env["OLLAMA_WARMUP_EXCLUSIVE"] == "1"
     assert env["BV_COMPACT_SPEC_GEN"] == "1"
-    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "1800"
-    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "1800"
+    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "3600"
+    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "3600"
+
+
+def test_llm_core_step_env_lmstudio_injects_openai_env(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text(
+        "BRIGHTVISION_LLM_BACKEND=lmstudio\n"
+        "BRIGHTVISION_LLM_BACKEND_URL=http://127.0.0.1:1234\n"
+        "OPENAI_API_BASE=http://127.0.0.1:1234/v1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    env = llm_core_step_env(suite_run=True)
+    assert env["E2E_OLLAMA_MODEL"] == "openai/llama-3.2-3b-instruct"
+    assert env["OPENAI_API_BASE"] == "http://127.0.0.1:1234/v1"
+    assert env["OPENAI_API_KEY"] == "lm-studio"
 
 
 def test_llm_core_step_env_pins_default_model_in_suite(monkeypatch):
     from bright_vision_core.test_suite.manifest import llm_core_step_env
 
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "ollama")
     monkeypatch.setenv("E2E_OLLAMA_MODEL", "ollama_chat/qwen3.6:27b-q4_K_M")
     env = llm_core_step_env(suite_run=True)
     assert env["E2E_OLLAMA_MODEL"] == "ollama_chat/llama3.2:3b"
+
+
+def test_implement_lane_step_env_pins_code_model_from_local_llm_env(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.local_llm import implement_lane_step_env
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text("CODE_MODEL=qwen2.5-coder:7b\n", encoding="utf-8")
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
+    env = implement_lane_step_env(suite_run=True)
+    assert env["E2E_CODE_MODEL"] == "qwen2.5-coder:7b"
+
+
+def test_implement_lane_step_env_defaults_to_suite_coder_when_unset(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.local_llm import implement_lane_step_env
+
+    (tmp_path / "local-llm.env").write_text("BRIGHTVISION_LLM_BACKEND=lmstudio\n", encoding="utf-8")
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
+    monkeypatch.delenv("CODE_MODEL", raising=False)
+    env = implement_lane_step_env(suite_run=True)
+    assert env["E2E_CODE_MODEL"] == "qwen2.5-coder-7b-instruct"
+
+
+def test_implement_lane_step_env_bumps_timeout_for_heavy_code_model(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import implement_lane_step_env
+
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.setenv("E2E_CODE_MODEL", "qwen/qwen3.6-27b")
+    env = implement_lane_step_env(suite_run=True)
+    assert env["BV_SUITE_LLM_TURN_TIMEOUT_S"] == "1200"
+    assert "E2E_CODE_MODEL" not in env
+    assert "E2E_IMPLEMENT_AUTO_ADVANCE_LLM" not in env
+
+
+def test_implement_lane_step_env_does_not_enable_auto_advance_by_default(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import implement_lane_step_env
+
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.delenv("BV_TEST_SUITE_ACTIVE", raising=False)
+    monkeypatch.setenv("E2E_CODE_MODEL", "qwen2.5-coder:7b")
+    assert "E2E_IMPLEMENT_AUTO_ADVANCE_LLM" not in implement_lane_step_env(suite_run=True)
+    assert implement_lane_step_env(suite_run=False) == {}
+
+
+def test_llm_core_step_env_bumps_turn_timeout_for_heavy_code_model(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    (tmp_path / "local-llm.env").write_text("BRIGHTVISION_LLM_BACKEND=lmstudio\n", encoding="utf-8")
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.setenv("E2E_CODE_MODEL", "qwen/qwen3.6-27b")
+    env = llm_core_step_env(suite_run=True)
+    assert env["BV_SUITE_LLM_TURN_TIMEOUT_S"] == "1200"
+
+
+def test_llm_core_step_env_includes_code_model_in_suite(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    (tmp_path / "local-llm.env").write_text("BRIGHTVISION_LLM_BACKEND=lmstudio\n", encoding="utf-8")
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
+    env = llm_core_step_env(suite_run=True)
+    assert env["E2E_CODE_MODEL"] == "qwen2.5-coder-7b-instruct"
+    assert env["BV_SUITE_LLM_TURN_TIMEOUT_S"] == "600"
+
+
+def test_router_lane_step_env_pins_small_tiers_in_suite(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import router_lane_step_env
+
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    env = router_lane_step_env(suite_run=True)
+    assert env["E2E_FAST_MODEL"] == "llama-3.2-3b-instruct"
+    assert env["E2E_CODE_MODEL"] == "qwen2.5-coder-7b-instruct"
+    assert env["E2E_THINK_MODEL"] == "llama-3.2-1b-instruct"
+
+
+def test_router_lane_step_env_empty_when_use_env_model(monkeypatch):
+    from bright_vision_core.test_suite.local_llm import router_lane_step_env
+
+    monkeypatch.setenv("BV_SUITE_USE_ENV_MODEL", "1")
+    assert router_lane_step_env(suite_run=True) == {}
 
 
 def test_llm_core_step_env_uses_env_model_when_flag_set(monkeypatch):
@@ -116,6 +240,17 @@ def test_llm_core_step_env_respects_explicit_timeout_override(monkeypatch):
     assert env["LLM_TEST_TURN_TIMEOUT_S"] == "1200"
 
 
+def test_llm_core_step_env_floors_spec_gen_when_env_lower(monkeypatch):
+    from bright_vision_core.test_suite.manifest import llm_core_step_env
+
+    monkeypatch.setenv("BV_SUITE_USE_ENV_TIMEOUTS", "1")
+    monkeypatch.setenv("LLM_SPEC_GEN_TIMEOUT_S", "1800")
+    monkeypatch.setenv("LLM_SPEC_GEN_TURN_TIMEOUT_S", "1800")
+    env = llm_core_step_env(suite_run=True)
+    assert env["LLM_SPEC_GEN_TIMEOUT_S"] == "3600"
+    assert env["LLM_SPEC_GEN_TURN_TIMEOUT_S"] == "3600"
+
+
 def test_llm_core_argv_uses_live_pytest():
     argv = llm_core_pytest_argv()
     assert argv[0] == ".venv/bin/python3"
@@ -125,10 +260,51 @@ def test_llm_core_argv_uses_live_pytest():
     assert "-q" not in argv
 
 
+def test_llm_core_argv_edit_block_runs_before_spec_and_context():
+    """Edit-block must stay early — LM Studio wedges on late-suite plain LLM turns."""
+    files = [a for a in llm_core_pytest_argv() if a.endswith(".py")]
+    edit = files.index("tests/core/test_edit_block_llm.py")
+    hello = files.index("tests/core/test_hello_llm.py")
+    spec = files.index("tests/core/test_generate_spec_llm.py")
+    context = files.index("tests/core/test_context_llm.py")
+    assert edit < hello < spec < context
+
+
+def test_llm_core_argv_implement_after_tasks():
+    files = list(llm_core_test_files())
+    todo = files.index("tests/core/test_todo_list_llm.py")
+    implement = files.index("tests/core/test_implement_llm.py")
+    transcript = files.index("tests/core/test_transcript_llm.py")
+    assert todo < implement < transcript
+
+
+def _pytest_files_from_yarn_script(script: str) -> list[str]:
+    return [part for part in script.split() if part.startswith("tests/") and part.endswith(".py")]
+
+
+def test_llm_core_files_match_package_json():
+    root = Path(__file__).resolve().parents[2]
+    pkg = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    script = pkg["scripts"]["test:llm:core"]
+    assert _pytest_files_from_yarn_script(script) == list(llm_core_test_files())
+
+
+def test_bright_core_includes_implement_contract_tests():
+    root = Path(__file__).resolve().parents[2]
+    pkg = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    script = pkg["scripts"]["test:bright-core"]
+    bright_files = _pytest_files_from_yarn_script(script)
+    for path in bright_core_implement_test_files():
+        assert path in bright_files
+
+
 def test_plan_steps_includes_base():
     steps = plan_steps(skip_llm=True)
     ids = [s.id for s in steps]
     assert "dogfood:check" in ids
+    assert "verify:cecli-spec" in ids
+    assert "verify:cecli-hopper" in ids
+    assert "llm:backends" in ids
     assert "test-local:release" in ids
     assert "llm:core" not in ids
 
@@ -147,18 +323,146 @@ def test_plan_steps_optional_lanes():
     assert "e2e:llm:router" not in ids
 
 
+def test_plan_includes_implement_auto_advance_when_opted_in(monkeypatch):
+    from bright_vision_core.test_suite.manifest import SuiteRunOptions, plan_steps
+
+    monkeypatch.setattr(
+        "bright_vision_core.test_suite.manifest.local_llm_reachable",
+        lambda: True,
+    )
+    opts = SuiteRunOptions(implement_auto_advance_llm=True)
+    ids = [s.id for s in plan_steps(options=opts)]
+    assert "e2e:llm:implement-auto-advance" in ids
+    assert ids.index("e2e:llm:implement-auto-advance") == ids.index("e2e:llm") + 1
+
+
+def test_plan_omits_implement_auto_advance_by_default(monkeypatch):
+    from bright_vision_core.test_suite.manifest import plan_steps
+
+    monkeypatch.setattr(
+        "bright_vision_core.test_suite.manifest.local_llm_reachable",
+        lambda: True,
+    )
+    ids = [s.id for s in plan_steps()]
+    assert "e2e:llm:implement-auto-advance" not in ids
+
+
+def test_full_suite_run_options_enables_all_lanes():
+    from bright_vision_core.test_suite.manifest import full_suite_run_options
+
+    opts = full_suite_run_options()
+    ids = [s.id for s in plan_steps(skip_llm=True, options=opts)]
+    assert "verify:ears" in ids
+    assert "e2e:shipped-scenarios" in ids
+    assert "verify:cecli-pre-commit" in ids
+    assert "packages:unit" in ids
+    assert "pytest:engine-extra" in ids
+    assert opts.spec_gen_phased is True
+    assert opts.llm_router is True
+    assert opts.cloud_llm is True
+    assert opts.strict_phased_pytest is True
+    assert opts.full_coverage is True
+    assert opts.implement_auto_advance_llm is False
+
+
+def test_full_coverage_from_options_when_all_lanes_checked():
+    from bright_vision_core.test_suite.manifest import full_coverage_from_options
+
+    opts = SuiteRunOptions(
+        verify_ears=True,
+        shipped_scenarios=True,
+        spec_gen_phased=True,
+        strict_phased_pytest=True,
+        llm_router=True,
+        cloud_llm=True,
+    )
+    assert full_coverage_from_options(opts) is True
+
+
+def test_full_coverage_false_when_optional_lane_missing():
+    from bright_vision_core.test_suite.manifest import full_coverage_from_options
+
+    opts = SuiteRunOptions(
+        verify_ears=True,
+        shipped_scenarios=True,
+        spec_gen_phased=False,
+        strict_phased_pytest=True,
+    )
+    assert full_coverage_from_options(opts) is False
+
+
+def test_full_coverage_places_eval_prompts_before_llm_core(monkeypatch):
+    from bright_vision_core.test_suite.manifest import full_suite_run_options
+
+    monkeypatch.setattr(
+        "bright_vision_core.test_suite.manifest.local_llm_reachable", lambda: True
+    )
+    ids = [s.id for s in plan_steps(options=full_suite_run_options())]
+    assert "eval:prompts" in ids
+    assert ids.index("eval:prompts") < ids.index("llm:core")
+
+
+def test_eval_prompts_step_env_pins_fast_model(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import local_llm as ll
+    from bright_vision_core.test_suite.local_llm import eval_prompts_step_env
+
+    (tmp_path / "local-llm.env").write_text("BRIGHTVISION_LLM_BACKEND=lmstudio\n", encoding="utf-8")
+    monkeypatch.setattr(ll, "repo_root", lambda: tmp_path)
+    monkeypatch.setenv("BRIGHTVISION_LLM_BACKEND", "lmstudio")
+    monkeypatch.delenv("BV_SUITE_USE_ENV_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
+    env = eval_prompts_step_env(suite_run=True)
+    assert env["E2E_OLLAMA_MODEL"] == "openai/llama-3.2-3b-instruct"
+    assert env["LLM_TEST_TURN_TIMEOUT_S"] == "240"
+    assert '"num_retries": 0' in env["LITELLM_EXTRA_PARAMS"]
+    assert env["BV_EVAL_PROMPTS_SOFT"] == "1"
+    assert "E2E_IMPLEMENT_AUTO_ADVANCE_LLM" not in env
+    assert "E2E_CODE_MODEL" not in env
+
+
+def test_engine_extra_pytest_files_are_disjoint_from_bright_and_llm_core():
+    from bright_vision_core.test_suite.pytest_catalog import (
+        bright_core_pytest_files,
+        engine_extra_pytest_files,
+        llm_core_pytest_files,
+    )
+
+    extra = set(engine_extra_pytest_files())
+    assert extra
+    assert not extra & bright_core_pytest_files()
+    assert not extra & llm_core_pytest_files()
+
+
 def test_router_lane_ready_requires_distinct_tags(monkeypatch, tmp_path):
     from bright_vision_core.test_suite import router_preflight as rp
 
     env_file = tmp_path / "local-llm.env"
-    env_file.write_text("FAST_MODEL=qwen2.5-coder:7b\nHEAVY_MODEL=llama3.2:3b\n", encoding="utf-8")
+    env_file.write_text(
+        "FAST_MODEL=qwen2.5-coder:7b\nCODE_MODEL=llama3.2:3b\nTHINK_MODEL=deepseek-r1:32b\n",
+        encoding="utf-8",
+    )
     monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
     monkeypatch.delenv("E2E_FAST_MODEL", raising=False)
+    monkeypatch.delenv("E2E_CODE_MODEL", raising=False)
     monkeypatch.delenv("E2E_HEAVY_MODEL", raising=False)
     monkeypatch.delenv("FAST_MODEL", raising=False)
+    monkeypatch.delenv("CODE_MODEL", raising=False)
     monkeypatch.delenv("HEAVY_MODEL", raising=False)
-    ok, _ = rp.router_lane_ready()
+    ok, detail = rp.router_lane_ready()
     assert ok is True
+    assert "think=deepseek-r1:32b" in detail
+
+
+def test_resolve_router_tags_code_from_heavy_alias(monkeypatch, tmp_path):
+    from bright_vision_core.test_suite import router_preflight as rp
+
+    env_file = tmp_path / "local-llm.env"
+    env_file.write_text("FAST_MODEL=fast\nHEAVY_MODEL=code\n", encoding="utf-8")
+    monkeypatch.setattr(rp, "repo_root", lambda: tmp_path)
+    fast, code, think = rp.resolve_router_tags()
+    assert fast == "fast"
+    assert code == "code"
+    assert think == ""
 
 
 def test_router_lane_ready_rejects_missing_fast(monkeypatch, tmp_path):
@@ -212,9 +516,10 @@ def test_suite_step_frozen():
     assert s.argv == ("echo", "hi")
 
 
-def test_default_orchestrator_port():
+def test_default_orchestrator_port(monkeypatch):
     from bright_vision_core.test_suite.ports import DEFAULT_ORCHESTRATOR_PORT, orchestrator_port
 
+    monkeypatch.delenv("BV_TEST_ORCHESTRATOR_PORT", raising=False)
     assert DEFAULT_ORCHESTRATOR_PORT == 8743
     assert orchestrator_port() == 8743
 
@@ -276,8 +581,11 @@ def test_http_cancel_active_route_not_shadowed_by_run_id():
     res = client.post("/test-suite/runs/active/cancel")
     assert res.status_code == 200, res.text
     assert res.json()["ok"] is True
-    assert job_store.active_run() is None
+    assert run.cancelled() is True
     hold.set()
+    worker.join(timeout=2.0)
+    job_store.reconcile_active()
+    assert job_store.active_run() is None
 
 
 def test_reconcile_clears_dead_active_run():
@@ -311,3 +619,198 @@ def test_http_start_run_not_blocked_by_orchestrator_flag(monkeypatch):
     res = client.post("/test-suite/runs", json={"skip_llm": True, "skip_gpu": True})
     assert res.status_code == 200
     assert res.json()["run_id"] == "fake-run-id"
+
+
+def test_run_suite_fail_fast_stops_after_first_failure(monkeypatch):
+    from bright_vision_core.test_suite import runner as runner_mod
+
+    steps = [
+        SuiteStep("a", "step a", ("true",)),
+        SuiteStep("b", "step b", ("true",)),
+        SuiteStep("c", "step c", ("true",)),
+    ]
+    calls: list[str] = []
+    events: list[dict] = []
+
+    monkeypatch.setattr(runner_mod, "plan_steps", lambda **_: steps)
+    monkeypatch.setattr(runner_mod, "_shutil_which", lambda _: True)
+    monkeypatch.setattr(runner_mod, "resolve_capture_mode", lambda **_: "off")
+    monkeypatch.setattr(runner_mod, "gpu_wrap_enabled", lambda **_: False)
+    monkeypatch.setattr(runner_mod, "record_total", lambda *a, **k: None)
+    monkeypatch.setattr(runner_mod, "record_step", lambda *a, **k: None)
+
+    def fake_run_step(step, **kwargs):
+        calls.append(step.id)
+        return step.id != "b", 1.0, None, None, ""
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+
+    ok = runner_mod.run_suite(
+        skip_llm=True,
+        skip_gpu=True,
+        skip_time=True,
+        fail_fast=True,
+        on_event=events.append,
+    )
+    assert ok is False
+    assert calls == ["a", "b"]
+    finished = [e for e in events if e.get("type") == "run_finished"][-1]
+    assert finished["failFast"] is True
+    assert finished["skippedStepIds"] == ["c"]
+
+
+def test_run_suite_start_from_step_id(monkeypatch):
+    from bright_vision_core.test_suite import runner as runner_mod
+
+    steps = [
+        SuiteStep("a", "step a", ("true",)),
+        SuiteStep("b", "step b", ("true",)),
+        SuiteStep("c", "step c", ("true",)),
+    ]
+    calls: list[str] = []
+    events: list[dict] = []
+
+    monkeypatch.setattr(runner_mod, "plan_steps", lambda **_: steps)
+    monkeypatch.setattr(runner_mod, "_shutil_which", lambda _: True)
+    monkeypatch.setattr(runner_mod, "resolve_capture_mode", lambda **_: "off")
+    monkeypatch.setattr(runner_mod, "gpu_wrap_enabled", lambda **_: False)
+    monkeypatch.setattr(runner_mod, "record_total", lambda *a, **k: None)
+    monkeypatch.setattr(runner_mod, "record_step", lambda *a, **k: None)
+
+    def fake_run_step(step, **kwargs):
+        calls.append(step.id)
+        return True, 1.0, None, None, ""
+
+    monkeypatch.setattr(runner_mod, "run_step", fake_run_step)
+
+    ok = runner_mod.run_suite(
+        skip_llm=True,
+        skip_gpu=True,
+        skip_time=True,
+        start_from_step_id="b",
+        on_event=events.append,
+    )
+    assert ok is True
+    assert calls == ["b", "c"]
+    skipped = [e for e in events if e.get("type") == "step_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["stepId"] == "a"
+    started = [e for e in events if e.get("type") == "run_started"][-1]
+    assert started["startFromStepId"] == "b"
+    assert started["skippedStepIds"] == ["a"]
+
+
+def test_gpu_baseline_for_step(tmp_path, monkeypatch):
+    from bright_vision_core.test_suite.timing import gpu_baseline_for_step, record_step
+
+    hist = tmp_path / "timing.json"
+    monkeypatch.setenv("TEST_EVERYTHING_TIMING_FILE", str(hist))
+    record_step("llm:core", 100.0, True, gpu_avg=40.0, gpu_peak=80.0)
+    record_step("llm:core", 110.0, True, gpu_avg=50.0, gpu_peak=90.0)
+    baseline = gpu_baseline_for_step("llm:core")
+    assert baseline["sampleCount"] == 2
+    assert baseline["medianGpuPeak"] == 85.0
+
+
+def test_line_indicates_test_fail():
+    from bright_vision_core.test_suite.runner import _line_indicates_test_fail
+
+    assert _line_indicates_test_fail("FAILED tests/core/test_foo.py::test_bar")
+    assert _line_indicates_test_fail(
+        "tests/core/test_foo.py::TestFoo::test_bar FAILED [100%]"
+    )
+    assert _line_indicates_test_fail("FAILED short-circuit: SSE timed out after 3.5 md")
+    assert _line_indicates_test_fail("  ✘  3 e2e/foo.spec.ts:1:1 › title")
+    assert not _line_indicates_test_fail("[ FAIL ] yarn test:llm:core")
+    assert not _line_indicates_test_fail("FAIL: tests/core/test_foo.py:12: in test_bar")
+    assert not _line_indicates_test_fail("Test Files  1 failed (53)")
+    assert not _line_indicates_test_fail("PASS: ok")
+
+
+def test_gpu_stall_abort_enabled_by_default():
+    assert _LLM_GPU_STALL_ABORT_ENABLED is True
+
+
+def test_gpu_stall_abort_can_disable(monkeypatch):
+    monkeypatch.setenv("BV_LLM_GPU_STALL_ABORT", "0")
+    import importlib
+    import bright_vision_core.test_suite.runner as runner_mod
+
+    importlib.reload(runner_mod)
+    assert runner_mod._LLM_GPU_STALL_ABORT_ENABLED is False
+    importlib.reload(runner_mod)
+
+
+def test_resolve_gpu_stall_abort_s_uses_step_env_turn_cap():
+    from bright_vision_core.test_suite.runner import resolve_gpu_stall_abort_s
+
+    stall = resolve_gpu_stall_abort_s(
+        {
+            "BV_TEST_SUITE_ACTIVE": "1",
+            "BV_LLM_GPU_STALL_ABORT_S": "360",
+            "BV_SUITE_LLM_TURN_TIMEOUT_S": "300",
+        }
+    )
+    assert stall == 390.0
+
+
+def test_should_gpu_stall_abort_defers_during_pytest_sse_wait():
+    from bright_vision_core.test_suite.manifest import SuiteStep
+    from bright_vision_core.test_suite.runner import should_gpu_stall_abort
+
+    step = SuiteStep("llm:core", "llm", ("pytest",), requires_ollama=True)
+    env = {
+        "BV_TEST_SUITE_ACTIVE": "1",
+        "BV_LLM_GPU_STALL_ABORT_S": "360",
+        "BV_SUITE_LLM_TURN_TIMEOUT_S": "300",
+    }
+    abort, _ = should_gpu_stall_abort(
+        step=step,
+        step_env=env,
+        use_gpu=True,
+        step_elapsed_s=400.0,
+        gpu_idle_s=400.0,
+        cpu_idle_s=400.0,
+        sse_wait_started_at=time.time() - 60.0,
+    )
+    assert abort is False
+
+
+def test_should_gpu_stall_abort_defers_when_cpu_recently_busy():
+    from bright_vision_core.test_suite.manifest import SuiteStep
+    from bright_vision_core.test_suite.runner import should_gpu_stall_abort
+
+    step = SuiteStep("e2e:llm", "e2e", ("yarn",), requires_ollama=True)
+    env = {
+        "BV_TEST_SUITE_ACTIVE": "1",
+        "BV_LLM_GPU_STALL_ABORT_S": "360",
+        "BV_SUITE_LLM_TURN_TIMEOUT_S": "300",
+    }
+    abort, _ = should_gpu_stall_abort(
+        step=step,
+        step_env=env,
+        use_gpu=True,
+        step_elapsed_s=500.0,
+        gpu_idle_s=500.0,
+        cpu_idle_s=8.0,
+        sse_wait_started_at=None,
+    )
+    assert abort is False
+
+
+def test_build_step_env_e2e_llm_raises_gpu_stall_cap():
+    step = SuiteStep(
+        "e2e:llm",
+        "e2e",
+        ("yarn", "test:e2e:llm"),
+        requires_ollama=True,
+    )
+    env = build_step_env(step, suite_run=True, base={"LLM_SPEC_GEN_TIMEOUT_S": "3600"})
+    assert int(env["BV_LLM_GPU_STALL_ABORT_S"]) >= 1200
+
+
+def test_stderr_start_resets_gpu_stall_budget():
+    from bright_vision_core.test_suite.runner import _stderr_line_counts_as_progress
+
+    assert not _stderr_line_counts_as_progress("… waiting for SSE (30s / 300s cap)")
+    assert _stderr_line_counts_as_progress("START tests/core/test_edit_block_llm.py::TestEditBlockLlm::test_foo")

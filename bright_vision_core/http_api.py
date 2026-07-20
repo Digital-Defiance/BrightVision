@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -33,16 +33,34 @@ import cecli as _cecli_bootstrap  # noqa: F401
 
 configure_vision_runtime()
 
+import os as _os
+
+if _os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or _os.environ.get("E2E_LLM") == "1":
+    import webbrowser as _webbrowser
+
+    _webbrowser.open = lambda *_a, **_k: None  # type: ignore[method-assign, assignment]
+    # Older cecli bound webbrowser on cecli.io; rc6+ imports it inside methods.
+    try:
+        import cecli.io as _cecli_io
+
+        if hasattr(_cecli_io, "webbrowser"):
+            _cecli_io.webbrowser.open = lambda *_a, **_k: None  # type: ignore[attr-defined]
+    except ImportError:
+        pass
+
 from bright_vision_core.git_undo import undo_last_aider_commit_for_coder
 from bright_vision_core.agent_todos import (
+    clear_session_agent_todo_file,
     sync_session_agent_todos,
     try_import_agent_plan_for_workspace,
 )
 from bright_vision_core.http_auth import auth_enabled, configure_auth, get_token_from_env, verify_bearer
 from bright_vision_core.session import Session
 from bright_vision_core.session_debug import build_session_debug_export
+from bright_vision_core.spec_job_debug import build_spec_job_debug_export
 from bright_vision_core.session_transcript import transcript_rows_from_coder
 from bright_vision_core.todo_spec_jobs import spec_gen_timeout_s, spec_job_store
+from bright_vision_core.workspace_files import filter_existing_workspace_paths
 from bright_vision_core.workspace_todos import (
     SPEC_LAYER_TEMPLATES,
     TODO_TEMPLATES,
@@ -89,9 +107,22 @@ _lock = threading.Lock()
 _sessions: dict[str, Session] = {}
 
 
+def reset_all_sessions_for_tests() -> int:
+    """Interrupt and drop all in-memory sessions (pytest / Test Lab isolation)."""
+    with _lock:
+        for sess in list(_sessions.values()):
+            try:
+                sess.interrupt_turn()
+            except Exception:
+                pass
+        count = len(_sessions)
+        _sessions.clear()
+    return count
+
+
 class ModelPoolEntryModel(BaseModel):
     model: str = ""
-    tier: str = Field(description="fast | heavy")
+    tier: str = Field(description="fast | code | think (heavy → code)")
     enabled: bool = True
     label: str = ""
 
@@ -101,7 +132,15 @@ class ModelRouterRequest(BaseModel):
     fast_model: str = Field(default="", description="Resolved fast tier (from hopper)")
     heavy_model: str | None = Field(
         default=None,
-        description="Resolved heavy tier; defaults to session model",
+        description="Resolved code tier (legacy name; same as code_model)",
+    )
+    code_model: str | None = Field(
+        default=None,
+        description="Resolved code tier; defaults to session model",
+    )
+    think_model: str | None = Field(
+        default=None,
+        description="Resolved think/reasoning tier (optional)",
     )
     model_pool: list[ModelPoolEntryModel] = Field(
         default_factory=list,
@@ -110,8 +149,15 @@ class ModelRouterRequest(BaseModel):
     token_fast_max: int = 4_096
     token_heavy_min: int = 12_000
     keep_alive_fast: int | str = 300
-    keep_alive_heavy: int | str = 0
+    keep_alive_heavy: int | str = -1
     escalate_on_failure: bool = True
+
+    @field_validator("keep_alive_heavy", mode="before")
+    @classmethod
+    def _normalize_heavy_keep_alive(cls, value: int | str | None) -> int | str:
+        from bright_vision_core.model_router import normalize_keep_alive_for_tier
+
+        return normalize_keep_alive_for_tier("heavy", -1 if value is None else value)
 
 
 class CreateSessionRequest(BaseModel):
@@ -162,6 +208,17 @@ class CreateSessionRequest(BaseModel):
         "vibe",
         description="vibe = implementation chat; spec = Kiro-style spec session (steering + inject)",
     )
+    workspace_name: str | None = Field(
+        default=None,
+        description="Cecli clone workspace name (~/.cecli/workspaces/) when using repo: projects",
+    )
+    workspaces: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional workspace config (name + projects with path: or repo:). "
+            "Written to .cecli.workspaces.yml in the project when absent."
+        ),
+    )
 
 
 class ConfirmRequest(BaseModel):
@@ -186,11 +243,11 @@ class MessageRequest(BaseModel):
     )
     force_tier: str | None = Field(
         default=None,
-        description="Override router: fast | heavy",
+        description="Override router: fast | code | think (heavy → code)",
     )
     escalate_from_last: bool = Field(
         default=False,
-        description="Force heavy tier (e.g. user clicked Escalate after a fast attempt)",
+        description="Escalate to next tier (fast→code→think) after a stalled attempt",
     )
 
 
@@ -325,6 +382,23 @@ class SpecIndexResponse(BaseModel):
     issues: list[EarsIssueModel] = Field(default_factory=list)
 
 
+class SteeringFileModel(BaseModel):
+    relpath: str
+    size_bytes: int
+    nonempty: bool
+
+
+class SteeringFilesResponse(BaseModel):
+    has_content: bool
+    file_count: int
+    main: SteeringFileModel | None = None
+    fragments: list[SteeringFileModel] = Field(default_factory=list)
+
+
+class SteeringScaffoldResponse(SteeringFilesResponse):
+    created: list[str] = Field(default_factory=list)
+
+
 class TraceSpecRequest(BaseModel):
     """Optional draft layers; omitted fields use the task's stored markdown."""
 
@@ -357,6 +431,28 @@ class TraceabilityResponse(BaseModel):
     issues: list[EarsIssueModel] = Field(default_factory=list)
 
 
+class ImplementationStepModel(BaseModel):
+    step_id: str | None = None
+    text: str = ""
+    done: bool = False
+    current: bool = False
+    verify_cmd: str | None = None
+
+
+class ImplementationProgressResponse(BaseModel):
+    todo_id: str
+    title: str = ""
+    steps: list[ImplementationStepModel] = Field(default_factory=list)
+    next_open: ImplementationStepModel | None = None
+
+
+class PubspecRepairResponse(BaseModel):
+    missing: list[str] = Field(default_factory=list)
+    added: list[str] = Field(default_factory=list)
+    applied: bool = False
+    message: str = ""
+
+
 class GenerateTodoSpecRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     mode: str = Field("generate", description="generate | refine")
@@ -376,6 +472,18 @@ class GenerateTodoSpecRequest(BaseModel):
     background: bool = Field(
         True,
         description="Use ephemeral session in a background thread (chat session stays free)",
+    )
+    wall_timeout_s: float | None = Field(
+        None,
+        ge=60,
+        le=7200,
+        description="Job wall clock (seconds); default from LLM_SPEC_GEN_TIMEOUT_S",
+    )
+    turn_timeout_s: float | None = Field(
+        None,
+        ge=60,
+        le=7200,
+        description="Per LLM turn inside generate-spec (seconds); default from LLM_SPEC_GEN_TURN_TIMEOUT_S",
     )
 
 
@@ -488,10 +596,17 @@ def _engine_versions() -> dict[str, str]:
 
 @app.get("/health")
 def health():
+    import os
+
+    from bright_vision_core.agent_turn import AGENT_TURN_FEATURES
+
+    engine_root = os.environ.get("BRIGHT_VISION_ROOT") or os.environ.get("BV_ROOT")
     return {
         "status": "ok",
         "auth_required": auth_enabled(),
         "versions": _engine_versions(),
+        "engine_root": engine_root,
+        "agent_turn_features": AGENT_TURN_FEATURES,
     }
 
 
@@ -527,6 +642,8 @@ def create_session(body: CreateSessionRequest):
             chat_history_file=body.chat_history_file,
             spec_focus=body.spec_focus or mode == "spec",
             session_mode=mode,  # type: ignore[arg-type]
+            workspaces=body.workspaces,
+            workspace_name=body.workspace_name,
         )
     except FileNotFoundError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
@@ -587,6 +704,14 @@ def delete_session(session_id: str):
             raise HTTPException(status_code=404, detail="Session not found")
         del _sessions[session_id]
     return {"deleted": session_id}
+
+
+@app.post("/sessions/_test_reset")
+def test_reset_sessions():
+    """Clear every session on the live Vision API (``llm:core`` on :8741)."""
+    if _os.environ.get("BV_TEST_SUITE_ACTIVE") != "1" and _os.environ.get("E2E_LLM") != "1":
+        raise HTTPException(status_code=404, detail="Not available")
+    return {"cleared": reset_all_sessions_for_tests()}
 
 
 @app.get("/sessions/{session_id}/commands", response_model=CommandListResponse)
@@ -707,6 +832,33 @@ def _spec_index_response(api: WorkspaceTodos) -> SpecIndexResponse:
     return SpecIndexResponse.model_validate(result.to_dict())
 
 
+def _steering_files_response(workspace: str) -> SteeringFilesResponse:
+    from bright_vision_core.spec_steering import scan_steering_files
+
+    snapshot = scan_steering_files(workspace)
+    return SteeringFilesResponse(
+        has_content=snapshot.has_content,
+        file_count=snapshot.file_count,
+        main=(
+            SteeringFileModel(
+                relpath=snapshot.main.relpath,
+                size_bytes=snapshot.main.size_bytes,
+                nonempty=snapshot.main.nonempty,
+            )
+            if snapshot.main
+            else None
+        ),
+        fragments=[
+            SteeringFileModel(
+                relpath=fragment.relpath,
+                size_bytes=fragment.size_bytes,
+                nonempty=fragment.nonempty,
+            )
+            for fragment in snapshot.fragments
+        ],
+    )
+
+
 def _trace_todo_spec(
     api: WorkspaceTodos,
     todo_id: str,
@@ -730,6 +882,31 @@ def _trace_todo_spec(
             tasks_md = body.tasks_md
     result = analyze_traceability(requirements, design, tasks_md)
     return TraceabilityResponse.model_validate(result.to_dict())
+
+
+def _implementation_progress_response(api: WorkspaceTodos, todo_id: str) -> ImplementationProgressResponse:
+    from bright_vision_core.implement_progress import implementation_progress_payload
+
+    store = api.load()
+    item = next((t for t in store.todos if t.id == todo_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    payload = implementation_progress_payload(item)
+    return ImplementationProgressResponse.model_validate(payload)
+
+
+def _materialize_todo_checklist(api: WorkspaceTodos, todo_id: str) -> TodoItemModel:
+    from cecli.spec.progress import materialize_checklist_from_tasks_md
+
+    store = api.load()
+    item = next((t for t in store.todos if t.id == todo_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    checklist = materialize_checklist_from_tasks_md(item)
+    if not checklist:
+        raise HTTPException(status_code=400, detail="No numbered steps in tasks_md to materialize")
+    item, _ = api.update(todo_id, checklist=checklist)
+    return _todo_item_model(item)
 
 
 def _lint_todo_requirements(
@@ -774,6 +951,50 @@ def _todo_list_response(store: TodoStore) -> TodoListResponse:
         version=store.version,
         active_id=store.active_id,
         todos=[_todo_item_model(t) for t in store.todos],
+    )
+
+
+class CecliWorkspaceProjectModel(BaseModel):
+    name: str | None = None
+    path: str | None = None
+    repo: str | None = None
+    primary: bool = False
+    readonly: bool = False
+
+
+class CecliWorkspaceResponse(BaseModel):
+    present: bool
+    filename: str | None = None
+    name: str | None = None
+    project_count: int = 0
+    projects: list[CecliWorkspaceProjectModel] = Field(default_factory=list)
+    layout: str | None = None
+    parse_error: str | None = None
+    raw: str | None = Field(
+        default=None,
+        description="Full YAML text when present (for Settings editor)",
+    )
+
+
+@app.get("/workspaces/cecli-workspace", response_model=CecliWorkspaceResponse)
+def get_cecli_workspace(workspace: str, include_raw: bool = True):
+    from bright_vision_core.workspace_config import describe_cecli_workspace
+
+    ws = Path(workspace).expanduser().resolve()
+    if not ws.is_dir():
+        raise HTTPException(status_code=404, detail=f"Workspace not found: {workspace}")
+    info = describe_cecli_workspace(ws)
+    if not include_raw:
+        info = {**info, "raw": None}
+    return CecliWorkspaceResponse(
+        present=info["present"],
+        filename=info.get("filename"),
+        name=info.get("name"),
+        project_count=info.get("project_count", 0),
+        projects=[CecliWorkspaceProjectModel(**p) for p in info.get("projects", [])],
+        layout=info.get("layout"),
+        parse_error=info.get("parse_error"),
+        raw=info.get("raw"),
     )
 
 
@@ -861,8 +1082,16 @@ def import_workspace_agent_todo_plan(workspace: str):
 def import_session_agent_todo_plan(session_id: str):
     """Sync this session's agent todo.txt ↔ workspace Tasks."""
     session = _get_session(session_id)
-    store = sync_session_agent_todos(session, pull=True, push_active=True)
+    store, _warnings = sync_session_agent_todos(session, pull=True, push_active=True)
     return _todo_list_response(store)
+
+
+@app.post("/sessions/{session_id}/todos/clear-agent-plan")
+def clear_session_agent_todo_plan(session_id: str):
+    """Remove this session's agent todo.txt (e.g. after deleting the last workspace task)."""
+    session = _get_session(session_id)
+    cleared = clear_session_agent_todo_file(session)
+    return {"cleared": cleared}
 
 
 @app.get("/sessions/{session_id}/todos", response_model=TodoListResponse)
@@ -941,13 +1170,20 @@ def _start_spec_job(
         enforce_ears=body.enforce_ears,
         context_paths=body.context_paths,
         model=model,
+        wall_timeout_s=body.wall_timeout_s,
+        turn_timeout_s=body.turn_timeout_s,
     )
     return GenerateTodoSpecJobStarted(job_id=job.job_id, status=job.status, todo_id=todo_id)
 
 
 def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    from bright_vision_core.todo_spec_jobs import job_wall_timeout_s
+
     try:
-        job = spec_job_store.wait(job_id, timeout_s=spec_gen_timeout_s())
+        job = spec_job_store.wait(job_id, timeout_s=job_wall_timeout_s(job) + 30.0)
     except KeyError as err:
         raise HTTPException(status_code=404, detail=str(err)) from err
     except TimeoutError as err:
@@ -968,6 +1204,22 @@ def _wait_spec_job(job_id: str) -> GenerateTodoSpecResponse:
             for i in (getattr(job, "ears_issues", None) or [])
         ],
     )
+
+
+class FilterWorkspacePathsRequest(BaseModel):
+    paths: list[str] = Field(default_factory=list)
+
+
+class FilterWorkspacePathsResponse(BaseModel):
+    existing: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+
+@app.post("/workspaces/filter-paths", response_model=FilterWorkspacePathsResponse)
+def filter_workspace_paths(workspace: str, body: FilterWorkspacePathsRequest):
+    """Return which repo-relative paths exist on disk (suggested-files tray)."""
+    existing, missing = filter_existing_workspace_paths(workspace, body.paths)
+    return FilterWorkspacePathsResponse(existing=existing, missing=missing)
 
 
 @app.post("/workspaces/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)
@@ -997,6 +1249,22 @@ def export_workspace_spec_files(workspace: str, todo_id: str):
 def get_workspace_spec_index(workspace: str):
     """Scan ``.cecli/specs/**`` vs workspace task ids (roadmap #22)."""
     return _spec_index_response(_todos_for_workspace(workspace))
+
+
+@app.get("/workspaces/steering-files", response_model=SteeringFilesResponse)
+def get_workspace_steering_files(workspace: str):
+    """List project steering markdown (``.cecli/STEERING.md``, ``.cecli/steering/*.md``)."""
+    return _steering_files_response(workspace)
+
+
+@app.post("/workspaces/steering-files/scaffold", response_model=SteeringScaffoldResponse)
+def scaffold_workspace_steering_files(workspace: str):
+    """Create ``.cecli/STEERING.md`` from template when missing."""
+    from bright_vision_core.spec_steering import scaffold_steering_files
+
+    created = scaffold_steering_files(workspace)
+    base = _steering_files_response(workspace)
+    return SteeringScaffoldResponse(created=created, **base.model_dump())
 
 
 class RepairSpecFoldersResponse(BaseModel):
@@ -1054,6 +1322,38 @@ def trace_workspace_spec(
     return _trace_todo_spec(_todos_for_workspace(workspace), todo_id, body)
 
 
+@app.get(
+    "/workspaces/todos/{todo_id}/implementation-progress",
+    response_model=ImplementationProgressResponse,
+)
+def get_workspace_implementation_progress(workspace: str, todo_id: str):
+    """Unified checklist + tasks_md progress (next open step, verify commands)."""
+    return _implementation_progress_response(_todos_for_workspace(workspace), todo_id)
+
+
+@app.post(
+    "/workspaces/todos/{todo_id}/materialize-checklist",
+    response_model=TodoItemModel,
+)
+def materialize_workspace_checklist(workspace: str, todo_id: str):
+    """Build checklist rows from numbered tasks_md lines."""
+    return _materialize_todo_checklist(_todos_for_workspace(workspace), todo_id)
+
+
+@app.post("/workspaces/repair-pubspec", response_model=PubspecRepairResponse)
+def repair_workspace_pubspec(workspace: str, apply: bool = False):
+    """Detect or add missing Dart package dependencies for Flutter workspaces."""
+    from cecli.spec.pubspec_repair import repair_pubspec_dependencies
+
+    result = repair_pubspec_dependencies(workspace, apply=apply)
+    return PubspecRepairResponse(
+        missing=list(result.missing),
+        added=list(result.added),
+        applied=result.applied,
+        message=result.message,
+    )
+
+
 @app.post("/sessions/{session_id}/todos/{todo_id}/sync-spec-files", response_model=TodoItemModel)
 def sync_session_spec_files(session_id: str, todo_id: str):
     session = _get_session(session_id)
@@ -1104,6 +1404,25 @@ def get_workspace_spec_job(job_id: str):
     return _job_status_response(job)
 
 
+@app.get("/workspaces/todos/generate-spec/{job_id}/debug")
+def get_workspace_spec_job_debug(job_id: str):
+    """Export debug bundle for a background spec generation job (live or finished)."""
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    spec_job_store.snapshot_job_if_live(job_id)
+    job = spec_job_store.get(job_id)
+    payload = build_spec_job_debug_export(job)  # type: ignore[arg-type]
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="brightvision-spec-job-{job_id[:8]}-debug.json"'
+            ),
+        },
+    )
+
+
 @app.get("/sessions/{session_id}/todos/generate-spec/{job_id}", response_model=GenerateTodoSpecJobStatus)
 def get_session_spec_job(session_id: str, job_id: str):
     _get_session(session_id)
@@ -1111,6 +1430,25 @@ def get_session_spec_job(session_id: str, job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_status_response(job)
+
+
+@app.get("/sessions/{session_id}/todos/generate-spec/{job_id}/debug")
+def get_session_spec_job_debug(session_id: str, job_id: str):
+    _get_session(session_id)
+    job = spec_job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    spec_job_store.snapshot_job_if_live(job_id)
+    job = spec_job_store.get(job_id)
+    payload = build_spec_job_debug_export(job)  # type: ignore[arg-type]
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="brightvision-spec-job-{job_id[:8]}-debug.json"'
+            ),
+        },
+    )
 
 
 @app.post(

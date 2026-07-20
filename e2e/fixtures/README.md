@@ -41,6 +41,8 @@ sh scripts/verify-e2e-fixture-pack.sh /absolute/path/to/my-fixture-pack
 | `integration-workspace` | `ensureIntegrationWorkspace()` | Real `:8741` HTTP + agent `todo.txt` import (incl. char-split recovery via `writeCharSplitCorruptedAgentTodoFile()` in `e2e/helpers/integrationEnv.ts`; spec `e2e/integration/import-agent-plan.spec.ts`) |
 | `edit-block-workspace` | `ensureEditBlockWorkspace()` | `src/patchme.ts` with `value = 'old'` for SEARCH/REPLACE apply |
 | `tasks-seeded-workspace` | `ensureTasksSeededWorkspace()` | Pre-filled `.cecli/todos.json` for Tasks tab / workspace API |
+| `implement-workspace` | `ensureImplementWorkspace(profile)` | Generic implement inject — named-path / pathless / resume profiles (`implementFixture.ts`). **Resets** LLM leftovers per profile (`token.ts` for named-path, `handler.test.ts` for resume) so shared `e2e/fixture-pack` stays deterministic across Lab runs. |
+| `implement-workspace-llm` | `test_implement_llm.py` (`_ensure_implement_workspace`) | Ephemeral copy of `implement-workspace` for `llm:core` — **gitignored**; do not commit. |
 
 Workspaces are **git repos** (initialized on first use). Re-init:
 

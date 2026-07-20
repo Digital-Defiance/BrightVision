@@ -77,6 +77,37 @@ class TestHttpSessionTodos(unittest.TestCase):
             self.assertEqual(body["todos"][0]["title"], "Draft roadmap")
             self.assertEqual(len(body["todos"][0]["checklist"]), 2)
 
+    def test_clear_session_agent_todo_plan_endpoint(self):
+        with GitTemporaryDirectory() as temp_dir:
+            make_repo(temp_dir)
+            client = TestClient(app)
+            agents = Path(temp_dir) / ".cecli" / "agents" / "2026-05-27" / "abc"
+            agents.mkdir(parents=True)
+            (agents / "todo.txt").write_text(
+                "Remaining:\n→ Draft roadmap\n",
+                encoding="utf-8",
+            )
+            imported = client.post(f"/workspaces/todos/import-agent-plan?workspace={temp_dir}")
+            self.assertEqual(imported.status_code, 200, imported.text)
+
+            sess = client.post(
+                "/sessions",
+                json={"workspace": temp_dir, "model": "gpt-4o", "auto_yes": True},
+            )
+            self.assertEqual(sess.status_code, 200, sess.text)
+            session_id = sess.json()["session_id"]
+
+            synced = client.post(f"/sessions/{session_id}/todos/import-agent-plan")
+            self.assertEqual(synced.status_code, 200, synced.text)
+
+            first = client.post(f"/sessions/{session_id}/todos/clear-agent-plan")
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertTrue(first.json()["cleared"])
+
+            second = client.post(f"/sessions/{session_id}/todos/clear-agent-plan")
+            self.assertEqual(second.status_code, 200, second.text)
+            self.assertFalse(second.json()["cleared"])
+
 
 if __name__ == "__main__":
     unittest.main()

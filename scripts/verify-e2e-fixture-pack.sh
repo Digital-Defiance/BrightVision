@@ -58,6 +58,12 @@ check_repo "hello-workspace" "README.md"
 check_repo "context-workspace" "src/e2e_widget.ts"
 check_repo "tasks-seeded-workspace" ".cecli/todos.json"
 check_repo "edit-block-workspace" "src/patchme.ts"
+check_repo "implement-workspace" "package.json"
+
+note ""
+note "== Implement workspace files =="
+check_repo "implement-workspace" "src/auth/service.ts"
+check_repo "implement-workspace" "src/api/handler.ts"
 
 note ""
 note "== Optional submodule pin check =="

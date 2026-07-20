@@ -4,17 +4,21 @@
  */
 
 import type { EarsLintResult, SpecIndexResult, TraceabilityResult } from './todos/earsTypes'
+import type { SteeringFilesResult, SteeringScaffoldResult } from './todos/steeringTypes'
 import type { PatchTodoResult, TodoItem, TodoStore } from './todos/types'
 import { normalizeStore, normalizeTodo } from './todos/storage'
 import type { CoreEventBase } from './events'
+import { isCoreEvent } from './events'
 import {
   readStreamChunkWithIdleTimeout,
   sseEventResetsIdleTimer,
 } from './sseIdle'
+import { visionFetchError } from './networkError'
+import { readViteEnv } from './viteEnv'
 
 export interface ModelRouterPoolEntryApi {
   model: string
-  tier: 'fast' | 'heavy'
+  tier: 'fast' | 'heavy' | 'code' | 'think'
   enabled: boolean
   label?: string
 }
@@ -23,6 +27,8 @@ export interface ModelRouterApiConfig {
   enabled: boolean
   fast_model: string
   heavy_model?: string
+  code_model?: string
+  think_model?: string
   model_pool?: ModelRouterPoolEntryApi[]
   token_fast_max?: number
   token_heavy_min?: number
@@ -36,12 +42,31 @@ export interface SendMessageOptions {
   injectTodoSpec?: boolean
   specFocus?: boolean
   preproc?: boolean
-  forceTier?: 'fast' | 'heavy'
+  forceTier?: 'fast' | 'code' | 'think' | 'heavy'
   escalateFromLast?: boolean
 }
 
-export const DEFAULT_VISION_API_BASE = 'http://127.0.0.1:8741'
+export const DEFAULT_VISION_API_BASE = 'http://localhost:8741'
 const DEFAULT_BASE = DEFAULT_VISION_API_BASE
+
+export interface CecliWorkspaceProjectSummary {
+  name?: string | null
+  path?: string | null
+  repo?: string | null
+  primary?: boolean
+  readonly?: boolean
+}
+
+export interface CecliWorkspaceInfo {
+  present: boolean
+  filename?: string | null
+  name?: string | null
+  project_count: number
+  projects: CecliWorkspaceProjectSummary[]
+  layout?: string | null
+  parse_error?: string | null
+  raw?: string | null
+}
 
 export interface CoreSessionInfo {
   session_id: string
@@ -77,9 +102,13 @@ export class CoreHttpClient {
     auth_required: boolean
     versions?: { bright_vision_core?: string; cecli?: string }
   }> {
-    const res = await fetch(`${this.baseUrl}/health`, { signal })
-    if (!res.ok) throw new Error(`health: ${res.status}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/health`, { signal })
+      if (!res.ok) throw new Error(`health: ${res.status}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, 'GET /health')
+    }
   }
 
   async undo(sessionId: string): Promise<{
@@ -143,6 +172,17 @@ export class CoreHttpClient {
     return res.blob()
   }
 
+  /** Background spec job debug bundle (headless session events + job metadata). */
+  async fetchSpecJobDebugBlob(jobId: string): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/workspaces/todos/generate-spec/${jobId}/debug`, {
+      headers: this.headers(false),
+    })
+    if (!res.ok) {
+      throw new Error(`spec job debug export: ${res.status} ${await res.text()}`)
+    }
+    return res.blob()
+  }
+
   async deleteSession(sessionId: string): Promise<void> {
     const res = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
       method: 'DELETE',
@@ -168,21 +208,30 @@ export class CoreHttpClient {
     chat_history_file?: boolean
     spec_focus?: boolean
     session_mode?: 'vibe' | 'spec'
+    workspace_name?: string | null
+    workspaces?: Record<string, unknown> | null
   }): Promise<CoreSessionInfo> {
-    const res = await fetch(`${this.baseUrl}/sessions`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({
-        stream: true,
-        auto_yes: false,
-        auto_commits: true,
-        dirty_commits: true,
-        dry_run: false,
-        ...body,
-      }),
-    })
-    if (!res.ok) throw new Error(await res.text())
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          stream: true,
+          auto_yes: false,
+          auto_commits: true,
+          dirty_commits: true,
+          dry_run: false,
+          ...body,
+        }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    } catch (err) {
+      if (err instanceof Error && !err.message.startsWith('Cannot reach Vision API')) {
+        throw visionFetchError(err, this.baseUrl, 'POST /sessions')
+      }
+      throw err
+    }
   }
 
   /**
@@ -192,26 +241,34 @@ export class CoreHttpClient {
     sessionId: string,
     paths: string[]
   ): Promise<{ files_in_chat: string[]; events: CoreEventBase[] }> {
-    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ paths }),
-    })
-    if (!res.ok) throw new Error(`add files: ${res.status} ${await res.text()}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ paths }),
+      })
+      if (!res.ok) throw new Error(`add files: ${res.status} ${await res.text()}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, `POST /sessions/${sessionId}/files`)
+    }
   }
 
   async uploadSessionFiles(
     sessionId: string,
     files: { filename: string; content_base64: string }[]
   ): Promise<{ files_in_chat: string[]; events: CoreEventBase[] }> {
-    const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files/upload`, {
-      method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ files }),
-    })
-    if (!res.ok) throw new Error(`upload files: ${res.status} ${await res.text()}`)
-    return res.json()
+    try {
+      const res = await fetch(`${this.baseUrl}/sessions/${sessionId}/files/upload`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ files }),
+      })
+      if (!res.ok) throw new Error(`upload files: ${res.status} ${await res.text()}`)
+      return res.json()
+    } catch (err) {
+      throw visionFetchError(err, this.baseUrl, `POST /sessions/${sessionId}/files/upload`)
+    }
   }
 
   async submitConfirm(sessionId: string, confirmId: string, answer: boolean): Promise<void> {
@@ -225,6 +282,15 @@ export class CoreHttpClient {
 
   private workspaceQs(workspace: string): string {
     return `workspace=${encodeURIComponent(workspace)}`
+  }
+
+  async getCecliWorkspace(workspace: string): Promise<CecliWorkspaceInfo> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/cecli-workspace?${this.workspaceQs(workspace)}`,
+      { headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`cecli workspace: ${res.status}`)
+    return res.json() as Promise<CecliWorkspaceInfo>
   }
 
   async listWorkspaceTodos(workspace: string): Promise<TodoStore> {
@@ -244,6 +310,30 @@ export class CoreHttpClient {
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`import agent todo plan: ${res.status} ${await res.text()}`)
     return normalizeStore(await res.json())
+  }
+
+  /** Sync this session's agent todo.txt ↔ its workspace Tasks (same repo as session create). */
+  async importSessionAgentTodoPlan(sessionId: string): Promise<TodoStore> {
+    const res = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/todos/import-agent-plan`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) {
+      throw new Error(`import session agent todo plan: ${res.status} ${await res.text()}`)
+    }
+    return normalizeStore(await res.json())
+  }
+
+  /** Drop stale session agent todo.txt so deleted Tasks are not resurrected on sync. */
+  async clearSessionAgentTodoPlan(sessionId: string): Promise<{ cleared: boolean }> {
+    const res = await fetch(
+      `${this.baseUrl}/sessions/${encodeURIComponent(sessionId)}/todos/clear-agent-plan`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) {
+      throw new Error(`clear session agent todo plan: ${res.status} ${await res.text()}`)
+    }
+    return (await res.json()) as { cleared: boolean }
   }
 
   async createWorkspaceTodo(
@@ -305,6 +395,26 @@ export class CoreHttpClient {
     if (!res.ok) throw new Error(`delete workspace todo: ${res.status}`)
   }
 
+  async filterWorkspacePaths(
+    workspace: string,
+    paths: string[]
+  ): Promise<{ existing: string[]; missing: string[] }> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/filter-paths?${this.workspaceQs(workspace)}`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ paths }),
+      }
+    )
+    if (!res.ok) throw new Error(`filter workspace paths: ${res.status} ${await res.text()}`)
+    const data = (await res.json()) as { existing?: string[]; missing?: string[] }
+    return {
+      existing: Array.isArray(data.existing) ? data.existing : [],
+      missing: Array.isArray(data.missing) ? data.missing : [],
+    }
+  }
+
   async syncWorkspaceSpecFiles(workspace: string, todoId: string): Promise<TodoItem> {
     const res = await fetch(
       `${this.baseUrl}/workspaces/todos/${todoId}/sync-spec-files?${this.workspaceQs(workspace)}`,
@@ -364,6 +474,24 @@ export class CoreHttpClient {
     )
     if (!res.ok) throw new Error(`spec index: ${res.status} ${await res.text()}`)
     return (await res.json()) as SpecIndexResult
+  }
+
+  async getWorkspaceSteeringFiles(workspace: string): Promise<SteeringFilesResult> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/steering-files?${this.workspaceQs(workspace)}`,
+      { headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`steering files: ${res.status} ${await res.text()}`)
+    return (await res.json()) as SteeringFilesResult
+  }
+
+  async scaffoldWorkspaceSteeringFiles(workspace: string): Promise<SteeringScaffoldResult> {
+    const res = await fetch(
+      `${this.baseUrl}/workspaces/steering-files/scaffold?${this.workspaceQs(workspace)}`,
+      { method: 'POST', headers: this.headers(false) }
+    )
+    if (!res.ok) throw new Error(`steering scaffold: ${res.status} ${await res.text()}`)
+    return (await res.json()) as SteeringScaffoldResult
   }
 
   async repairWorkspaceSpecFolders(
@@ -566,20 +694,22 @@ export class CoreHttpClient {
     }
   }
 
-  /** Poll interval + max wait aligned with `LLM_SPEC_GEN_TIMEOUT_S` (Vite: `VITE_LLM_SPEC_GEN_TIMEOUT_S`). */
-  private specGenPollMaxAttempts(): number {
-    const meta =
-      typeof import.meta !== 'undefined'
-        ? (import.meta as ImportMeta & { env?: { VITE_LLM_SPEC_GEN_TIMEOUT_S?: string } }).env
-            ?.VITE_LLM_SPEC_GEN_TIMEOUT_S
-        : undefined
-    const raw = meta || '1200'
+  /** Poll max wait = job wall clock + small buffer (seconds). */
+  private specGenPollMaxAttempts(wallTimeoutS?: number): number {
+    if (wallTimeoutS != null && Number.isFinite(wallTimeoutS) && wallTimeoutS > 0) {
+      return Math.max(90, Math.ceil(wallTimeoutS * 1.08))
+    }
+    const raw = readViteEnv('VITE_LLM_SPEC_GEN_TIMEOUT_S') || '1200'
     const sec = Number(raw)
     const cap = Number.isFinite(sec) && sec > 0 ? sec : 1200
     return Math.max(90, Math.ceil(cap * 1.05))
   }
 
-  private async pollSpecGenerateJob(jobId: string, signal?: AbortSignal): Promise<{
+  private async pollSpecGenerateJob(
+    jobId: string,
+    signal?: AbortSignal,
+    wallTimeoutS?: number
+  ): Promise<{
     status: string
     error?: string | null
     requirements: string
@@ -590,7 +720,7 @@ export class CoreHttpClient {
     ears_blocked?: boolean
   }> {
     const url = `${this.baseUrl}/workspaces/todos/generate-spec/${jobId}`
-    const maxAttempts = this.specGenPollMaxAttempts()
+    const maxAttempts = this.specGenPollMaxAttempts(wallTimeoutS)
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
       const res = await fetch(url, { headers: this.headers(false), signal })
@@ -614,7 +744,7 @@ export class CoreHttpClient {
       await new Promise((r) => setTimeout(r, 1000))
     }
     throw new Error(
-      `Spec generation timed out after ${maxAttempts}s (set VITE_LLM_SPEC_GEN_TIMEOUT_S / LLM_SPEC_GEN_TIMEOUT_S)`
+      `Spec generation timed out after ${maxAttempts}s — increase job timeout in Settings → Spec generation`
     )
   }
 
@@ -630,8 +760,11 @@ export class CoreHttpClient {
       apply?: boolean
       enforce_ears?: boolean
       background?: boolean
+      wall_timeout_s?: number
+      turn_timeout_s?: number
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    hooks?: { onJobStarted?: (jobId: string) => void }
   ): Promise<{
     requirements: string
     design: string
@@ -652,12 +785,15 @@ export class CoreHttpClient {
         apply: body.apply ?? true,
         enforce_ears: body.enforce_ears ?? true,
         background: body.background ?? true,
+        wall_timeout_s: body.wall_timeout_s,
+        turn_timeout_s: body.turn_timeout_s,
       }),
       signal,
     })
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
-      const done = await this.pollSpecGenerateJob(started.job_id, signal)
+      hooks?.onJobStarted?.(started.job_id)
+      const done = await this.pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,
@@ -680,8 +816,11 @@ export class CoreHttpClient {
       apply?: boolean
       enforce_ears?: boolean
       background?: boolean
+      wall_timeout_s?: number
+      turn_timeout_s?: number
     },
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    hooks?: { onJobStarted?: (jobId: string) => void }
   ): Promise<{
     requirements: string
     design: string
@@ -700,13 +839,16 @@ export class CoreHttpClient {
           mode: body.mode ?? 'generate',
           apply: body.apply ?? true,
           background: body.background ?? true,
+          wall_timeout_s: body.wall_timeout_s,
+          turn_timeout_s: body.turn_timeout_s,
         }),
         signal,
       }
     )
     if (res.status === 202) {
       const started = (await res.json()) as { job_id: string }
-      const done = await this.pollSpecGenerateJob(started.job_id, signal)
+      hooks?.onJobStarted?.(started.job_id)
+      const done = await this.pollSpecGenerateJob(started.job_id, signal, body.wall_timeout_s)
       return {
         requirements: done.requirements,
         design: done.design,
@@ -773,7 +915,8 @@ export class CoreHttpClient {
         for (const line of part.split('\n')) {
           if (!line.startsWith('data: ')) continue
           try {
-            yield JSON.parse(line.slice(6)) as CoreEventBase
+            const parsed: unknown = JSON.parse(line.slice(6))
+            if (isCoreEvent(parsed)) yield parsed
           } catch {
             /* skip malformed SSE chunk */
           }

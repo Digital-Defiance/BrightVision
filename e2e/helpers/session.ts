@@ -12,6 +12,8 @@ export type MockSessionOptions = MockCoreOptions & {
   scenario?: ScenarioName
   /** Mock Tauri `invoke` for desktop-only UI (git, /add Tab, native pickers). */
   tauri?: boolean | MockTauriOptions
+  /** Config/open-project already primed (e.g. ntfy prefs addInitScript). */
+  skipConfigPrime?: boolean
 }
 
 function mergeScenarioSessionOpts(
@@ -57,7 +59,7 @@ export async function startMockSession(page: Page, opts: MockSessionOptions = {}
   await installMockCoreApi(page, coreOpts)
   await gotoVision(page, {
     skipCoreMock: true,
-    skipConfigPrime: Boolean(opts.scenario),
+    skipConfigPrime: Boolean(opts.scenario) || Boolean(opts.skipConfigPrime),
   })
   await page.getByTestId('nav-terminal').click()
   await page.getByTestId('terminal-start').click()
@@ -86,7 +88,8 @@ export async function openTasks(
     const importPlan = page.waitForResponse(
       (res) =>
         res.request().method() === 'POST' &&
-        res.url().includes('/workspaces/todos/import-agent-plan') &&
+        (res.url().includes('/workspaces/todos/import-agent-plan') ||
+          res.url().includes('/todos/import-agent-plan')) &&
         res.ok(),
       { timeout: 30_000 }
     )

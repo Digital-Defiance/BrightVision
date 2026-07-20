@@ -2,7 +2,7 @@
 
 **BrightVision** (Tauri + React) talks only to the **Vision API** (`bright_vision_core` HTTP/SSE). The agent is **[Cecli](https://cecli.dev)** — built in **partnership with the Cecli team** ([dwash96/cecli](https://github.com/dwash96/cecli)), installed from the `cecli/` submodule or PyPI.
 
-**Pin policy:** [CECLI_PIN.md](./CECLI_PIN.md) · **Dev setup:** [DEVELOPMENT.md](./DEVELOPMENT.md)
+**Pin policy:** [CECLI_PIN.md](./CECLI_PIN.md) · **Upstream PR workflow:** [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md) · **Dev setup:** [DEVELOPMENT.md](./DEVELOPMENT.md)
 
 ---
 
@@ -69,6 +69,7 @@ Optional: `BRIGHT_VISION_CECLI_DIR`, `BRIGHT_VISION_PYTHON`, `BRIGHT_VISION_CORE
 | BrightVision app | `docs/index.html`, [ARCHITECTURE.md](./ARCHITECTURE.md), [IPC.md](./IPC.md) |
 | Vision API | `bright_vision_core/README.md` |
 | Cecli CLI | [cecli.dev](https://cecli.dev) |
+| Cecli upstream PRs | [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md), `scripts/cecli-open-upstream-pr.sh` |
 | Tests | `yarn test:bright-core`, `yarn test:e2e:llm` — [TESTING.md](./TESTING.md) |
 
 ---
@@ -89,5 +90,5 @@ Optional: `BRIGHT_VISION_CECLI_DIR`, `BRIGHT_VISION_PYTHON`, `BRIGHT_VISION_CORE
 
 1. **Do not** edit `cecli/website/`.
 2. **Do** add Vision-HTTP behavior under `bright_vision_core/`; import `cecli.*` for agent logic.
-3. **Prefer** fixing agent bugs upstream in cecli when not HTTP-specific.
+3. **Prefer** fixing agent bugs upstream in cecli when not HTTP-specific — follow [CECLI_UPSTREAM_PR.md](./CECLI_UPSTREAM_PR.md).
 4. **Update** [ROADMAP.md](./ROADMAP.md) when milestones change.

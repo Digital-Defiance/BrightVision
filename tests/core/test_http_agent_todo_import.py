@@ -72,6 +72,100 @@ class TestHttpAgentTodoImport(unittest.TestCase):
             self.assertNotIn(title, ("[", "{", '"'))
             self.assertIn("Explore the codebase", title)
 
+    def test_import_merges_agent_done_into_preserved_tasks_md(self):
+        from bright_vision_core.http_api import app
+        from bright_vision_core.workspace_todos import WorkspaceTodos
+        from cecli.spec.todos import TodoItem, _now_iso
+
+        spec_tasks = (
+            "## Implementation tasks\n\n"
+            "- [ ] 1. Wire API for REQ-001 (depends: none)\n"
+            "  - verify: `true`\n"
+            "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+        )
+        step1 = "1. Wire API for REQ-001 (depends: none)"
+        step2 = "2. Add tests for REQ-002 (depends: 1)"
+
+        with GitTemporaryDirectory() as temp_dir:
+            make_repo(temp_dir)
+            api = WorkspaceTodos(temp_dir)
+            store = api.load()
+            item = TodoItem(
+                id="user1",
+                title="My feature",
+                tasks_md=spec_tasks,
+                status="in_progress",
+                links=[],
+                checklist=[],
+                created_at=_now_iso(),
+                updated_at=_now_iso(),
+            )
+            store.todos.append(item)
+            store.active_id = item.id
+            api.save(store)
+
+            agents = Path(temp_dir) / ".cecli" / "agents" / "2026-06-03" / "sess"
+            agents.mkdir(parents=True)
+            (agents / "todo.txt").write_text(
+                "\n".join(
+                    [
+                        "Done:",
+                        f"✓ {step1}",
+                        "",
+                        "Remaining:",
+                        f"→ {step2}",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            client = TestClient(app)
+            imported = client.post(f"/workspaces/todos/import-agent-plan?workspace={temp_dir}")
+            self.assertEqual(imported.status_code, 200, imported.text)
+            merged = imported.json()["todos"][0]
+            self.assertIn("- [x] 1. Wire API", merged["tasks_md"])
+            self.assertIn("REQ-001", merged["tasks_md"])
+            self.assertTrue(merged["checklist"][0]["done"])
+            self.assertFalse(merged["checklist"][1]["done"])
+
+    def test_patch_tasks_md_materializes_checklist(self):
+        from bright_vision_core.http_api import app
+        from bright_vision_core.workspace_todos import WorkspaceTodos
+        from cecli.spec.todos import TodoItem, _now_iso
+
+        spec_tasks = (
+            "## Implementation tasks\n\n"
+            "- [ ] 1. Wire API for REQ-001 (depends: none)\n"
+            "- [ ] 2. Add tests for REQ-002 (depends: 1)\n"
+        )
+
+        with GitTemporaryDirectory() as temp_dir:
+            make_repo(temp_dir)
+            api = WorkspaceTodos(temp_dir)
+            store = api.load()
+            item = TodoItem(
+                id="task1",
+                title="Feature",
+                tasks_md="",
+                checklist=[],
+                created_at=_now_iso(),
+                updated_at=_now_iso(),
+            )
+            store.todos.append(item)
+            store.active_id = item.id
+            api.save(store)
+
+            client = TestClient(app)
+            res = client.patch(
+                f"/workspaces/todos/{item.id}?workspace={temp_dir}",
+                json={"tasks_md": spec_tasks},
+            )
+            self.assertEqual(res.status_code, 200, res.text)
+            checklist = res.json()["item"]["checklist"]
+            self.assertEqual(len(checklist), 2)
+            self.assertIn("REQ-001", checklist[0]["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

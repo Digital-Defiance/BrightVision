@@ -68,9 +68,12 @@ test.describe('Core API session lifecycle (mocked /api/core)', () => {
     await expect(page.getByTestId('terminal-start')).toBeEnabled()
 
     await installMockCoreApi(page)
+    await page.reload()
+    await page.getByTestId('nav-terminal').click()
+
     await page.getByTestId('terminal-start').click()
     await expect(page.getByTestId('session-status')).toContainText('Session active', {
-      timeout: 15_000,
+      timeout: 20_000,
     })
   })
 

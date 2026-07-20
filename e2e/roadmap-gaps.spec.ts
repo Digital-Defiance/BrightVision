@@ -9,10 +9,16 @@ import { gotoVision } from './helpers/testConfig'
  */
 test.describe('Roadmap gaps (web smoke)', () => {
   test('#20–22 spec UX surfaces exist when session is live', async ({ page }) => {
-    await startMockSession(page, { initialTodos: sampleTodoStore() })
+    await startMockSession(page, {
+      initialTodos: sampleTodoStore(),
+    })
+    await expect(page.getByTestId('session-status')).toContainText('Session active', {
+      timeout: 10_000,
+    })
     await openTasks(page)
     await page.getByText('First task').click()
-    await expect(page.getByTestId('todo-generate-spec-wizard')).toBeEnabled()
+    await expect(page.getByTestId('spec-layer-gen-prompt')).toBeVisible()
+    await expect(page.getByTestId('todo-generate-spec-wizard')).toBeEnabled({ timeout: 10_000 })
     await expect(page.getByTestId('session-context-hint')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Refine spec' })).toBeEnabled()
   })

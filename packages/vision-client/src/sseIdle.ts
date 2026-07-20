@@ -35,7 +35,8 @@ const SSE_IDLE_RESET_TYPES = new Set([
 ])
 
 /** `user_message` alone does not start the post-event idle clock (model work follows). */
-export function sseEventResetsIdleTimer(ev: { type: string }): boolean {
+export function sseEventResetsIdleTimer(ev: { type?: string } | null | undefined): boolean {
+  if (!ev?.type) return false
   return SSE_IDLE_RESET_TYPES.has(ev.type)
 }
 

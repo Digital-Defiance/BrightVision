@@ -1,5 +1,6 @@
-import { execSync } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,9 +25,11 @@ export const LLM_E2E_WORKSPACE = fixtureWorkspaceRoot('hello-workspace')
 
 const CORE_API_URL = 'http://127.0.0.1:8741'
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434'
+const DEFAULT_LMSTUDIO_HOST = 'http://127.0.0.1:1234'
 
 /** Fast local default for `yarn test:llm:core` / `yarn test:e2e:llm` (also set in package.json). */
 export const DEFAULT_E2E_OLLAMA_MODEL = 'ollama_chat/llama3.2:3b'
+export const DEFAULT_E2E_LMSTUDIO_MODEL = 'openai/llama-3.2-3b-instruct'
 
 export function isLlmE2eEnabled(): boolean {
   return process.env['E2E_LLM'] === '1'
@@ -95,10 +98,30 @@ function normalizeOllamaTag(raw: string): string {
   if (!v) return ''
   if (v.startsWith('ollama_chat/')) return v.slice('ollama_chat/'.length)
   if (v.startsWith('ollama/')) return v.slice('ollama/'.length)
+  if (v.startsWith('openai/')) return v.slice('openai/'.length)
   return v
 }
 
-export function resolveRouterModelTags(): { fastTag: string; heavyTag: string } {
+export function resolveLocalLlmBackend(): string {
+  const fromEnv = process.env.BRIGHTVISION_LLM_BACKEND?.trim()
+  if (fromEnv) return fromEnv.toLowerCase()
+  const fromFile = loadLocalLlmEnv().BRIGHTVISION_LLM_BACKEND?.trim()
+  return (fromFile || 'lmstudio').toLowerCase()
+}
+
+function defaultE2eModel(): string {
+  return resolveLocalLlmBackend() === 'lmstudio'
+    ? DEFAULT_E2E_LMSTUDIO_MODEL
+    : DEFAULT_E2E_OLLAMA_MODEL
+}
+
+export function resolveRouterModelTags(): {
+  fastTag: string
+  codeTag: string
+  thinkTag: string
+  /** @deprecated Use `codeTag`. */
+  heavyTag: string
+} {
   const envFile = loadLocalLlmEnv()
   const fastTag = normalizeOllamaTag(
     process.env.E2E_FAST_MODEL?.trim() ||
@@ -106,20 +129,35 @@ export function resolveRouterModelTags(): { fastTag: string; heavyTag: string } 
       envFile.FAST_MODEL?.trim() ||
       ''
   )
-  const heavyTag = normalizeOllamaTag(
-    process.env.E2E_HEAVY_MODEL?.trim() ||
+  const codeTag = normalizeOllamaTag(
+    process.env.E2E_CODE_MODEL?.trim() ||
+      process.env.CODE_MODEL?.trim() ||
+      envFile.CODE_MODEL?.trim() ||
+      process.env.E2E_HEAVY_MODEL?.trim() ||
       process.env.HEAVY_MODEL?.trim() ||
       envFile.HEAVY_MODEL?.trim() ||
       process.env.E2E_OLLAMA_MODEL?.trim() ||
       resolveOllamaTag()
   )
-  return { fastTag, heavyTag }
+  const thinkTag = normalizeOllamaTag(
+    process.env.E2E_THINK_MODEL?.trim() ||
+      process.env.THINK_MODEL?.trim() ||
+      envFile.THINK_MODEL?.trim() ||
+      ''
+  )
+  return { fastTag, codeTag, thinkTag, heavyTag: codeTag }
 }
 
 export function buildRouterPrefsForStorage():
   | {
       enabled: true
-      models: { tier: 'fast' | 'heavy'; model: string; enabled: boolean; label: string }[]
+      models: {
+        id?: string
+        tier: 'fast' | 'code' | 'think' | 'heavy'
+        model: string
+        enabled: boolean
+        label: string
+      }[]
       tokenFastMax: number
       tokenHeavyMin: number
       keepAliveFastSec: number
@@ -128,66 +166,90 @@ export function buildRouterPrefsForStorage():
     }
   | null {
   if (!isRouterLlmE2eEnabled()) return null
-  const { fastTag, heavyTag } = resolveRouterModelTags()
+  const { fastTag, codeTag, thinkTag } = resolveRouterModelTags()
   if (!fastTag) return null
+  const models: {
+    id?: string
+    tier: 'fast' | 'code' | 'think' | 'heavy'
+    model: string
+    enabled: boolean
+    label: string
+  }[] = [
+    {
+      id: 'e2e-fast',
+      tier: 'fast',
+      model: visionModelFromTag(fastTag),
+      enabled: true,
+      label: `E2E FAST_MODEL: ${fastTag}`,
+    },
+    {
+      id: 'e2e-code',
+      tier: 'code',
+      model: visionModelFromTag(codeTag || fastTag),
+      enabled: true,
+      label: `E2E CODE_MODEL: ${codeTag || fastTag}`,
+    },
+  ]
+  if (thinkTag) {
+    models.push({
+      id: 'e2e-think',
+      tier: 'think',
+      model: visionModelFromTag(thinkTag),
+      enabled: true,
+      label: `E2E THINK_MODEL: ${thinkTag}`,
+    })
+  }
   return {
     enabled: true,
-    models: [
-      {
-        tier: 'fast',
-        model: visionModelFromTag(fastTag),
-        enabled: true,
-        label: `E2E FAST_MODEL: ${fastTag}`,
-      },
-      {
-        tier: 'heavy',
-        model: visionModelFromTag(heavyTag || fastTag),
-        enabled: true,
-        label: `E2E HEAVY_MODEL: ${heavyTag || fastTag}`,
-      },
-    ],
+    models,
     tokenFastMax: Number(process.env.E2E_ROUTER_TOKEN_FAST_MAX || 4096),
     tokenHeavyMin: Number(process.env.E2E_ROUTER_TOKEN_HEAVY_MIN || 12000),
     keepAliveFastSec: 300,
-    keepAliveHeavySec: 0,
+    keepAliveHeavySec: -1,
     escalateOnFailure: true,
   }
 }
 
 export function resolveOllamaHost(): string {
+  const file = loadLocalLlmEnv()
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    const fromEnv =
+      process.env.BRIGHTVISION_LLM_BACKEND_URL?.trim() ||
+      process.env.OLLAMA_HOST?.trim() ||
+      file.BRIGHTVISION_LLM_BACKEND_URL?.trim() ||
+      file.OLLAMA_HOST?.trim()
+    return fromEnv || DEFAULT_LMSTUDIO_HOST
+  }
   const fromEnv =
     process.env.E2E_OLLAMA_HOST?.trim() ||
     process.env.OLLAMA_HOST?.trim() ||
-    loadLocalLlmEnv().OLLAMA_HOST?.trim()
+    file.OLLAMA_HOST?.trim()
   return fromEnv || DEFAULT_OLLAMA_HOST
 }
 
-/** Ollama tag without the `ollama_chat/` prefix. */
+function lmstudioApiBase(): string {
+  const file = loadLocalLlmEnv()
+  const explicit =
+    process.env.OPENAI_API_BASE?.trim() || file.OPENAI_API_BASE?.trim()
+  if (explicit) return explicit.replace(/\/$/, '')
+  return `${resolveOllamaHost().replace(/\/$/, '')}/v1`
+}
+
+/** Model tag / modelKey without provider prefix. */
 export function resolveOllamaTag(): string {
   const explicit = process.env.E2E_OLLAMA_MODEL?.trim()
-  if (explicit) {
-    if (explicit.startsWith('ollama_chat/')) return explicit.slice('ollama_chat/'.length)
-    if (explicit.startsWith('ollama/')) return explicit.slice('ollama/'.length)
-    return explicit
-  }
+  if (explicit) return normalizeOllamaTag(explicit)
   const fromFile =
     loadLocalLlmEnv().DATA_MODEL?.trim() ||
     loadLocalLlmEnv().LLM_MODEL?.trim() ||
     loadLocalLlmEnv().CHAT_MODEL?.trim()
-  if (fromFile) {
-    if (fromFile.startsWith('ollama_chat/')) return fromFile.slice('ollama_chat/'.length)
-    if (fromFile.startsWith('ollama/')) return fromFile.slice('ollama/'.length)
-    return fromFile
-  }
+  if (fromFile) return normalizeOllamaTag(fromFile)
   return ''
 }
 
-/** Bare Ollama tag for DEFAULT_E2E_OLLAMA_MODEL (`llama3.2:3b`). */
+/** Bare tag for suite default model. */
 export function defaultE2eOllamaTag(): string {
-  const m = DEFAULT_E2E_OLLAMA_MODEL.trim()
-  if (m.startsWith('ollama_chat/')) return m.slice('ollama_chat/'.length)
-  if (m.startsWith('ollama/')) return m.slice('ollama/'.length)
-  return m
+  return normalizeOllamaTag(defaultE2eModel())
 }
 
 export function isOllamaAutoPullEnabled(): boolean {
@@ -213,14 +275,52 @@ export function isTagPulled(names: string[], tag: string): boolean {
   return names.some((n) => n === tag || n.startsWith(`${tag}:`))
 }
 
+export function fetchLmStudioModelKeys(): string[] {
+  try {
+    const out = execSync('lms ls --json', { encoding: 'utf8', timeout: 20_000 })
+    const rows = JSON.parse(out) as unknown
+    if (!Array.isArray(rows)) return []
+    const keys: string[] = []
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const entry = row as { type?: string; modelKey?: string }
+      if (entry.type !== 'llm') continue
+      const key = entry.modelKey?.trim()
+      if (key) keys.push(key)
+    }
+    return keys
+  } catch {
+    return []
+  }
+}
+
+export function isLmStudioModelOnDisk(keys: string[], tag: string): boolean {
+  const bare = normalizeOllamaTag(tag)
+  return keys.includes(bare)
+}
+
+export async function ensureLmStudioModelAvailable(tag?: string): Promise<string> {
+  const resolved = tag?.trim() ? normalizeOllamaTag(tag) : await resolveOllamaTagWithFallback()
+  const keys = fetchLmStudioModelKeys()
+  if (isLmStudioModelOnDisk(keys, resolved)) return resolved
+  const hint = `Download it in LM Studio or run: lms get ${resolved}`
+  if (!isOllamaAutoPullEnabled()) {
+    throw new Error(`Model "${resolved}" is not installed in LM Studio. ${hint}`)
+  }
+  throw new Error(`Model "${resolved}" is not on disk (lms ls). LM Studio has no pull equivalent — ${hint}`)
+}
+
 export function ollamaPullModel(tag: string): void {
   // eslint-disable-next-line no-console
   console.log(`[llm e2e] ollama pull ${tag}…`)
   execSync(`ollama pull ${tag}`, { stdio: 'inherit', env: process.env })
 }
 
-/** Pull when missing; set E2E_OLLAMA_AUTO_PULL=0 to fail fast without downloading. */
+/** Pull when missing (Ollama); on LM Studio verify modelKey is on disk (`lms ls`). */
 export async function ensureOllamaModelPulled(tag?: string): Promise<string> {
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return ensureLmStudioModelAvailable(tag)
+  }
   const resolved = tag ?? (await resolveOllamaTagWithFallback())
   const host = resolveOllamaHost()
   let names = await fetchOllamaTagNames(host)
@@ -271,6 +371,9 @@ export function visionModelFromTag(tag: string): string {
   if (isProviderVisionModel(m) || m.startsWith('ollama_chat/') || m.startsWith('ollama/')) {
     return m
   }
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return `openai/${m}`
+  }
   return `ollama_chat/${m}`
 }
 
@@ -281,6 +384,15 @@ export function resolveVisionModel(): string {
   const tag = resolveOllamaTag()
   if (tag) return visionModelFromTag(tag)
   return ''
+}
+
+/** CODE tier for implement/agent LLM e2e — prefers E2E_CODE_MODEL / CODE_MODEL. */
+export function resolveCodeVisionModel(): string {
+  for (const key of ['E2E_CODE_MODEL', 'CODE_MODEL', 'E2E_HEAVY_MODEL', 'HEAVY_MODEL'] as const) {
+    const raw = process.env[key]?.trim()
+    if (raw) return visionModelFromTag(raw)
+  }
+  return resolveVisionModel()
 }
 
 /** Create/init minimal workspace (committed README; `.git` created on first LLM e2e run). */
@@ -299,12 +411,40 @@ export function ensureLlmE2eWorkspace(): string {
   return LLM_E2E_WORKSPACE
 }
 
-/** Env vars the headless core needs for LiteLLM → Ollama (UI config does not reach the server process). */
+/**
+ * Remove persisted Cecli workspace state from the shared LLM e2e workspace.
+ * Other suites (spec-gen, todo-list) create tasks and agent `todo.txt` under `.cecli/`;
+ * a leftover **active** todo makes the next chat turn auto-inject the task spec, which
+ * forces the think tier and breaks router-tier assertions. Call in setup for tests that
+ * need a clean, todo-free session (e.g. the auto-router lane).
+ */
+export function clearLlmE2eWorkspaceTodos(): void {
+  const meta = path.join(LLM_E2E_WORKSPACE, '.cecli')
+  try {
+    fs.rmSync(meta, { recursive: true, force: true })
+  } catch {
+    /* best-effort: absent or locked is fine */
+  }
+}
+
+/** Env vars the headless core needs for LiteLLM → local backend. */
 export function ollamaEnvForCore(): Record<string, string> {
   const out: Record<string, string> = {}
-  const host = resolveOllamaHost()
-  if (host) out.OLLAMA_API_BASE = host
   const file = loadLocalLlmEnv()
+  const backend = resolveLocalLlmBackend()
+  const host = resolveOllamaHost()
+  if (backend === 'lmstudio') {
+    out.BRIGHTVISION_LLM_BACKEND = 'lmstudio'
+    out.BRIGHTVISION_LLM_BACKEND_URL = host
+    out.OPENAI_API_BASE = lmstudioApiBase()
+    out.OPENAI_API_KEY =
+      process.env.OPENAI_API_KEY?.trim() ||
+      file.OPENAI_API_KEY?.trim() ||
+      'lm-studio'
+    if (host) out.OLLAMA_HOST = host
+    return out
+  }
+  if (host) out.OLLAMA_API_BASE = host
   if (file.OLLAMA_API_KEY?.trim()) out.OLLAMA_API_KEY = file.OLLAMA_API_KEY.trim()
   if (file.OLLAMA_HOST?.trim() && !out.OLLAMA_API_BASE) {
     out.OLLAMA_API_BASE = file.OLLAMA_HOST.trim()
@@ -333,7 +473,27 @@ export function buildLlmE2eConfig() {
 }
 
 export async function assertOllamaForLlmE2e(): Promise<void> {
+  const backend = resolveLocalLlmBackend()
   const host = resolveOllamaHost()
+  if (backend === 'lmstudio') {
+    try {
+      const base = lmstudioApiBase()
+      const res = await fetch(`${base}/models`, {
+        headers: { Authorization: 'Bearer lm-studio' },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch (err) {
+      throw new Error(
+        `LM Studio not reachable at ${host} (${err}). Start LM Studio and enable Local Server.`
+      )
+    }
+    const tag = await resolveOllamaTagWithFallback()
+    if (!tag) {
+      throw new Error('No E2E model configured (E2E_OLLAMA_MODEL or DATA_MODEL in local-llm.env)')
+    }
+    return
+  }
   try {
     await fetchOllamaTagNames(host)
   } catch (err) {
@@ -348,6 +508,98 @@ export function coreHealthUrl(): string {
   return `${CORE_API_URL}/health`
 }
 
+const WARMUP_SCRIPT = path.join(REPO_ROOT, 'scripts', 'local-llm-warmup-for-tests.sh')
+
+function codeModelWarmMarkerPath(): string {
+  return path.join(os.tmpdir(), 'bv-e2e-code-model-warmed')
+}
+
+function readCodeModelWarmMarker(): string {
+  try {
+    return fs.readFileSync(codeModelWarmMarkerPath(), 'utf8').trim()
+  } catch {
+    return ''
+  }
+}
+
+function writeCodeModelWarmMarker(bareTag: string): void {
+  fs.writeFileSync(codeModelWarmMarkerPath(), bareTag, 'utf8')
+}
+
+/** Vision/LiteLLM id for a bare local model tag (router tier warmup). */
+export function visionWarmupModelId(bareTag: string): string {
+  const tag = bareTag.trim()
+  if (!tag) return tag
+  if (resolveLocalLlmBackend() === 'lmstudio') {
+    return tag.startsWith('openai/') ? tag : `openai/${tag}`
+  }
+  if (tag.startsWith('ollama_chat/') || tag.startsWith('ollama/')) return tag
+  return `ollama_chat/${tag}`
+}
+
+/**
+ * Run ``scripts/local-llm-warmup-for-tests.sh`` for one model.
+ * Router think tier: ``exclusive: true`` unloads fast+code so a large THINK_MODEL fits.
+ */
+export function warmLocalLlmModelTag(
+  bareTag: string,
+  opts: { exclusive?: boolean } = {}
+): void {
+  const exclusive = opts.exclusive ?? true
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(bareTag),
+      OLLAMA_WARMUP_EXCLUSIVE: exclusive ? '1' : '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
+}
+
+/** Mid-suite LM Studio/Ollama reset after long /agent turns (mirrors pytest ``recover_local_llm_for_tests``). */
+export function recoverLocalLlmForTests(): void {
+  if (process.env.E2E_SKIP_OLLAMA_WARMUP === '1') return
+  const tag = defaultE2eOllamaTag()
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(tag),
+      OLLAMA_WARMUP_EXCLUSIVE: '0',
+      LMS_WARMUP_RESTART_SERVER: resolveLocalLlmBackend() === 'lmstudio' ? '1' : '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
+}
+
+/** Load CODE tier before implement LLM specs (Lab sets ``E2E_CODE_MODEL`` from ``local-llm.env``). */
+export function warmCodeModelForImplementE2e(): void {
+  if (process.env.E2E_SKIP_OLLAMA_WARMUP === '1') return
+  const codeBare = normalizeOllamaTag(resolveCodeVisionModel())
+  const chatBare = normalizeOllamaTag(resolveVisionModel())
+  if (!codeBare || codeBare === chatBare) return
+  const alreadyWarmed = readCodeModelWarmMarker() === codeBare
+  execFileSync('sh', [WARMUP_SCRIPT], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      E2E_OLLAMA_MODEL: visionWarmupModelId(codeBare),
+      OLLAMA_WARMUP_EXCLUSIVE: alreadyWarmed ? '0' : '1',
+      OLLAMA_WARMUP_SKIP_IF_LOADED: alreadyWarmed ? '1' : '0',
+      LMS_WARMUP_RESTART_SERVER: '0',
+    },
+    timeout: Number(process.env.OLLAMA_WARMUP_MAX_S ?? 180) * 1000 + 30_000,
+  })
+  writeCodeModelWarmMarker(codeBare)
+  process.env.BV_E2E_CODE_MODEL_WARMED = codeBare
+}
+
+export function isHeavyCodeVisionModel(): boolean {
+  const code = (process.env.E2E_CODE_MODEL ?? resolveCodeVisionModel()).toLowerCase()
+  return /27b|32b|70b|qwen3\.6/.test(code)
+}
+
 /** Env for spawning Vision API — must not put repo root on PYTHONPATH (shadows `cecli`). */
 export function buildVisionCoreEnv(
   extra: Record<string, string> = {}
@@ -355,7 +607,8 @@ export function buildVisionCoreEnv(
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra }
   env.PYTHONSAFEPATH = '1'
   env.BRIGHT_VISION_HEADLESS = '1'
-  env.BRIGHT_VISION_HEADLESS = '1'
+  env.BRIGHT_VISION_ROOT = env.BRIGHT_VISION_ROOT ?? REPO_ROOT
+  env.BV_ROOT = env.BV_ROOT ?? REPO_ROOT
   delete env.PYTHONPATH
   return env
 }

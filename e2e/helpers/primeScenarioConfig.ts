@@ -1,9 +1,10 @@
 import type { Page } from '@playwright/test'
-import { E2E_CONFIG, E2E_CONFIG_STORAGE_KEY } from './testConfig'
+import { E2E_CONFIG, primeVisionAppConfig } from './testConfig'
 import { getScenario, type ScenarioName } from './scenarios'
 import {
   ensureAgentTodoCharSplitWorkspace,
   ensureEditBlockWorkspace,
+  ensureSpecProgressWorkspace,
   ensureTasksSeededWorkspace,
 } from './fixtureWorkspaces'
 import { normalizeWorkspacePath } from './workspacePath'
@@ -14,6 +15,7 @@ export async function primeScenarioConfig(page: Page, scenario: ScenarioName) {
   if (def.workspace === 'edit-block') workingDir = ensureEditBlockWorkspace()
   if (def.workspace === 'tasks-seeded') workingDir = ensureTasksSeededWorkspace()
   if (def.workspace === 'agent-todo-char-split') workingDir = ensureAgentTodoCharSplitWorkspace()
+  if (def.workspace === 'spec-progress-merge') workingDir = ensureSpecProgressWorkspace()
   if (def.workspace) workingDir = normalizeWorkspacePath(workingDir)
   const cfg = {
     ...E2E_CONFIG,
@@ -21,11 +23,5 @@ export async function primeScenarioConfig(page: Page, scenario: ScenarioName) {
     autoLoadSession: def.config?.autoLoadSession ?? false,
     autoSaveSession: def.config?.autoSaveSession ?? false,
   }
-  await page.addInitScript(
-    ([key, config]) => {
-      localStorage.setItem('vision-welcome-dismissed', '1')
-      localStorage.setItem(key, JSON.stringify(config))
-    },
-    [E2E_CONFIG_STORAGE_KEY, cfg] as const
-  )
+  await primeVisionAppConfig(page, cfg)
 }

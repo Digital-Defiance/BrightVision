@@ -6,6 +6,7 @@ license = { text = "MIT" }
 requires-python = ">=3.10"
 dynamic = ["version"]
 dependencies = [
+  "brightdate>=0.1.0,<0.2",
   "fastapi>=0.135.1",
   "uvicorn[standard]>=0.48.0",
   "httpx>=0.28.0",
@@ -20,9 +21,10 @@ Repository = "https://github.com/Digital-Defiance/BrightVision"
 bright-vision-core-serve = "bright_vision_core.cli_serve:main"
 bright-vision-test-suite-serve = "bright_vision_core.cli_test_suite_serve:main"
 bright-vision-test-everything = "bright_vision_core.cli_test_suite:main"
+bright-vision-tasks = "bright_vision_core.cli_tasks:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "hypothesis>=6.100.0"]
 
 [tool.setuptools.packages.find]
 include = ["bright_vision_core*"]
@@ -34,3 +36,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 write_to = "bright_vision_core/_version.py"
 local_scheme = "no-local-version"
+# BrightVision release tags are v0.2.1-brightN; map to v0.2.1.postN for packaging.version.
+git_describe_command = ["sh", "scripts/git_describe_pep440.sh"]

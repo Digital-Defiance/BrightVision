@@ -6,6 +6,9 @@ export function shouldSkipStderrLine(line: string): boolean {
   if (trimmed.includes('\r')) return true
   if (/Scanning repo:\s*\d+%/.test(trimmed)) return true
   if (/\d+it\/s\]/.test(trimmed)) return true
+  // LiteLLM/huggingface_hub Hub rate-limit nudge (no prompt data; filtered when disabled in core)
+  if (/unauthenticated requests to the HF Hub/i.test(trimmed)) return true
+  if (/Please set a HF_TOKEN/i.test(trimmed)) return true
   return false
 }
 

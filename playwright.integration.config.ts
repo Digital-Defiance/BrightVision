@@ -12,7 +12,7 @@ export default defineConfig({
   testDir: 'e2e/integration',
   fullyParallel: false,
   workers: 1,
-  timeout: 180_000,
+  timeout: process.env.BV_TEST_SUITE_ACTIVE === '1' ? 300_000 : 180_000,
   forbidOnly: !!process.env.CI,
   retries: 0,
   globalSetup: './e2e/global-integration-setup.ts',
@@ -24,7 +24,8 @@ export default defineConfig({
   webServer: {
     command: 'E2E=1 E2E_INTEGRATION=1 sh scripts/e2e-preview.sh',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
+    // Never reuse mocked-e2e preview (health stub only, no :8741 proxy).
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 })

@@ -22,7 +22,7 @@ from bright_vision_core.test_suite.router_preflight import (
     resolve_router_tags,
     router_lane_ready,
 )
-from bright_vision_core.test_suite.brightdate_timing import brightdate_enabled
+from bright_vision_core.brightdate import brightdate_enabled
 from bright_vision_core.test_suite.manifest import SuiteRunOptions, plan_steps
 from bright_vision_core.test_suite.ports import orchestrator_port
 from bright_vision_core.test_suite.timing import expectations_for_steps, repo_root
@@ -49,8 +49,12 @@ class StartRunRequest(BaseModel):
     verify_ears: bool = False
     shipped_scenarios: bool = False
     strict_phased_pytest: bool = False
+    implement_auto_advance_llm: bool = False
     save_transcript: bool = False
     transcript_path: str | None = None
+    fail_fast: bool = False
+    short_circuit: bool = False
+    start_from_step_id: str | None = None
 
 
 def _run_options_from_query(
@@ -61,6 +65,7 @@ def _run_options_from_query(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> SuiteRunOptions:
     return SuiteRunOptions(
         skip_llm=skip_llm,
@@ -70,6 +75,7 @@ def _run_options_from_query(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
 
 
@@ -82,6 +88,7 @@ def _run_options_from_body(body: StartRunRequest) -> SuiteRunOptions:
         verify_ears=body.verify_ears,
         shipped_scenarios=body.shipped_scenarios,
         strict_phased_pytest=body.strict_phased_pytest,
+        implement_auto_advance_llm=body.implement_auto_advance_llm,
     )
 
 
@@ -120,6 +127,7 @@ def get_plan(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> dict[str, Any]:
     opts = _run_options_from_query(
         skip_llm=skip_llm,
@@ -129,6 +137,7 @@ def get_plan(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
     steps = plan_steps(skip_llm=skip_llm, options=opts)
     return {
@@ -184,6 +193,7 @@ def get_expectations(
     verify_ears: bool = False,
     shipped_scenarios: bool = False,
     strict_phased_pytest: bool = False,
+    implement_auto_advance_llm: bool = False,
 ) -> dict[str, Any]:
     opts = _run_options_from_query(
         skip_llm=skip_llm,
@@ -193,6 +203,7 @@ def get_expectations(
         verify_ears=verify_ears,
         shipped_scenarios=shipped_scenarios,
         strict_phased_pytest=strict_phased_pytest,
+        implement_auto_advance_llm=implement_auto_advance_llm,
     )
     step_ids = [s.id for s in plan_steps(skip_llm=skip_llm, options=opts)]
     return expectations_for_steps(step_ids)
@@ -212,7 +223,7 @@ def preflight() -> dict[str, Any]:
     core_port = int(os.environ.get("BV_CORE_PORT", "8741"))
     active = job_store.active_run()
     router_ready, router_detail = router_lane_ready()
-    fast_tag, heavy_tag = resolve_router_tags()
+    fast_tag, code_tag, think_tag = resolve_router_tags()
     return {
         "repoRoot": str(repo_root()),
         "corePortInUse": _port_in_use(core_port),
@@ -225,7 +236,9 @@ def preflight() -> dict[str, Any]:
         "routerLaneReady": router_ready,
         "routerLaneDetail": router_detail,
         "routerFastModel": fast_tag or None,
-        "routerHeavyModel": heavy_tag or None,
+        "routerHeavyModel": code_tag or None,
+        "routerCodeModel": code_tag or None,
+        "routerThinkModel": think_tag or None,
         "activeRunInProgress": bool(
             active and active.status in ("pending", "running")
         ),
@@ -247,6 +260,9 @@ def start_run(body: StartRunRequest) -> StartRunResponse:
             run_options=_run_options_from_body(body),
             save_transcript=body.save_transcript,
             transcript_path=body.transcript_path,
+            fail_fast=body.fail_fast,
+            short_circuit=body.short_circuit,
+            start_from_step_id=body.start_from_step_id,
         )
     except RuntimeError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err

@@ -75,6 +75,19 @@ class TestSuperprojectDogfood(unittest.TestCase):
             if (SUPERPROJECT / rel).is_file():
                 self.assertTrue(ws.path_in_repo(rel), rel)
 
+    def test_submodule_tracked_file_not_false_gitignored(self):
+        """cecli/.gitignore whitelist must not block /add when cwd is superproject root."""
+        from bright_vision_core.event_io import EventIO
+        from bright_vision_core.git_workspace import create_git_workspace
+
+        cecli_main = SUPERPROJECT / CECLI_MAIN
+        if not cecli_main.is_file():
+            self.skipTest(f"missing {CECLI_MAIN}")
+
+        io = EventIO(yes=True, echo_to_console=False)
+        ws = create_git_workspace(io, [], str(SUPERPROJECT))
+        self.assertFalse(ws.git_ignored_file(CECLI_MAIN))
+
 
 if __name__ == "__main__":
     unittest.main()

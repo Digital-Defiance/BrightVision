@@ -6,7 +6,7 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from cecli.commands import SwitchCoderSignal
+from cecli.commands import ReloadProgramSignal, SwitchCoderSignal
 
 from bright_vision_core.async_bridge import run
 
@@ -30,6 +30,44 @@ def fast_slash_preproc_timeout_s() -> float:
     return float(os.environ.get("VISION_SLASH_PREPROC_TIMEOUT_S", "300"))
 
 
+def synthetic_slash_preproc_input(
+    message: str,
+    user_text: str,
+    commands: Any,
+) -> str | None:
+    """
+    Rebuild a slash line for ``preproc_user_input`` when task/spec injection prepends
+    context so ``user_text`` no longer starts with ``/`` (cecli would skip slash handling).
+    """
+    inp = (user_text or "").strip()
+    msg = (message or "").strip()
+    if not msg or not inp:
+        return None
+    if commands.is_command(inp):
+        return None
+    cmd = resolve_slash_command_name(msg, commands)
+    if not cmd or not commands.is_command(msg):
+        return None
+    res = commands.matching_commands(msg)
+    if not res:
+        return None
+    _, _, rest_inp = res
+    if inp == msg:
+        args = rest_inp
+    elif inp.endswith(msg):
+        prefix = inp[: -len(msg)]
+        args = (prefix + rest_inp).strip()
+    else:
+        idx = inp.rfind(msg)
+        if idx < 0:
+            return None
+        prefix = inp[:idx]
+        args = (prefix + rest_inp).strip()
+    if args:
+        return f"/{cmd} {args}"
+    return f"/{cmd}"
+
+
 def resolve_slash_command_name(user_text: str, commands: Any) -> str | None:
     """Normalized slash command (no leading ``/``), or ``None`` if not a command."""
     inp = user_text.strip()
@@ -46,7 +84,30 @@ def resolve_slash_command_name(user_text: str, commands: Any) -> str | None:
     return None
 
 
-def slash_preproc_timeout_s(user_text: str, commands: Any) -> float | None:
+def resolve_turn_slash_command(
+    user_text: str,
+    commands: Any,
+    *,
+    message: str | None = None,
+    agent_cmd: bool = False,
+) -> str | None:
+    """Resolve slash command from raw ``message`` and/or injected ``user_text``."""
+    if message:
+        cmd = resolve_slash_command_name(message.strip(), commands)
+        if cmd:
+            return cmd
+    if agent_cmd:
+        return "agent"
+    return resolve_slash_command_name(user_text, commands)
+
+
+def slash_preproc_timeout_s(
+    user_text: str,
+    commands: Any,
+    *,
+    message: str | None = None,
+    agent_cmd: bool = False,
+) -> float | None:
     """
     Wall-clock cap for ``preproc_user_input`` (slash handling).
 
@@ -55,7 +116,9 @@ def slash_preproc_timeout_s(user_text: str, commands: Any) -> float | None:
     a positive number to enforce a limit. Other slash work keeps
     ``VISION_SLASH_PREPROC_TIMEOUT_S`` (default 300s).
     """
-    cmd = resolve_slash_command_name(user_text, commands)
+    cmd = resolve_turn_slash_command(
+        user_text, commands, message=message, agent_cmd=agent_cmd
+    )
     if cmd in LONG_RUNNING_SLASH_COMMANDS:
         raw = os.environ.get("VISION_AGENT_PREPROC_TIMEOUT_S", "0")
         cap = float(raw)
@@ -69,6 +132,15 @@ def is_switch_coder_signal(exc: BaseException) -> bool:
         return True
     if isinstance(exc, BaseExceptionGroup):
         return any(is_switch_coder_signal(e) for e in exc.exceptions)
+    return False
+
+
+def is_reload_program_signal(exc: BaseException) -> bool:
+    """True when *exc* is (or wraps) cecli's full configuration hot-reload signal."""
+    if isinstance(exc, ReloadProgramSignal):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(is_reload_program_signal(e) for e in exc.exceptions)
     return False
 
 

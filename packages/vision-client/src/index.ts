@@ -1,8 +1,12 @@
 export * from './events'
+export * from './brightdateTiming'
 export * from './sseIdle'
+export { visionFetchError } from './networkError'
 export {
   CoreHttpClient,
   DEFAULT_VISION_API_BASE,
+  type CecliWorkspaceInfo,
+  type CecliWorkspaceProjectSummary,
   type CoreSessionInfo,
   type ModelRouterApiConfig,
   type ModelRouterPoolEntryApi,
@@ -11,6 +15,7 @@ export {
 } from './httpClient'
 export * from './todos/types'
 export * from './todos/earsTypes'
+export * from './todos/steeringTypes'
 export { normalizeStore, normalizeTodo } from './todos/storage'
 export {
   buildLanPairingPayload,

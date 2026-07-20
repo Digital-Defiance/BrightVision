@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSearchReplaceBlock, parseAssistantContent } from './proposedEdits'
+import { isProposedEditApplied, isSearchReplaceBlock, parseAssistantContent } from './proposedEdits'
 
 describe('parseAssistantContent', () => {
   it('renders plain code fences as display_fence', () => {
@@ -28,6 +28,17 @@ describe('parseAssistantContent', () => {
     expect(proposed.length).toBe(1)
   })
 
+  it('matches edited_files to proposed block path', () => {
+    const content =
+      '► **ANSWER**\n\n```src/example.ts\n<<<<<<< SEARCH\nold\n=======\nnew\n>>>>>>> REPLACE\n```\n'
+    const segs = parseAssistantContent(content)
+    const edit = segs.find((s) => s.type === 'proposed_edit')
+    expect(edit?.type).toBe('proposed_edit')
+    if (edit?.type !== 'proposed_edit') return
+    expect(isProposedEditApplied(edit.title, ['src/example.ts'])).toBe(true)
+    expect(isProposedEditApplied(edit.title, [])).toBe(false)
+  })
+
   it('promotes raw SEARCH/REPLACE in prose to proposed_edit', () => {
     const content = 'Here:\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE'
     const segs = parseAssistantContent(content)
@@ -35,5 +46,4 @@ describe('parseAssistantContent', () => {
     expect(segs.some((s) => s.type === 'proposed_edit')).toBe(true)
     expect(segs.some((s) => s.type === 'prose' && s.content.includes('<<<<<<<'))).toBe(false)
   })
-
 })

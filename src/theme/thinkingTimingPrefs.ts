@@ -9,6 +9,11 @@ export interface ThinkingTimingPrefs {
   showSectionDurations: boolean
   showMessageTurnTotal: boolean
   showStatsInSettings: boolean
+  /**
+   * Show durations, ETA, and history timestamps in BrightDate (BD / millidays).
+   * See [brightdate.org](https://brightdate.org).
+   */
+  brightDateMode: boolean
   /** CPU/RAM/GPU columns in timing history (desktop). */
   resourceDisplay: TimingResourceDisplay
   /** Workspace-relative or absolute path; empty = CSV file export disabled. */
@@ -22,6 +27,7 @@ export const DEFAULT_THINKING_TIMING_PREFS: ThinkingTimingPrefs = {
   showSectionDurations: true,
   showMessageTurnTotal: true,
   showStatsInSettings: true,
+  brightDateMode: false,
   resourceDisplay: 'avgPeak',
   timingStatsCsvPath: '.cecli/timing-history.csv',
   timingStatsAutoAppendCsv: false,

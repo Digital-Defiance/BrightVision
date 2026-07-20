@@ -1,87 +1,26 @@
-import { fmtDurationBrightDate } from './brightdateTiming'
+/**
+ * Test Lab orchestrator client — Tauri resolves base URL; mobile uses TestSuiteClient directly.
+ */
+import {
+  TestSuiteClient,
+  fmtDuration,
+  friendlyNetError,
+  type SuiteLaneOptions,
+  type SuiteStepPlan,
+  type TestSuiteEvent,
+} from '@brightvision/test-suite-client'
+
+export type { SuiteLaneOptions, SuiteStepPlan, TestSuiteEvent }
+export { fmtDuration, friendlyNetError }
 
 const DEFAULT_ORCH_PORT = '8743'
 
-export type SuiteStepPlan = {
-  id: string
-  label: string
-  requiresOllama: boolean
-  requiresCloudConfig?: boolean
-  touchesCorePort: boolean
-}
-
-/** Optional diagnostic lanes (must match orchestrator query/body). */
-export type SuiteLaneOptions = {
-  specGenPhased?: boolean
-  llmRouter?: boolean
-  cloudLlm?: boolean
-  verifyEars?: boolean
-  shippedScenarios?: boolean
-  strictPhasedPytest?: boolean
-}
-
-function laneQueryParams(skipLlm: boolean, lanes: SuiteLaneOptions): string {
-  const q = new URLSearchParams()
-  q.set('skip_llm', skipLlm ? 'true' : 'false')
-  if (lanes.specGenPhased) q.set('spec_gen_phased', 'true')
-  if (lanes.llmRouter) q.set('llm_router', 'true')
-  if (lanes.cloudLlm) q.set('cloud_llm', 'true')
-  if (lanes.verifyEars) q.set('verify_ears', 'true')
-  if (lanes.shippedScenarios) q.set('shipped_scenarios', 'true')
-  if (lanes.strictPhasedPytest) q.set('strict_phased_pytest', 'true')
-  return q.toString()
-}
-
-export type TestSuiteEvent = {
-  type: string
-  stepId?: string
-  label?: string
-  stream?: string
-  line?: string
-  ok?: boolean
-  seconds?: number
-  gpuAvg?: number
-  gpuPeak?: number
-  memAvg?: number
-  memPeak?: number
-  memPressureAvg?: number
-  memPressurePeak?: number
-  swapPeakGb?: number
-  cpuAvg?: number
-  cpuPeak?: number
-  cpuPct?: number
-  gpuPct?: number
-  stepIndex?: number
-  totalSteps?: number
-  elapsedSeconds?: number
-  totalSeconds?: number
-  stepElapsedSeconds?: number
-  text?: string
-  stepIds?: string[]
-  repoRoot?: string
-  path?: string
-  captureMode?: 'off' | 'bgpucap' | 'btime_only'
-  captureNote?: string
-  useBrightDate?: boolean
-  startBd?: number
-  endBd?: number
-}
-
 let resolvedBase: string | null = null
+let client: TestSuiteClient | null = null
 
 export function clearSuiteBaseCache(): void {
   resolvedBase = null
-}
-
-function friendlyNetError(err: unknown, url: string): Error {
-  const raw = err instanceof Error ? err.message : String(err)
-  if (raw === 'Load failed' || raw.includes('Failed to fetch') || raw.includes('NetworkError')) {
-    return new Error(
-      `Cannot reach test orchestrator at ${url} (${raw}). ` +
-        'Click **Restart orchestrator** or quit Test Lab and run `pip install -e .` then `yarn test-lab:dev`.'
-    )
-  }
-  return err instanceof Error ? err : new Error(raw)
+  client = null
 }
 
 function defaultBaseFromEnv(): string {
@@ -92,17 +31,25 @@ function defaultBaseFromEnv(): string {
   return `http://127.0.0.1:${port}`
 }
 
-/** Resolve orchestrator URL (Tauri spawn port or VITE_TEST_SUITE_*). */
 export async function resolveSuiteBaseUrl(force = false): Promise<string> {
   if (resolvedBase && !force) return resolvedBase
   try {
     const { invoke } = await import('@tauri-apps/api/core')
     resolvedBase = await invoke<string>('get_suite_base_url')
+    client = new TestSuiteClient(resolvedBase)
     return resolvedBase
   } catch {
     resolvedBase = defaultBaseFromEnv()
+    client = new TestSuiteClient(resolvedBase)
     return resolvedBase
   }
+}
+
+function getClient(): TestSuiteClient {
+  if (!client) {
+    client = new TestSuiteClient(resolvedBase ?? defaultBaseFromEnv())
+  }
+  return client
 }
 
 export async function restartOrchestratorFromShell(): Promise<void> {
@@ -115,64 +62,43 @@ export function suiteBaseUrl(): string {
   return resolvedBase ?? defaultBaseFromEnv()
 }
 
-/** Wait until the orchestrator answers /health (Tauri may start it on launch). */
-export async function waitForOrchestrator(
-  base?: string,
-  maxAttempts = 80
-): Promise<void> {
-  const url = base ?? (await resolveSuiteBaseUrl())
-  let lastErr = 'connection refused'
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) })
-      if (res.ok) {
-        const body = (await res.json()) as { service?: string; runsEnabled?: boolean }
-        if (
-          body.service === 'test-suite' &&
-          body.runsEnabled === true &&
-          body.cancelActiveRoute === true
-        ) {
-          return
-        }
-        if (body.service === 'test-suite' && body.runsEnabled === true) {
-          lastErr = `orchestrator at ${url} is outdated (missing cancelActiveRoute). Restart Test Lab.`
-        } else if (body.service === 'test-suite' && body.runsEnabled !== true) {
-          lastErr = `orchestrator at ${url} is outdated (missing runsEnabled). Quit Test Lab and restart.`
-        } else {
-          lastErr = `unexpected health payload: ${JSON.stringify(body)}`
-        }
-      } else {
-        lastErr = `health HTTP ${res.status}`
-      }
-    } catch (e) {
-      lastErr = friendlyNetError(e, url).message
-    }
-    await new Promise((r) => setTimeout(r, 400))
+export async function waitForOrchestrator(base?: string, maxAttempts = 80): Promise<void> {
+  if (base) {
+    await new TestSuiteClient(base).waitForOrchestrator(maxAttempts)
+    return
   }
-  throw new Error(
-    `Cannot reach test orchestrator at ${url} (${lastErr}). ` +
-      'Ensure `source activate.sh && pip install -e .` then restart Test Lab, or run `yarn test-suite:serve`.'
-  )
+  await resolveSuiteBaseUrl()
+  await getClient().waitForOrchestrator(maxAttempts)
 }
 
-export async function fetchPlan(
-  skipLlm: boolean,
-  lanes: SuiteLaneOptions = {}
-): Promise<{ repoRoot: string; steps: SuiteStepPlan[] }> {
-  const res = await fetch(
-    `${suiteBaseUrl()}/test-suite/plan?${laneQueryParams(skipLlm, lanes)}`
-  )
-  if (!res.ok) throw new Error(`plan failed: ${res.status}`)
-  return res.json()
+export async function fetchPlan(skipLlm: boolean, lanes: SuiteLaneOptions = {}) {
+  await resolveSuiteBaseUrl()
+  return getClient().fetchPlan(skipLlm, lanes)
 }
 
 export async function fetchExpectations(skipLlm: boolean, lanes: SuiteLaneOptions = {}) {
   const res = await fetch(
-    `${suiteBaseUrl()}/test-suite/expectations?${laneQueryParams(skipLlm, lanes)}`
+    `${suiteBaseUrl()}/test-suite/expectations?${new URLSearchParams({
+      skip_llm: skipLlm ? 'true' : 'false',
+      ...(lanes.specGenPhased ? { spec_gen_phased: 'true' } : {}),
+      ...(lanes.llmRouter ? { llm_router: 'true' } : {}),
+      ...(lanes.cloudLlm ? { cloud_llm: 'true' } : {}),
+      ...(lanes.verifyEars ? { verify_ears: 'true' } : {}),
+      ...(lanes.shippedScenarios ? { shipped_scenarios: 'true' } : {}),
+      ...(lanes.strictPhasedPytest ? { strict_phased_pytest: 'true' } : {}),
+      ...(lanes.implementAutoAdvanceLlm ? { implement_auto_advance_llm: 'true' } : {}),
+    })}`
   )
   if (!res.ok) throw new Error(`expectations failed: ${res.status}`)
   return res.json() as Promise<{
-    steps: Array<{ stepId: string; medianSeconds: number; sampleCount: number }>
+    steps: Array<{
+      stepId: string
+      medianSeconds: number
+      sampleCount: number
+      medianGpuPeak?: number
+      medianGpuAvg?: number
+      gpuSampleCount?: number
+    }>
     totalExpectedSeconds: number
     haveAllMedians: boolean
     missingMedians: string[]
@@ -180,9 +106,8 @@ export async function fetchExpectations(skipLlm: boolean, lanes: SuiteLaneOption
 }
 
 export async function fetchPreflight() {
-  const res = await fetch(`${suiteBaseUrl()}/test-suite/preflight`)
-  if (!res.ok) throw new Error(`preflight failed: ${res.status}`)
-  return res.json() as Promise<{
+  await resolveSuiteBaseUrl()
+  return getClient().fetchPreflight() as Promise<{
     repoRoot: string
     corePortInUse: boolean
     corePort: number
@@ -223,40 +148,21 @@ export async function cancelActiveRun(): Promise<void> {
   } catch (e) {
     throw friendlyNetError(e, url)
   }
-  if (res.status === 404) {
-    let detail = ''
-    try {
-      const body = (await res.json()) as { detail?: string }
-      detail = body.detail ?? ''
-    } catch {
-      /* ignore */
-    }
-    if (detail === 'No active run') return
-    if (detail === 'Unknown run') {
-      throw new Error(
-        'Orchestrator on this port is outdated (Cancel route broken). Use **Restart orchestrator**.'
-      )
-    }
-    return
-  }
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const body = (await res.json()) as { detail?: string }
-      if (body.detail) detail = `: ${body.detail}`
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`cancel active run failed: ${res.status}${detail}`)
-  }
+  if (res.status === 404) return
+  if (!res.ok) throw new Error(`cancel active run failed: ${res.status}`)
 }
 
-export async function startRun(opts: {
-  skipLlm: boolean
-  skipGpu: boolean
-  saveTranscript?: boolean
-  useBrightDate?: boolean
-} & SuiteLaneOptions): Promise<{ run_id: string; transcript_path?: string | null }> {
+export async function startRun(
+  opts: {
+    skipLlm: boolean
+    skipGpu: boolean
+    saveTranscript?: boolean
+    useBrightDate?: boolean
+    failFast?: boolean
+    shortCircuit?: boolean
+    startFromStepId?: string | null
+  } & SuiteLaneOptions
+): Promise<{ run_id: string; transcript_path?: string | null }> {
   const res = await fetch(`${suiteBaseUrl()}/test-suite/runs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -271,20 +177,15 @@ export async function startRun(opts: {
       verify_ears: Boolean(opts.verifyEars),
       shipped_scenarios: Boolean(opts.shippedScenarios),
       strict_phased_pytest: Boolean(opts.strictPhasedPytest),
+      implement_auto_advance_llm: Boolean(opts.implementAutoAdvanceLlm),
       save_transcript: Boolean(opts.saveTranscript),
+      fail_fast: Boolean(opts.failFast),
+      short_circuit: Boolean(opts.shortCircuit),
+      start_from_step_id: opts.startFromStepId || null,
     }),
   })
   if (res.status === 409) throw new Error('A run is already in progress')
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const errBody = (await res.json()) as { detail?: string }
-      if (errBody.detail) detail = `: ${errBody.detail}`
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`start run failed: ${res.status}${detail}`)
-  }
+  if (!res.ok) throw new Error(`start run failed: ${res.status}`)
   return res.json()
 }
 
@@ -296,55 +197,22 @@ export async function cancelRun(runId: string): Promise<void> {
   if (!res.ok) throw new Error(`cancel run failed: ${res.status}`)
 }
 
+export async function revealPathInFinder(path: string): Promise<void> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('reveal_path_in_finder', { path })
+    return
+  } catch {
+    /* not in Tauri */
+  }
+  throw new Error('Reveal in Finder is only available in the Test Lab desktop app')
+}
+
 export function streamRunEvents(
   runId: string,
   onEvent: (ev: TestSuiteEvent) => void,
   onDone: () => void,
   onError: (err: Error) => void
 ): () => void {
-  const ac = new AbortController()
-  ;(async () => {
-    try {
-      const res = await fetch(`${suiteBaseUrl()}/test-suite/runs/${runId}/events`, {
-        signal: ac.signal,
-      })
-      if (!res.ok || !res.body) throw new Error(`SSE failed: ${res.status}`)
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const parts = buf.split('\n\n')
-        buf = parts.pop() || ''
-        for (const part of parts) {
-          for (const line of part.split('\n')) {
-            if (!line.startsWith('data: ')) continue
-            const payload = JSON.parse(line.slice(6)) as TestSuiteEvent
-            onEvent(payload)
-            if (payload.type === 'done') {
-              onDone()
-              return
-            }
-          }
-        }
-      }
-      onDone()
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') onError(e as Error)
-    }
-  })()
-  return () => ac.abort()
-}
-
-export function fmtDuration(sec: number, useBrightDate = false): string {
-  if (useBrightDate) return fmtDurationBrightDate(sec)
-  if (sec < 60) return `${sec.toFixed(0)}s`
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`
-  const h = Math.floor(m / 60)
-  const rm = m % 60
-  return rm ? `${h}h ${rm}m` : `${h}h`
+  return getClient().streamRunEvents(runId, onEvent, onDone, onError)
 }

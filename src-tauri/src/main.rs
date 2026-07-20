@@ -8,13 +8,16 @@ mod ntfy_notify;
 mod resource_monitor;
 mod session_key;
 mod lan_remote;
+mod vision_message;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, State, WindowEvent};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use serde_json::Value;
+use tauri::{Emitter, Manager, RunEvent, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -27,11 +30,68 @@ struct AppState {
     lan_remote: Mutex<Option<lan_remote::LanRemoteHandle>>,
 }
 
-fn project_root() -> PathBuf {
+static INSTALL_ROOT: OnceLock<PathBuf> = OnceLock::new();
+
+fn compile_time_project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn find_repo_root_from(start: &Path) -> Option<PathBuf> {
+    let mut cur = start.to_path_buf();
+    loop {
+        if vision_serve_script(&cur).is_file() {
+            return Some(cur);
+        }
+        if !cur.pop() {
+            return None;
+        }
+    }
+}
+
+/// Resolve BrightVision install root at runtime (handles repo moves, e.g. /Users/... vs /Volumes/...).
+fn detect_install_root() -> PathBuf {
+    for key in ["BRIGHT_VISION_ROOT", "BV_ROOT"] {
+        if let Ok(env) = std::env::var(key) {
+            let root = PathBuf::from(env.trim());
+            if vision_serve_script(&root).is_file() {
+                return root;
+            }
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Ok(canonical) = std::fs::canonicalize(&exe) {
+            if let Some(mut cur) = canonical.parent().map(|p| p.to_path_buf()) {
+                loop {
+                    if vision_serve_script(&cur).is_file() {
+                        return cur;
+                    }
+                    if !cur.pop() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(root) = find_repo_root_from(&cwd) {
+            return root;
+        }
+    }
+    let compiled = compile_time_project_root();
+    if vision_serve_script(&compiled).is_file() {
+        return compiled;
+    }
+    compiled
+}
+
+fn project_root() -> PathBuf {
+    INSTALL_ROOT
+        .get()
+        .cloned()
+        .unwrap_or_else(detect_install_root)
 }
 
 fn python_candidate_exists(path: &Path) -> bool {
@@ -43,14 +103,20 @@ fn resolve_python_executable(configured: &str) -> String {
     if !configured.trim().is_empty() {
         let p = PathBuf::from(configured.trim());
         if python_candidate_exists(&p) {
-            return p.to_string_lossy().into_owned();
+            let s = p.to_string_lossy().into_owned();
+            if python_can_import_vision(&s) {
+                return s;
+            }
         }
     }
     let root = project_root();
     for rel in [".venv/bin/python3", ".venv/bin/python"] {
         let p = root.join(rel);
         if python_candidate_exists(&p) {
-            return p.to_string_lossy().into_owned();
+            let s = p.to_string_lossy().into_owned();
+            if python_can_import_vision(&s) {
+                return s;
+            }
         }
     }
     "python3".to_string()
@@ -65,8 +131,53 @@ fn vision_serve_script(engine_root: &Path) -> PathBuf {
     engine_root.join("scripts/vision_serve.py")
 }
 
+/// When the open project is the BrightVision repo itself, run the engine from that tree.
+fn resolve_engine_root(
+    workspace: &Path,
+    core_engine_path: &str,
+    install_root: &Path,
+) -> Result<PathBuf, String> {
+    if vision_serve_script(workspace).is_file() {
+        return Ok(workspace.to_path_buf());
+    }
+    resolve_app_engine_from(install_root, core_engine_path)
+}
+
+fn resolve_python_for_engine(engine_root: &Path, configured: &str) -> String {
+    for rel in [".venv/bin/python3", ".venv/bin/python"] {
+        let p = engine_root.join(rel);
+        if python_candidate_exists(&p) {
+            let s = p.to_string_lossy().into_owned();
+            if python_can_import_vision(&s) {
+                return s;
+            }
+        }
+    }
+    resolve_python_executable(configured)
+}
+
+fn vision_serve_command(engine_root: &Path, py: &str) -> Result<(PathBuf, Vec<String>), String> {
+    let host_args = ["--host".to_string(), "127.0.0.1".to_string()];
+    let script = vision_serve_script(engine_root);
+    for rel in [".venv/bin/bright-vision-core-serve", "bin/bright-vision-core-serve"] {
+        let bin = engine_root.join(rel);
+        if bin.is_file() {
+            return Ok((bin, host_args.to_vec()));
+        }
+    }
+    if !script.is_file() {
+        return Err(format!(
+            "Vision API server not found under {} (no scripts/vision_serve.py or bright-vision-core-serve)",
+            engine_root.display()
+        ));
+    }
+    let mut args = vec![script.to_string_lossy().into_owned()];
+    args.extend(host_args);
+    Ok((PathBuf::from(py), args))
+}
+
 /// Where the headless core is installed (shipped with the AV app). Not the user's git project.
-fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
+fn resolve_app_engine_from(install_root: &Path, core_engine_path: &str) -> Result<PathBuf, String> {
     let mut tried: Vec<String> = Vec::new();
 
     for key in ["BRIGHT_VISION_ENGINE"] {
@@ -79,16 +190,35 @@ fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
         }
     }
 
-    let bundled = project_root().join(core_engine_path);
+    let trimmed = core_engine_path.trim();
+    if (trimmed.starts_with('/') || trimmed.starts_with('\\')) && !trimmed.is_empty() {
+        let abs = PathBuf::from(trimmed);
+        tried.push(vision_serve_script(&abs).display().to_string());
+        if vision_serve_script(&abs).is_file() {
+            return Ok(abs);
+        }
+    }
+
+    let rel = trimmed.trim_start_matches("./");
+    let bundled = if rel.is_empty() || rel == "." {
+        install_root.to_path_buf()
+    } else {
+        install_root.join(rel)
+    };
     tried.push(vision_serve_script(&bundled).display().to_string());
     if vision_serve_script(&bundled).is_file() {
         return Ok(bundled);
     }
 
     Err(format!(
-        "Vision API server not found. Tried:\n  {}\n\nFrom the BrightVision repo run: git submodule update --init && source activate.sh",
-        tried.join("\n  ")
+        "Vision API server not found. Tried:\n  {}\n\nSet Settings → Engine path to {} or run from the BrightVision repo with source activate.sh",
+        tried.join("\n  "),
+        install_root.display()
     ))
+}
+
+fn resolve_app_engine(core_engine_path: &str) -> Result<PathBuf, String> {
+    resolve_app_engine_from(&project_root(), core_engine_path)
 }
 
 fn normalize_project_workspace(hint: &str) -> PathBuf {
@@ -137,6 +267,120 @@ async fn child_still_running(child: &mut Child) -> bool {
     matches!(child.try_wait(), Ok(None))
 }
 
+fn python_can_import_vision(py: &str) -> bool {
+    std::process::Command::new(py)
+        .args([
+            "-c",
+            "import bright_vision_core, uvicorn, cecli; assert getattr(cecli, '__version__', None)",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn format_recent_engine_logs(lines: &[String]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    format!("\n\nEngine log (last lines):\n{}", lines.join("\n"))
+}
+
+async fn vision_api_health_json(port: u16, bearer: Option<&str>) -> Option<serde_json::Value> {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+    let mut req = client.get(format!("http://127.0.0.1:{port}/health"));
+    if let Some(token) = bearer.filter(|t| !t.trim().is_empty()) {
+        req = req.header("Authorization", format!("Bearer {}", token.trim()));
+    }
+    let Ok(res) = req.send().await else {
+        return None;
+    };
+    if !res.status().is_success() {
+        return None;
+    }
+    res.json::<serde_json::Value>().await.ok()
+}
+
+async fn vision_api_health_ok(port: u16, bearer: Option<&str>) -> bool {
+    vision_api_health_json(port, bearer)
+        .await
+        .and_then(|v| {
+            v.get("status")
+                .and_then(|s| s.as_str())
+                .map(|s| s == "ok")
+        })
+        .unwrap_or(false)
+}
+
+/// True when the running Vision API includes /agent dead-end recovery (not a stale orphan on :8741).
+async fn vision_api_has_agent_turn_features(port: u16, bearer: Option<&str>) -> bool {
+    vision_api_health_json(port, bearer)
+        .await
+        .and_then(|v| {
+            v.get("agent_turn_features")
+                .and_then(|f| f.get("prose_shell_recovery"))
+                .and_then(|b| b.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+async fn kill_stale_vision_api_on_port(
+    port: u16,
+    guard: &mut tokio::sync::MutexGuard<'_, Option<Child>>,
+) {
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill().await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    }
+    if port_listening(port) {
+        kill_listeners_on_port(port);
+        tokio::time::sleep(Duration::from_millis(350)).await;
+    }
+}
+
+async fn wait_for_vision_api_ready(
+    child: &mut Child,
+    port: u16,
+    logs: Arc<Mutex<Vec<String>>>,
+    bearer: Option<&str>,
+) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            let guard = logs.lock().await;
+            let tail: Vec<_> = guard.iter().rev().take(8).cloned().collect();
+            let hint = format_recent_engine_logs(&tail.into_iter().rev().collect::<Vec<_>>());
+            return Err(format!(
+                "Vision API did not become healthy on 127.0.0.1:{port} within 45s.{hint}"
+            ));
+        }
+        if !child_still_running(child).await {
+            let guard = logs.lock().await;
+            let tail: Vec<_> = guard.iter().rev().take(12).cloned().collect();
+            let hint = format_recent_engine_logs(&tail.into_iter().rev().collect::<Vec<_>>());
+            return Err(format!(
+                "Vision API process exited before listening on :{port}. \
+                 Another app may still be bound to :{port} (orphan listener). Use Terminal → Stop, quit the app, \
+                 then run: lsof -ti :{port} | xargs kill -9. \
+                 Also run `source activate.sh` from your active repo (e.g. /Volumes/Code/BrightVision).{hint}"
+            ));
+        }
+        if port_listening(port)
+            && vision_api_health_ok(port, bearer).await
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 fn port_listening(port: u16) -> bool {
     use std::net::{SocketAddr, TcpStream};
     let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap_or_else(|_| "127.0.0.1:0".parse().unwrap());
@@ -146,21 +390,27 @@ fn port_listening(port: u16) -> bool {
 /// Best-effort: free the API port when a prior serve process outlived the app.
 #[cfg(unix)]
 fn kill_listeners_on_port(port: u16) {
-    let Ok(output) = std::process::Command::new("lsof")
-        .args(["-ti", &format!(":{}", port)])
-        .output()
-    else {
-        return;
-    };
-    if !output.status.success() {
-        return;
-    }
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let pid = line.trim();
-        if !pid.is_empty() {
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", pid])
-                .output();
+    for signal in ["-TERM", "-KILL"] {
+        let Ok(output) = std::process::Command::new("lsof")
+            .args(["-ti", &format!(":{}", port)])
+            .output()
+        else {
+            return;
+        };
+        if !output.status.success() {
+            return;
+        }
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let pid = line.trim();
+            if !pid.is_empty() {
+                let _ = std::process::Command::new("kill")
+                    .args([signal, pid])
+                    .output();
+            }
+        }
+        std::thread::sleep(Duration::from_millis(250));
+        if !port_listening(port) {
+            return;
         }
     }
 }
@@ -298,21 +548,64 @@ async fn start_core_api(
     session_encrypt: Option<bool>,
     api_token: Option<String>,
 ) -> Result<String, String> {
+    let bearer_owned = api_token
+        .as_ref()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let bearer = bearer_owned.as_deref();
+
     let mut guard = state.serve_child.lock().await;
-    if let Some(ref mut child) = *guard {
-        if child_still_running(child).await {
-            let p = *state.api_port.lock().await;
-            return Ok(format!("http://127.0.0.1:{}", p));
+    let tracked_port = *state.api_port.lock().await;
+    let listener_port = if port_listening(port) {
+        port
+    } else if port_listening(tracked_port) {
+        tracked_port
+    } else {
+        port
+    };
+
+    if port_listening(listener_port) && vision_api_health_ok(listener_port, bearer).await {
+        if vision_api_has_agent_turn_features(listener_port, bearer).await {
+            if let Some(ref mut child) = *guard {
+                if child_still_running(child).await {
+                    return Ok(format!("http://localhost:{}", listener_port));
+                }
+            } else {
+                return Ok(format!("http://localhost:{}", listener_port));
+            }
         }
-        let _ = child.kill().await;
-        *guard = None;
+        {
+            let mut log = state.engine_logs.lock().await;
+            log.push(format!(
+                "[vision-api] Replacing stale Vision API on :{listener_port} (missing agent_turn_features — run pip install -e . then Start)"
+            ));
+        }
+        kill_stale_vision_api_on_port(listener_port, &mut guard).await;
+    } else if let Some(ref mut child) = *guard {
+        if child_still_running(child).await {
+            let p = tracked_port;
+            if port_listening(p) && vision_api_health_ok(p, bearer).await {
+                return Ok(format!("http://localhost:{}", p));
+            }
+            // Stale serve child (crashed or not yet bound) — respawn below.
+            let _ = child.kill().await;
+            *guard = None;
+        } else {
+            let _ = child.kill().await;
+            *guard = None;
+        }
     }
     if port_listening(port) {
         kill_listeners_on_port(port);
         tokio::time::sleep(Duration::from_millis(350)).await;
+        if port_listening(port) {
+            return Err(format!(
+                "Port {port} is still in use by another process. Quit other BrightVision instances, \
+                 then run: lsof -ti :{port} | xargs kill -9"
+            ));
+        }
     }
 
-    let engine_root = resolve_app_engine(&core_engine_path)?;
     let workspace = normalize_project_workspace(&working_dir);
     if !workspace.is_dir() {
         return Err(format!(
@@ -321,20 +614,48 @@ async fn start_core_api(
         ));
     }
 
-    let script = vision_serve_script(&engine_root);
-    let py = resolve_python_executable(&python_path);
+    let install_root = detect_install_root();
+    let engine_root = resolve_engine_root(&workspace, &core_engine_path, &install_root)?;
+    let py = resolve_python_for_engine(&engine_root, &python_path);
+    if !python_can_import_vision(&py) {
+        return Err(format!(
+            "Python at {} cannot import bright_vision_core (missing venv?). \
+             From the repo run: source activate.sh — then set Settings → Python to {}/.venv/bin/python3 \
+             or clear a stale path if the repo moved between /Users/... and /Volumes/....",
+            py,
+            engine_root.display()
+        ));
+    }
 
-    let mut cmd = Command::new(&py);
-    cmd.arg(&script)
-        .arg("--host")
-        .arg("127.0.0.1")
+    let (program, serve_args) = vision_serve_command(&engine_root, &py)?;
+
+    {
+        let mut guard = state.engine_logs.lock().await;
+        guard.push(format!(
+            "[vision-api] program={} engine={} workspace={}",
+            program.display(),
+            engine_root.display(),
+            workspace.display()
+        ));
+    }
+
+    let mut cmd = Command::new(&program);
+    cmd.args(&serve_args)
         .arg("--port")
         .arg(port.to_string())
         .current_dir(&engine_root)
         .env("PYTHONSAFEPATH", "1")
         .env("NO_COLOR", "1")
         .env("BRIGHT_VISION_HEADLESS", "1")
+        .env("BRIGHT_VISION_ROOT", engine_root.as_os_str())
         .env("TQDM_DISABLE", "1");
+    // Forward BV_* vars from local-llm env files (e.g. BV_IMPLEMENT_DESIGN_MAX_CHARS)
+    for (key, value) in local_llm_config::bv_env_vars(None) {
+        cmd.env(&key, &value);
+    }
+    for (key, value) in local_llm_config::core_api_llm_env(None) {
+        cmd.env(&key, &value);
+    }
     if !extra_params.trim().is_empty() {
         cmd.env("LITELLM_EXTRA_PARAMS", &extra_params);
     }
@@ -358,26 +679,33 @@ async fn start_core_api(
         spawn_stdout_drain(stdout);
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_stderr_reader(stderr, state.engine_logs.clone(), app);
+        spawn_stderr_reader(stderr, state.engine_logs.clone(), app.clone());
     }
 
+    wait_for_vision_api_ready(&mut child, port, state.engine_logs.clone(), bearer).await?;
     *guard = Some(child);
     *state.api_port.lock().await = port;
     let _ = workspace;
-    Ok(format!("http://127.0.0.1:{}", port))
+    Ok(format!("http://localhost:{}", port))
+}
+
+async fn shutdown_vision_api(state: &AppState) {
+    lan_remote::stop_lan_remote(&state.lan_remote).await;
+    let port = *state.api_port.lock().await;
+    let mut guard = state.serve_child.lock().await;
+    if let Some(mut child) = guard.take() {
+        let _ = child.kill().await;
+        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
+    }
+    drop(guard);
+    if port_listening(port) {
+        kill_listeners_on_port(port);
+    }
 }
 
 #[tauri::command]
 async fn stop_core_api(state: State<'_, AppState>) -> Result<(), String> {
-    let port = *state.api_port.lock().await;
-    let mut guard = state.serve_child.lock().await;
-    if let Some(mut child) = guard.take() {
-        child.kill().await.map_err(|e| e.to_string())?;
-        let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-    }
-    if port_listening(port) {
-        kill_listeners_on_port(port);
-    }
+    shutdown_vision_api(state.inner()).await;
     Ok(())
 }
 
@@ -386,6 +714,198 @@ async fn drain_core_api_logs(state: State<'_, AppState>) -> Result<Vec<String>, 
     let mut guard = state.engine_logs.lock().await;
     let lines = std::mem::take(&mut *guard);
     Ok(lines)
+}
+
+#[derive(Serialize, Deserialize)]
+struct CoreSessionInfoResponse {
+    session_id: String,
+    workspace: String,
+    model: String,
+    files_in_chat: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct VisionApiResponse {
+    status: u16,
+    body: Value,
+}
+
+async fn vision_api_request_json(
+    method: reqwest::Method,
+    base_url: &str,
+    path: &str,
+    bearer_token: Option<&str>,
+    body: Option<Value>,
+    timeout_secs: u64,
+) -> Result<VisionApiResponse, String> {
+    let base = base_url.trim().trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    let label = format!("{} /{path}", method);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let url = format!("{base}/{path}");
+    let mut req = client.request(method, &url);
+    if body.is_some() {
+        req = req.header("Content-Type", "application/json");
+    }
+    if let Some(payload) = body {
+        req = req.json(&payload);
+    }
+    if let Some(token) = bearer_token {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", trimmed));
+        }
+    }
+    let res = req.send().await.map_err(|e| format!("{label}: {e}"))?;
+    let status = res.status().as_u16();
+    let text = res.text().await.unwrap_or_default();
+    let body = if text.trim().is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_str(&text).unwrap_or(Value::String(text))
+    };
+    Ok(VisionApiResponse { status, body })
+}
+
+/// Generic Vision HTTP for desktop UI (WebKit fetch to localhost often fails with "Load failed").
+#[tauri::command]
+async fn vision_api_fetch(
+    method: String,
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+    body: Option<Value>,
+) -> Result<VisionApiResponse, String> {
+    let method = match method.to_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PATCH" => reqwest::Method::PATCH,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        other => return Err(format!("unsupported HTTP method: {other}")),
+    };
+    vision_api_request_json(
+        method,
+        &base_url,
+        &path,
+        bearer_token.as_deref(),
+        body,
+        180,
+    )
+    .await
+}
+
+#[derive(Serialize)]
+struct VisionApiBytesResponse {
+    status: u16,
+    body_base64: String,
+    content_type: Option<String>,
+}
+
+/// Raw GET/POST body for desktop (e.g. session debug JSON) — avoids WebKit fetch blob failures.
+#[tauri::command]
+async fn vision_api_fetch_bytes(
+    method: String,
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+) -> Result<VisionApiBytesResponse, String> {
+    let method = match method.to_uppercase().as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        other => return Err(format!("unsupported HTTP method for bytes fetch: {other}")),
+    };
+    let base = base_url.trim().trim_end_matches('/');
+    let path = path.trim_start_matches('/');
+    let label = format!("{method} /{path}");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(180))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut req = client.request(method, format!("{base}/{path}"));
+    if let Some(token) = bearer_token {
+        let trimmed = token.trim();
+        if !trimmed.is_empty() {
+            req = req.header("Authorization", format!("Bearer {}", trimmed));
+        }
+    }
+    let res = req.send().await.map_err(|e| format!("{label}: {e}"))?;
+    let status = res.status().as_u16();
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    let bytes = res.bytes().await.map_err(|e| format!("{label}: {e}"))?;
+    Ok(VisionApiBytesResponse {
+        status,
+        body_base64: B64.encode(bytes),
+        content_type,
+    })
+}
+
+/// Generic POST for desktop UI (WebKit fetch to localhost often fails with "Load failed").
+#[tauri::command]
+async fn vision_api_post(
+    base_url: String,
+    path: String,
+    bearer_token: Option<String>,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let res = vision_api_request_json(
+        reqwest::Method::POST,
+        &base_url,
+        &path,
+        bearer_token.as_deref(),
+        Some(body),
+        180,
+    )
+    .await?;
+    if !(200..300).contains(&res.status) {
+        return Err(format!("POST /{} {}: {}", path.trim_start_matches('/'), res.status, res.body));
+    }
+    Ok(res.body)
+}
+
+/// Create session via reqwest (WebKit fetch POST to localhost often fails with "Load failed").
+#[tauri::command]
+async fn create_vision_session(
+    base_url: String,
+    bearer_token: Option<String>,
+    body: serde_json::Value,
+) -> Result<CoreSessionInfoResponse, String> {
+    let res = vision_api_request_json(
+        reqwest::Method::POST,
+        &base_url,
+        "sessions",
+        bearer_token.as_deref(),
+        Some(body),
+        180,
+    )
+    .await?;
+    if !(200..300).contains(&res.status) {
+        return Err(format!("POST /sessions {}: {}", res.status, res.body));
+    }
+    serde_json::from_value(res.body).map_err(|e| format!("POST /sessions: invalid session payload ({e})"))
+}
+
+#[derive(Serialize)]
+struct EngineInstallInfo {
+    install_root: String,
+    default_python_path: String,
+}
+
+/// Canonical BrightVision install root + default Python (for Settings path hygiene).
+#[tauri::command]
+fn engine_install_info() -> EngineInstallInfo {
+    let root = project_root();
+    EngineInstallInfo {
+        install_root: root.to_string_lossy().into_owned(),
+        default_python_path: resolve_python_executable(""),
+    }
 }
 
 /// Git project root the agent should work in (not where the engine is installed).
@@ -1266,40 +1786,34 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            let install_root = detect_install_root();
+            let _ = INSTALL_ROOT.set(install_root);
             app.manage(AppState {
                 serve_child: Mutex::new(None),
                 api_port: Mutex::new(8741),
                 engine_logs: Arc::new(Mutex::new(Vec::new())),
                 lan_remote: Mutex::new(None),
             });
-            
-            // Ensure core API process is terminated when the app quits to prevent port conflicts
-            let app_handle = app.handle().clone();
-            if let Some(window) = app.get_webview_window("main") {
-                window.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { .. } = event {
-                        let app_handle = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let state = app_handle.state::<AppState>();
-                            lan_remote::stop_lan_remote(&state.lan_remote).await;
-                            let mut guard = state.serve_child.lock().await;
-                            if let Some(mut child) = guard.take() {
-                                let _ = child.kill().await;
-                            }
-                        });
-                    }
-                });
-            }
+            app.manage(vision_message::VisionMessageStreamState {
+                cancel: Mutex::new(None),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_core_api,
+            create_vision_session,
+            vision_api_post,
+            vision_api_fetch,
+            vision_api_fetch_bytes,
+            vision_message::send_vision_message,
+            vision_message::cancel_vision_message,
             session_key::ensure_session_encryption_key,
             session_key::clear_session_encryption_key,
             stop_core_api,
             drain_core_api_logs,
             default_workspace,
             default_python_path,
+            engine_install_info,
             detect_workspace,
             engine_install_path,
             query_engine_versions,
@@ -1342,6 +1856,12 @@ fn main() {
             stop_lan_remote_proxy,
             lan_remote_proxy_status,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<AppState>();
+                tauri::async_runtime::block_on(shutdown_vision_api(state.inner()));
+            }
+        });
 }

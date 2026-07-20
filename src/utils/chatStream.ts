@@ -19,6 +19,10 @@ interface SectionMarker {
 
 /** Ordered by typical appearance; all matches are found and sorted by index. */
 const SECTION_MARKERS: SectionMarker[] = [
+  { kind: 'thinking', pattern: /<think>/gi },
+  { kind: 'answer', pattern: /<\/think>/gi },
+  { kind: 'thinking', pattern: /<thinking-content-[0-9a-f]+>/gi },
+  { kind: 'answer', pattern: /<\/thinking-content-[0-9a-f]+>/gi },
   { kind: 'thinking', pattern: /►\s*\*\*THINKING\*\*/gi },
   { kind: 'answer', pattern: /►\s*\*\*ANSWER\*\*/gi },
   { kind: 'reasoning', pattern: /►\s*\*\*REASONING\*\*/gi },
@@ -131,6 +135,44 @@ export function appendStreamingToken(existing: string, chunk: string): string {
   const overlap = suffixPrefixOverlap(existing, chunk)
   if (overlap > 0) return existing + chunk.slice(overlap)
   return existing + chunk
+}
+
+/**
+ * Content for a new assistant bubble after a tool break within the same turn.
+ * When the provider resends a cumulative snapshot, only the suffix not already
+ * shown in prior bubbles is returned.
+ */
+export function initialAssistantBubbleChunk(priorStream: string, chunk: string): string {
+  if (!chunk) return ''
+  if (!priorStream) return chunk
+  const merged = appendStreamingToken(priorStream, chunk)
+  if (merged.length <= priorStream.length) return ''
+  return merged.slice(priorStream.length)
+}
+
+export interface ModelRouteCarrier {
+  modelRoute?: unknown
+}
+
+/** Carry the last explicit model route forward until the next user message. */
+export function withInheritedModelRoutes<T extends ModelRouteCarrier & { role: string }>(
+  messages: readonly T[]
+): T[] {
+  let route: T['modelRoute'] | undefined
+  return messages.map((m) => {
+    if (m.role === 'user') {
+      route = undefined
+      return m
+    }
+    if (m.role === 'assistant') {
+      if (m.modelRoute) {
+        route = m.modelRoute
+        return m
+      }
+      if (route) return { ...m, modelRoute: route }
+    }
+    return m
+  })
 }
 
 export type TimelineSortable = { id: number }

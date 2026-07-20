@@ -18,8 +18,13 @@ except ImportError:
     configure_auth = None
     reset_auth_for_tests = None
 
-from llm_ollama import ensure_ollama_for_llm_e2e, ollama_reachable, resolve_vision_model
-from llm_client import stream_session_message
+from llm_ollama import (
+    ensure_ollama_for_llm_e2e,
+    ollama_reachable,
+    recover_local_llm_for_tests,
+    resolve_vision_model,
+)
+from llm_client import create_llm_vision_client, stream_session_message
 from llm_sse import assistant_text, fuzzy_contains_magic
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -63,7 +68,7 @@ def _ensure_context_workspace() -> str:
 
 @unittest.skipIf(TestClient is None, "fastapi not installed")
 @unittest.skipIf(os.environ.get("E2E_LLM") != "1", "set E2E_LLM=1 to run real LLM tests")
-@unittest.skipIf(not ollama_reachable(), "Ollama not reachable")
+@unittest.skipIf(not ollama_reachable(), "Local LLM not reachable")
 class TestContextLlm(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -80,7 +85,7 @@ class TestContextLlm(unittest.TestCase):
     def test_add_fixture_file_then_read_magic_constant(self):
         model = resolve_vision_model()
         workspace = _ensure_context_workspace()
-        client = TestClient(app)
+        client = create_llm_vision_client()
         res = client.post("/sessions", json={"workspace": workspace, "model": model})
         if res.status_code == 400:
             self.skipTest(f"Could not create session: {res.text}")
@@ -98,10 +103,23 @@ class TestContextLlm(unittest.TestCase):
             "Using only the file you have in context, what is the exact string value assigned to "
             "E2E_CONTEXT_MAGIC in TypeScript? Reply with only that string, no quotes or explanation."
         )
-        events = stream_session_message(client, session_id, question)
-        errors = [e for e in events if e.get("type") == "error"]
-        self.assertFalse(errors, errors)
-        reply = assistant_text(events)
+        events: list[dict] = []
+        reply = ""
+        for attempt in range(2):
+            events = stream_session_message(
+                client,
+                session_id,
+                question,
+                preproc=False,
+            )
+            errors = [e for e in events if e.get("type") == "error"]
+            if errors:
+                self.fail(errors)
+            reply = assistant_text(events)
+            if reply.strip():
+                break
+            if attempt == 0:
+                recover_local_llm_for_tests()
         self.assertTrue(
             fuzzy_contains_magic(reply, E2E_CONTEXT_MAGIC),
             f"expected {E2E_CONTEXT_MAGIC!r} (or its segments) in reply: {reply[:500]!r}",

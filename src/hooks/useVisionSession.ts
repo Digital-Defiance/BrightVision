@@ -12,6 +12,7 @@ import type { CoreEventBase } from '../ipc/events'
 import { isTauriRuntime } from '../ipc/isTauri'
 import { SseIdleTimeoutError } from '../ipc/sseIdle'
 import { createVisionApiSession, type VisionApiSession } from '../ipc/visionApi'
+import { isUserCancellationError } from '../utils/abort'
 import { parseAddCommandPath } from '../utils/suggestedFiles'
 import { useProcess } from '../progress/processStore'
 
@@ -31,12 +32,14 @@ export function useVisionSession(
   const [isStarting, setIsStarting] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [queuedCount, setQueuedCount] = useState(0)
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [sessionInfo, setSessionInfo] = useState<CoreSessionInfo | null>(null)
   const [apiUrl, setApiUrl] = useState<string | null>(null)
   const [httpClient, setHttpClient] = useState<CoreHttpClient | null>(null)
   const sessionRef = useRef<VisionApiSession | null>(null)
   const pendingStartRef = useRef<VisionApiSession | null>(null)
   const inflightRef = useRef(0)
+  const sendGenerationRef = useRef(0)
   const queueRef = useRef<{ content: string; options?: SendMessageOptions }[]>([])
   const drainQueueRef = useRef<() => Promise<void>>(async () => {})
 
@@ -44,14 +47,24 @@ export function useVisionSession(
     setIsBusy(inflightRef.current > 0)
   }, [])
 
-  const syncQueueCount = useCallback(() => {
+  const syncQueueState = useCallback(() => {
     setQueuedCount(queueRef.current.length)
+    setQueuedMessages(queueRef.current.map((item) => item.content))
   }, [])
 
   const clearQueue = useCallback(() => {
     queueRef.current = []
-    syncQueueCount()
-  }, [syncQueueCount])
+    syncQueueState()
+  }, [syncQueueState])
+
+  const removeQueuedAt = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= queueRef.current.length) return
+      queueRef.current.splice(index, 1)
+      syncQueueState()
+    },
+    [syncQueueState]
+  )
 
   const startGenerationRef = useRef(0)
 
@@ -137,6 +150,7 @@ export function useVisionSession(
       ])
       sessionRef.current = null
       setIsRunning(false)
+      sendGenerationRef.current += 1
       inflightRef.current = 0
       setIsBusy(false)
       setSessionInfo(null)
@@ -157,11 +171,30 @@ export function useVisionSession(
     }
   }, [])
 
+  const finishSendGeneration = useCallback(
+    (generation: number) => {
+      if (generation !== sendGenerationRef.current) return
+      inflightRef.current = Math.max(0, inflightRef.current - 1)
+      setBusyFromInflight()
+      void drainQueueRef.current()
+    },
+    [setBusyFromInflight]
+  )
+
+  /** Core emitted ``done``/``error`` — unblock UI before HTTP teardown finishes. */
+  const releaseInflightAfterTurn = useCallback(() => {
+    if (inflightRef.current <= 0) return
+    inflightRef.current = 0
+    setIsBusy(false)
+    void drainQueueRef.current()
+  }, [])
+
   const sendOne = useCallback(
     async (content: string, todoOptions?: SendMessageOptions) => {
       if (!sessionRef.current) throw new Error('Session not started')
       const addPath = parseAddCommandPath(content)
       if (addPath) {
+        const generation = ++sendGenerationRef.current
         inflightRef.current += 1
         setBusyFromInflight()
         process.begin('tool', 'Adding files')
@@ -173,20 +206,23 @@ export function useVisionSession(
           process.fail(message)
           throw err
         } finally {
-          inflightRef.current = Math.max(0, inflightRef.current - 1)
-          setBusyFromInflight()
+          finishSendGeneration(generation)
           if (inflightRef.current === 0) process.idle()
-          void drainQueueRef.current()
         }
         return
       }
       onOutboundMessageRef.current?.(content)
+      const generation = ++sendGenerationRef.current
       inflightRef.current += 1
       setBusyFromInflight()
       process.begin('reasoning', 'Sending')
       try {
         await sessionRef.current.send(content, todoOptions)
       } catch (err) {
+        if (isUserCancellationError(err)) {
+          process.idle()
+          return
+        }
         const message =
           err instanceof SseIdleTimeoutError
             ? err.message
@@ -196,21 +232,20 @@ export function useVisionSession(
         process.fail(message)
         throw err
       } finally {
-        inflightRef.current = Math.max(0, inflightRef.current - 1)
-        setBusyFromInflight()
-        void drainQueueRef.current()
+        finishSendGeneration(generation)
+        if (inflightRef.current === 0) process.idle()
       }
     },
-    [process, setBusyFromInflight]
+    [process, setBusyFromInflight, finishSendGeneration]
   )
 
   const drainQueue = useCallback(async () => {
     while (queueRef.current.length > 0 && sessionRef.current && inflightRef.current === 0) {
       const next = queueRef.current.shift()!
-      syncQueueCount()
+      syncQueueState()
       await sendOne(next.content, next.options)
     }
-  }, [sendOne, syncQueueCount])
+  }, [sendOne, syncQueueState])
 
   drainQueueRef.current = drainQueue
 
@@ -224,14 +259,14 @@ export function useVisionSession(
       if (inflightRef.current > 0) {
         queueRef.current.push({ content, options: todoOptions })
         onOutboundMessageRef.current?.(content)
-        syncQueueCount()
+        syncQueueState()
         return { queued: true as const }
       }
       await sendOne(content, todoOptions)
       await drainQueue()
       return { queued: false as const }
     },
-    [sendOne, drainQueue, syncQueueCount]
+    [sendOne, drainQueue, syncQueueState]
   )
 
   const undo = useCallback(async () => {
@@ -240,7 +275,10 @@ export function useVisionSession(
   }, [])
 
   const cancelSend = useCallback(() => {
+    sendGenerationRef.current += 1
     sessionRef.current?.cancelSend()
+    inflightRef.current = 0
+    setIsBusy(false)
     process.idle()
   }, [process])
 
@@ -284,7 +322,9 @@ export function useVisionSession(
     isStarting,
     isBusy,
     queuedCount,
+    queuedMessages,
     clearQueue,
+    removeQueuedAt,
     sessionInfo,
     apiUrl,
     httpClient,
@@ -296,6 +336,7 @@ export function useVisionSession(
     refreshSessionInfo,
     patchSessionFiles,
     cancelSend,
+    releaseInflightAfterTurn,
     submitConfirm,
     undo,
     defaultConfig: DEFAULT_CONFIG,

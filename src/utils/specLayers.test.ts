@@ -43,6 +43,16 @@ describe('assessGeneratedSpecLayers', () => {
     expect(r.ok).toBe(true)
   })
 
+  it('normalize numbers plain task bullets', () => {
+    const normalized = normalizeSpecLayerTraceability({
+      requirements: '### REQ-001\n**WHEN** x\n**THE** system **SHALL** a.\n',
+      design: '## Overview\nREQ-001',
+      tasks_md: '- [ ] Implement health route\n- [ ] Add HTTP test\n',
+    })
+    expect(normalized.tasks_md).toMatch(/1\.\s+Implement/)
+    expect(assessGeneratedSpecLayers(normalized).ok).toBe(true)
+  })
+
   it('rejects requirements without SHALL', () => {
     const r = assessGeneratedSpecLayers({
       requirements: '### REQ-001\n**WHEN** x\n**THE** system shows y.\n',

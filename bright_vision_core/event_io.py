@@ -9,13 +9,20 @@ import os
 import threading
 import uuid
 from collections import deque
-from typing import Any, Callable, TextIO
+from contextlib import contextmanager
+from typing import Any, Callable, Iterator, TextIO
 
 _DEBUG_EVENT_RING_MAX = 800
 
 from rich.console import Console
 
 from cecli.io import InputOutput
+
+_UNDO_HINT = "You can use /undo to undo and discard each cecli commit."
+
+
+def _headless_llm_test_mode() -> bool:
+    return os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1"
 
 
 class EventIO(InputOutput):
@@ -42,6 +49,9 @@ class EventIO(InputOutput):
         self._confirm_events: dict[str, threading.Event] = {}
         self._confirm_answers: dict[str, bool] = {}
         self._confirm_timeout_s = 3600.0
+        self._agent_auto_confirm_depth = 0
+        self._agent_mode_active = False
+        self._chat_rel_files: set[str] = set()
         self._null_sink: TextIO | None = None
         if not echo_to_console and kwargs.get("output") is None:
             self._null_sink = open(os.devnull, "w", encoding="utf-8")
@@ -55,6 +65,19 @@ class EventIO(InputOutput):
         # InputOutput attaches Console to stdout; when the desktop app spawns core with
         # stdout closed, Rich writes raise BrokenPipeError.
         self.console = Console(file=sink, force_terminal=False, no_color=True)
+
+    @contextmanager
+    def agent_auto_confirm(self) -> Iterator[None]:
+        """Auto-answer confirms during ``/agent`` preproc (file mentions, shell, etc.)."""
+        self._agent_auto_confirm_depth += 1
+        try:
+            yield
+        finally:
+            self._agent_auto_confirm_depth = max(0, self._agent_auto_confirm_depth - 1)
+
+    def set_chat_rel_files(self, files: list[str] | set[str]) -> None:
+        """Workspace-relative paths already in chat (for add-file confirm dedupe)."""
+        self._chat_rel_files = {str(f).replace("\\", "/") for f in files}
 
     def emit(self, event_type: str, **payload: Any) -> dict[str, Any]:
         event = {"type": event_type, **payload}
@@ -101,23 +124,29 @@ class EventIO(InputOutput):
 
     def tool_output(self, *messages, log_only=False, bold=False, **kwargs):
         kwargs.pop("coder_uuid", None)
+        text = " ".join(str(m) for m in messages)
+        if text.strip() == _UNDO_HINT:
+            log_only = True
+        event = None
         if not log_only:
-            text = " ".join(str(m) for m in messages)
-            self.emit("tool_output", text=text)
+            event = self.emit("tool_output", text=text)
         if self.echo_to_console:
             super().tool_output(*messages, log_only=log_only, bold=bold, **kwargs)
+        return event
 
     def tool_error(self, message="", strip=True, **kwargs):
         kwargs.pop("coder_uuid", None)
-        self.emit("tool_error", text=str(message))
+        event = self.emit("tool_error", text=str(message))
         if self.echo_to_console:
             super().tool_error(message, strip=strip, **kwargs)
+        return event
 
     def tool_warning(self, message="", strip=True, **kwargs):
         kwargs.pop("coder_uuid", None)
-        self.emit("tool_warning", text=str(message))
+        event = self.emit("tool_warning", text=str(message))
         if self.echo_to_console:
             super().tool_warning(message, strip=strip, **kwargs)
+        return event
 
     def resolve_confirm(self, confirm_id: str, accepted: bool) -> bool:
         """Answer a pending confirm (HTTP/UI). Returns False if unknown or already resolved."""
@@ -153,8 +182,36 @@ class EventIO(InputOutput):
         if group_response and group_response in self.group_responses:
             return self.group_responses[group_response]
 
+        agent_auto = (
+            self._agent_auto_confirm_depth > 0 or bool(getattr(self, "_agent_mode_active", False))
+        )
         use_yes = explicit_yes if explicit_yes is not None else bool(self.yes)
-        auto_yes = self.yes is True and not explicit_yes_required
+        auto_yes = agent_auto or (self.yes is True and not explicit_yes_required)
+        subject_norm = str(subject).replace("\\", "/") if subject else ""
+        subject_base = subject_norm.rsplit("/", 1)[-1] if subject_norm else ""
+        in_chat = subject_norm in self._chat_rel_files
+        if not in_chat and subject_base:
+            in_chat = any(f.rsplit("/", 1)[-1] == subject_base for f in self._chat_rel_files)
+        if (
+            not auto_yes
+            and subject
+            and "add file" in str(question).lower()
+            and in_chat
+        ):
+            auto_yes = True
+            use_yes = True
+
+        if not auto_yes and not agent_auto and _headless_llm_test_mode():
+            # llm:core pytest has no UI to answer confirms (shell, add-file, lint, …).
+            self.emit(
+                "confirm",
+                confirm_id=None,
+                question=str(question),
+                subject=subject,
+                default=False,
+                auto_answered=True,
+            )
+            return False
 
         if auto_yes:
             self.emit(
@@ -197,6 +254,23 @@ class EventIO(InputOutput):
             self.group_responses[group_response] = answer
 
         return answer
+
+    async def offer_url(
+        self,
+        url,
+        prompt="Open URL for more info?",
+        allow_never=True,
+        acknowledge=False,
+    ):
+        """Never open docs in the browser during automated suite / LLM pytest runs."""
+        if os.environ.get("BV_TEST_SUITE_ACTIVE") == "1" or os.environ.get("E2E_LLM") == "1":
+            return False
+        return await super().offer_url(
+            url,
+            prompt=prompt,
+            allow_never=allow_never,
+            acknowledge=acknowledge,
+        )
 
     def get_input(self, root, rel_fnames, addable_rel_fnames, commands, abs_read_only_fnames, edit_format=""):
         raise RuntimeError(

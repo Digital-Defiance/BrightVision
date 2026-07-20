@@ -31,8 +31,13 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
             )
             todo_id = created.json()["id"]
 
-            with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
-                res = client.post(
+            with patch("cecli.spec.gen_agent.spec_gen_agent_enabled", return_value=False):
+                with patch(
+                    "cecli.spec.gen_agent.spec_gen_richness_gate_enabled",
+                    return_value=False,
+                ):
+                    with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
+                        res = client.post(
                     f"/workspaces/todos/{todo_id}/generate-spec"
                     f"?workspace={temp_dir}&session_id={session_id}",
                     json={
@@ -49,8 +54,13 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
             self.assertIn("REQ-001", item.get("requirements", ""))
             self.assertIn("Overview", item.get("design", ""))
 
-            with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
-                res = client.post(
+            with patch("cecli.spec.gen_agent.spec_gen_agent_enabled", return_value=False):
+                with patch(
+                    "cecli.spec.gen_agent.spec_gen_richness_gate_enabled",
+                    return_value=False,
+                ):
+                    with patch.object(Session, "run_one_shot", return_value=SAMPLE_GENERATED_MARKDOWN):
+                        res = client.post(
                     f"/workspaces/todos/{todo_id}/generate-spec"
                     f"?workspace={temp_dir}&session_id={session_id}",
                     json={
@@ -123,22 +133,56 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         mock_session.generate_todo_layers.side_effect = slow_layers
 
         with patch.object(Session, "create", return_value=mock_session):
-            with patch(
-                "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
-                return_value=1.0,
-            ):
-                job = spec_job_store.start(
-                    "/tmp/workspace",
-                    "todo-id",
-                    "ping",
-                    mode="generate",
-                    apply=True,
-                    enforce_ears=True,
-                )
-                finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+            job = spec_job_store.start(
+                "/tmp/workspace",
+                "todo-id",
+                "ping",
+                mode="generate",
+                apply=True,
+                enforce_ears=True,
+                wall_timeout_s=1.0,
+            )
+            finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
 
         self.assertEqual(finished.status, "error", finished.error)
         self.assertIn("timed out", (finished.error or "").lower())
+
+    def test_background_spec_job_per_request_wall_timeout(self):
+        from bright_vision_core.todo_spec_jobs import job_wall_timeout_s, spec_job_store
+
+        mock_session = MagicMock()
+        mock_session.generate_todo_layers.return_value = {
+            "requirements": "",
+            "design": "",
+            "tasks_md": "",
+            "raw": "",
+            "item": None,
+            "ears_blocked": False,
+            "ears_issues": [],
+        }
+
+        with patch.object(Session, "create", return_value=mock_session):
+            job = spec_job_store.start(
+                "/tmp/workspace",
+                "todo-id",
+                "ping",
+                mode="generate",
+                apply=True,
+                enforce_ears=True,
+                wall_timeout_s=2400,
+                turn_timeout_s=1200,
+            )
+            self.assertEqual(job_wall_timeout_s(job), 2400.0)
+            finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+
+        self.assertEqual(finished.status, "completed", finished.error)
+        self.assertEqual(finished.wall_timeout_s, 2400.0)
+        self.assertEqual(finished.turn_timeout_s, 1200.0)
+        mock_session.generate_todo_layers.assert_called_once()
+        self.assertEqual(
+            mock_session.generate_todo_layers.call_args.kwargs.get("turn_timeout_s"),
+            1200.0,
+        )
 
     def test_background_spec_job_late_finish_does_not_overwrite_error(self):
         from bright_vision_core.todo_spec_jobs import spec_job_store
@@ -159,19 +203,16 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         mock_session.generate_todo_layers.side_effect = slow_layers
 
         with patch.object(Session, "create", return_value=mock_session):
-            with patch(
-                "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
-                return_value=1.0,
-            ):
-                job = spec_job_store.start(
-                    "/tmp/workspace",
-                    "todo-id",
-                    "ping",
-                    mode="generate",
-                    apply=True,
-                    enforce_ears=True,
-                )
-                finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
+            job = spec_job_store.start(
+                "/tmp/workspace",
+                "todo-id",
+                "ping",
+                mode="generate",
+                apply=True,
+                enforce_ears=True,
+                wall_timeout_s=1.0,
+            )
+            finished = spec_job_store.wait(job.job_id, timeout_s=5.0)
 
         self.assertEqual(finished.status, "error", finished.error)
         time.sleep(3.0)
@@ -198,6 +239,31 @@ class TestHttpGenerateSpecMock(unittest.TestCase):
         self.assertIsNotNone(got)
         self.assertEqual(got.status, "error")
         self.assertIn("timed out", (got.error or "").lower())
+
+    def test_stale_running_job_not_reconciled_when_live_session(self):
+        from bright_vision_core.todo_spec_jobs import SpecGenerationJob, spec_job_store
+
+        job = SpecGenerationJob(
+            job_id="live-job",
+            workspace="/tmp",
+            todo_id="t1",
+            status="running",
+        )
+        job.updated_at = time.time() - 2000.0
+        with patch(
+            "bright_vision_core.todo_spec_jobs.spec_gen_timeout_s",
+            return_value=60.0,
+        ):
+            with patch.object(spec_job_store, "_jobs", {"live-job": job}):
+                with patch.object(
+                    spec_job_store,
+                    "_live_sessions",
+                    {"live-job": MagicMock()},
+                ):
+                    got = spec_job_store.get("live-job")
+        self.assertIsNotNone(got)
+        self.assertEqual(got.status, "running")
+        self.assertIsNone(got.error)
 
 
 if __name__ == "__main__":

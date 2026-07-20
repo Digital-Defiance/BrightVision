@@ -1,6 +1,6 @@
 /** Slash commands handled in the shell (not sent to the Vision API / Cecli turn). */
 
-export type VisionClientCommandId = 'ps' | 'tags' | 'models'
+export type VisionClientCommandId = 'ps' | 'tags' | 'models' | 'turns' | 'pause' | 'resume'
 
 export interface VisionClientCommand {
   name: string
@@ -9,12 +9,27 @@ export interface VisionClientCommand {
 }
 
 export const VISION_CLIENT_COMMANDS: VisionClientCommand[] = [
-  { name: '/ps', summary: 'Ollama /api/ps — models loaded in RAM (table)', id: 'ps' },
-  { name: '/tags', summary: 'Ollama /api/tags — pulled models (table)', id: 'tags' },
+  { name: '/ps', summary: 'Loaded models in RAM (Ollama /api/ps or lms ps --json)', id: 'ps' },
+  { name: '/tags', summary: 'Models on disk (Ollama /api/tags or lms ls --json)', id: 'tags' },
   {
     name: '/models',
-    summary: 'Ollama /api/tags + /api/ps (both tables)',
+    summary: 'On-disk + loaded model tables (tags + ps)',
     id: 'models',
+  },
+  {
+    name: '/turns',
+    summary: 'Recent turn timings table (response, think, memory pressure)',
+    id: 'turns',
+  },
+  {
+    name: '/pause',
+    summary: 'Pause agent after the current step (blocks new sends until /resume)',
+    id: 'pause',
+  },
+  {
+    name: '/resume',
+    summary: 'Resume agent after /pause',
+    id: 'resume',
   },
 ]
 

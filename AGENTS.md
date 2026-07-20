@@ -16,6 +16,7 @@ Prioritize dogfoodable workflows: run `yarn dogfood:agent` (headless, no GUI req
 | **`src-tauri/`** | Tauri v2 shell — spawn Vision API, git, local LLM (Ollama), file dialogs |
 | **`bright_vision_core/`** | **Vision API** (parent repo) — `http_api`, `Session`, `git_workspace`, todos, SSE |
 | **`cecli/`** | **Cecli** submodule — [Digital-Defiance/cecli](https://github.com/Digital-Defiance/cecli) |
+| **`brightdate-python/`** | **brightdate** PyPI slice — [Digital-Defiance/brightdate-python](https://github.com/Digital-Defiance/brightdate-python) |
 | **`scripts/vision_serve.py`** | Tauri spawn → `bright-vision-core-serve` on `:8741` |
 | **`docs/`** | Architecture, ROADMAP, LOCAL_LLM |
 | **`e2e/`** | Playwright (mocked `/api/core` + optional mocked Tauri) |
@@ -42,11 +43,11 @@ React (src/)
 - **Do not** break `src/ipc/events.ts` without updating the shell in the same change — payloads must match `bright_vision_core` SSE (see `docs/IPC.md`).
 - **Desktop:** Tauri `start_core_api` runs `scripts/vision_serve.py` (repo root) → `bright-vision-core-serve` on `127.0.0.1:8741`.
 - **Web:** `bright-vision-core-serve` or Vite proxy `/api/core` → `:8741`.
-- **Dev Python:** `source activate.sh` → `pip install -e` cecli submodule + parent `bright_vision_core` (`pip install -e .`).
+- **Dev Python:** `source activate.sh` → `pip install -e` brightdate-python + cecli submodules + parent `bright_vision_core` (`pip install -e .`).
 
 Deeper detail: `docs/ARCHITECTURE.md`, `docs/IPC.md`, `docs/DEVELOPMENT.md`, `docs/LOCAL_LLM.md`, `docs/TESTING_POLICY.md`.
 
-**Engine strategy (May 2026):** **Cecli** submodule + **`bright_vision_core`** Vision HTTP in this repo. Do not edit `cecli/website/`. Layout: `docs/UPSTREAM_CECLI.md`. Pin policy: `docs/CECLI_PIN.md`. Tier rules: `docs/CORE_FILE_MERGE.md`.
+**Engine strategy (May 2026):** **Cecli** submodule + **`bright_vision_core`** Vision HTTP in this repo. Do not edit `cecli/website/`. Layout: `docs/UPSTREAM_CECLI.md`. Pin policy: `docs/CECLI_PIN.md`. **Upstream cecli PRs:** `docs/CECLI_UPSTREAM_PR.md` + `scripts/cecli-open-upstream-pr.sh`. Tier rules: `docs/CORE_FILE_MERGE.md`.
 
 ## Technical constraints
 

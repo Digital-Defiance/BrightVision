@@ -1,4 +1,6 @@
 import inspect
+import asyncio
+import os
 import subprocess
 import types
 import unittest
@@ -18,11 +20,29 @@ from cecli.utils import GitTemporaryDirectory, make_repo
 
 
 def _git(*args, cwd):
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+    # Isolate from global identity/hooks templates (e.g. ~/.git-templates/hooks).
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull,
+    }
+    subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def _disable_commit_hooks(repo_root: Path) -> None:
+    """Stop GitPython commits from hitting global identity-switch hooks."""
+    _git("config", "core.hooksPath", "/dev/null", cwd=repo_root)
 
 
 def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | None = None):
     """Add a submodule at `name` with optional {relative_path: content} files."""
+    _disable_commit_hooks(super_root)
     sub_files = sub_files or {"hello.txt": "hello\n"}
     sub_path = super_root / name
     sub_path.mkdir(parents=True, exist_ok=True)
@@ -32,6 +52,7 @@ def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | Non
         f.write_text(content)
 
     _git("init", cwd=sub_path)
+    _disable_commit_hooks(sub_path)
     _git("config", "user.email", "sub@test.com", cwd=sub_path)
     _git("config", "user.name", "Sub User", cwd=sub_path)
     for rel in sub_files:
@@ -39,6 +60,8 @@ def _init_submodule(super_root: Path, name: str, sub_files: dict[str, str] | Non
     _git("commit", "-m", "init submodule repo", cwd=sub_path)
 
     _git("submodule", "add", str(sub_path), name, cwd=super_root)
+    # Fresh clone under superproject may reinstall template hooks.
+    _disable_commit_hooks(super_root / name)
     _git("commit", "-m", f"add submodule {name}", cwd=super_root)
 
 
@@ -47,6 +70,7 @@ class TestGitWorkspace(unittest.TestCase):
         """Cecli dirty_commit calls repo.commit(coder_edits=True) on RepoSet."""
         params = inspect.signature(RepoSet.commit).parameters
         self.assertIn("coder_edits", params)
+        self.assertTrue(asyncio.iscoroutinefunction(RepoSet.commit))
 
     def test_discover_submodule_paths(self):
         with GitTemporaryDirectory() as root:
@@ -86,6 +110,17 @@ class TestGitWorkspace(unittest.TestCase):
             ws = create_git_workspace(io, [str(root)], None)
             tracked = ws.get_tracked_files()
             self.assertIn("vendor/lib/pkg.py", tracked)
+
+    def test_get_repo_files_delegates_on_reposet(self):
+        with GitTemporaryDirectory() as root:
+            root = Path(root)
+            _init_submodule(root, "vendor/lib", {"pkg.py": "x = 1\n"})
+            io = InputOutput(pretty=False, yes=True)
+            ws = create_git_workspace(io, [str(root)], None)
+            self.assertIsInstance(ws, RepoSet)
+            files = ws.get_repo_files()
+            self.assertIn("vendor/lib/pkg.py", files)
+            self.assertTrue(ws.get_cache_key())
 
     def test_get_tracked_files_excludes_submodule_gitlink(self):
         """Superproject gitlink paths are directories, not repo-map files."""
@@ -127,7 +162,13 @@ class TestGitWorkspace(unittest.TestCase):
             sub_file = root / "vendor/lib/pkg.py"
             sub_file.write_text("x = 2\n")
 
-            res = ws.commit(fnames=["vendor/lib/pkg.py"], message="update pkg", aider_edits=True)
+            res = asyncio.run(
+                ws.commit(
+                    fnames=["vendor/lib/pkg.py"],
+                    message="update pkg",
+                    aider_edits=True,
+                )
+            )
             self.assertIsNotNone(res)
 
             sub_repo = ws.repo_for_rel_path("vendor/lib/pkg.py")
@@ -181,10 +222,12 @@ class TestGitWorkspace(unittest.TestCase):
             sub_file = root / "vendor/lib/pkg.py"
             sub_file.write_text("x = 99\n")
 
-            res = ws.commit(
-                fnames=["vendor/lib/pkg.py"],
-                aider_edits=True,
-                message="update pkg",
+            res = asyncio.run(
+                ws.commit(
+                    fnames=["vendor/lib/pkg.py"],
+                    aider_edits=True,
+                    message="update pkg",
+                )
             )
             self.assertIsNotNone(res)
             self.assertGreaterEqual(len(ws.last_commit_batch), 1)
